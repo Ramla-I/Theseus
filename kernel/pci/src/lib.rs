@@ -14,6 +14,8 @@ use prusti_contracts::*;
 use core::mem::size_of;
 use prusti_representation_creator::resource_identifier::ResourceIdentifier;
 
+cfg_if::cfg_if! { if #[cfg(not(prusti))] {
+
 #[cfg(target_arch = "x86_64")]
 use port_io::Port;
 
@@ -28,14 +30,11 @@ use zerocopy::FromBytes;
 use volatile::Volatile;
 use memory::{PhysicalAddress, BorrowedSliceMappedPages, Mutable, MappedPages, map_frame_range, MMIO_FLAGS};
 
-cfg_if::cfg_if! { if #[cfg(not(prusti))] { // to remove these out of the cfg will need to look at all these dependencies as well. Unneccesary right now because they're not involved in verification
 use interrupts::InterruptNumber;
 use cpu::CpuId;
 
 #[cfg(target_arch = "aarch64")]
 use arm_boards::BOARD_CONFIG;
-}}
-
 
 const CONFIG_ADDRESS: u16 = 0xCF8;
 const CONFIG_DATA: u16 = 0xCFC;
@@ -54,8 +53,7 @@ static PCI_CONFIG_DATA_PORT: Mutex<Port<u32>> = Mutex::new(Port::new(CONFIG_DATA
 const BASE_OFFSET: u32 = 0x8000_0000;
 
 
-#[cfg_attr(not(prusti), derive(Debug))] 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 /// The span of bytes within a 4-byte chunk that a PCI register occupies.
 ///
 /// The PCI configuration space is represented as an array of 4-byte chunks.
@@ -105,8 +103,7 @@ impl RegisterSpan {
 }
 
 /// A definition of a PCI configuration space register.
-#[cfg_attr(not(prusti), derive(Debug))] 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 struct PciRegister {
     /// The location of this register in the PCI configuration space,
     /// given as an index into the space as an array of `u32`s (4-byte chunks).
@@ -221,31 +218,12 @@ static DEVICE_CREATOR: Mutex<PciDeviceCreator> = Mutex::new(PciDeviceCreator::ne
 
 static PCI_BUSES: Once<Mutex<Vec<PciBus>>> = Once::new();
 
-#[cfg(not(prusti))]
 /// Returns a list of all PCI buses in this system.
 /// If the PCI bus hasn't been initialized, this initializes the PCI bus & scans it to enumerates devices.
 pub fn get_pci_buses() -> Result<&'static Mutex<Vec<PciBus>>, &'static str> {
     PCI_BUSES.try_call_once(scan_pci)
 }
 
-
-// /// Returns a reference to the `PciDevice` with the given bus, slot, func identifier.
-// /// If the PCI bus hasn't been initialized, this initializes the PCI bus & scans it to enumerates devices.
-// pub fn get_pci_device_bsf(bus: u8, slot: u8, func: u8) -> Result<Option<&'static PciDevice>, &'static str> {
-//     for b in get_pci_buses()? {
-//         if b.bus_number == bus {
-//             for d in &b.devices {
-//                 if d.slot == slot && d.func == func {
-//                     return Ok(Some(d));
-//                 }
-//             }
-//         }
-//     }
-
-//     Ok(None)
-// }
-
-#[cfg(not(prusti))]
 /// Returns a reference to the `PciDevice` with the given bus, slot, func identifier.
 /// If the PCI bus hasn't been initialized, this initializes the PCI bus & scans it to enumerates devices.
 pub fn get_pci_device_bsf(bus: u8, slot: u8, func: u8) -> Result<PciDevice, &'static str> {
@@ -279,8 +257,7 @@ pub fn get_pci_device_bsf(bus: u8, slot: u8, func: u8) -> Result<PciDevice, &'st
 
 
 /// A PCI bus, which contains a list of PCI devices on that bus.
-#[cfg_attr(not(prusti), derive(Debug))] 
-
+#[derive(Debug)] 
 pub struct PciBus {
     /// The number identifier of this PCI bus.
     bus_number: u8,
@@ -289,7 +266,6 @@ pub struct PciBus {
 }
 
 
-#[cfg(not(prusti))]
 /// Scans all PCI Buses (brute force iteration) to enumerate PCI Devices on each bus.
 /// Initializes structures containing this information. 
 fn scan_pci() -> Result<Mutex<Vec<PciBus>>, &'static str> {
@@ -380,7 +356,7 @@ impl DerefMut for PciDeviceCreator {
         &mut self.0
     }
 }
-// }}
+}}
 
 /// The bus, slot, and function number of a given PCI device.
 /// This offers methods for reading and writing the PCI config space. 
@@ -416,13 +392,14 @@ impl PciLocation {
     }
 }
 
+cfg_if::cfg_if! { if #[cfg(not(prusti))] {
+
 impl PciLocation {
     pub fn bus(&self) -> u8 { self.bus }
     pub fn slot(&self) -> u8 { self.slot }
     pub fn function(&self) -> u8 { self.func }
 
     /// Read the value of the given `register` in the PCI Configuration Space.
-    #[trusted]
     fn pci_read_raw(&self, register: PciRegister) -> u32 {
         let PciRegister { index, span } = register;
         let (mask, shift) = span.get_mask_and_bitshift();
@@ -457,7 +434,6 @@ impl PciLocation {
     /// Read a 4-bytes register from the PCI Configuration Space.
     ///
     /// Panics if the register isn't a [`FullDword`]
-    #[trusted]
     fn pci_read_32(&self, register: PciRegister) -> u32 {
         let reg_width = register.span.width_in_bytes();
         let output_width = size_of::<u32>();
@@ -469,7 +445,6 @@ impl PciLocation {
     /// Read a 2-bytes register from the PCI Configuration Space.
     ///
     /// Panics if the register isn't a [`Word0`] / [`Word1`]
-    #[trusted]
     fn pci_read_16(&self, register: PciRegister) -> u16 {
         let reg_width = register.span.width_in_bytes();
         let output_width = size_of::<u16>();
@@ -481,7 +456,6 @@ impl PciLocation {
     /// Read a one-byte register from the PCI Configuration Space.
     ///
     /// Panics if the register isn't a [`Byte0`] / [`Byte1`] / [`Byte2`] / [`Byte3`]
-    #[trusted]
     fn pci_read_8(&self, register: PciRegister) -> u8 {
         let reg_width = register.span.width_in_bytes();
         let output_width = size_of::<u8>();
@@ -642,7 +616,7 @@ impl fmt::Debug for PciLocation {
 ///
 /// For more, see [this partial table](http://wiki.osdev.org/PCI#Class_Codes)
 /// of `class`, `subclass`, and `prog_if` codes, 
-#[cfg_attr(not(prusti),derive(Debug))]
+#[derive(Debug)]
 pub struct PciDevice {
     /// the bus, slot, and function number that locates this PCI device in the bus tree.
     location: PciLocation,
@@ -667,7 +641,6 @@ pub struct PciDevice {
     int_line: u8,
 }
 
-#[ensures(result.location === location)]
 fn new_pci_device(location: &PciLocation) -> PciDevice {
     PciDevice {
         vendor_id:        location.pci_read_16(PciRegister{ index: 0, span: RegisterSpan::Word0 }), // cannot use the const values because of a Prusti unsupported feature
@@ -697,7 +670,6 @@ fn new_pci_device(location: &PciLocation) -> PciDevice {
     }
 }
 
-
 assert_not_impl_any!(PciDevice: DerefMut, Clone);
 
 impl PciDevice {
@@ -715,8 +687,6 @@ impl PciDevice {
     pub fn header_type(&self) -> u8 { self.header_type }
     pub fn bist(&self) -> u8 { self.bist }
 
-    // #[cfg(not(prusti))]
-    #[trusted]
     /// Returns the base address of the memory region specified by the given `BAR` 
     /// (Base Address Register) for this PCI device. 
     ///
@@ -898,7 +868,6 @@ impl PciDevice {
         Ok(())  
     }
 
-    #[cfg(not(prusti))]
     /// Returns the memory mapped msix vector table
     ///
     /// - returns `Err("Device not MSI-X capable")` if the device doesn't have the MSI-X capability
@@ -937,8 +906,6 @@ impl PciDevice {
     ///
     /// # Arguments 
     /// * `bar_index`: index of the Base Address Register to use
-    // #[cfg(not(prusti))]
-    #[trusted]
     pub fn pci_map_bar_mem(&self, bar_index: usize) -> Result<MappedPages, &'static str> {
         let mem_base = self.determine_mem_base(bar_index)?;
         let mem_size = self.determine_mem_size(bar_index);
@@ -993,7 +960,6 @@ pub enum PciConfigSpaceAccessMechanism {
     IoPort = 1,
 }
 
-cfg_if::cfg_if! { if #[cfg(not(prusti))] {
 /// A memory-mapped array of [`MsixVectorEntry`]
 pub struct MsixVectorTable {
     entries: BorrowedSliceMappedPages<MsixVectorEntry, Mutable>,
