@@ -4,6 +4,5 @@
 check_overflows = false
 use_new_encoder = false
 skip_unsupported_features = true 
+no_verify_deps = true
 # opt_in_verification = true # this flag is causing strange behavior with the Partial Ord external spec so will stick with cfg for now.
-# allow_unreachable_unsupported_code = true
-assert_timeout = 0
