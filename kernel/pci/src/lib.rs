@@ -129,14 +129,6 @@ impl PciRegister {
     }
 }
 
-/// There is a maximum of 256 PCI buses on one system.
-const MAX_PCI_BUSES: u16 = 256;
-/// There is a maximum of 32 slots on one PCI bus.
-const MAX_SLOTS_PER_BUS: u8 = 32;
-/// There is a maximum of 32 functions (devices) on one PCI slot.
-const MAX_FUNCTIONS_PER_SLOT: u8 = 8;
-
-
 /// A macro for easily defining PCI registers using offsets from the PCI spec.
 ///
 /// The last argument only accepts register sizes of 1, 2, and 4 bytes.
@@ -357,6 +349,14 @@ impl DerefMut for PciDeviceCreator {
     }
 }
 }}
+
+/// There is a maximum of 256 PCI buses on one system.
+const MAX_PCI_BUSES: u16 = 256;
+/// There is a maximum of 32 slots on one PCI bus.
+const MAX_SLOTS_PER_BUS: u8 = 32;
+/// There is a maximum of 32 functions (devices) on one PCI slot.
+const MAX_FUNCTIONS_PER_SLOT: u8 = 8;
+
 
 /// The bus, slot, and function number of a given PCI device.
 /// This offers methods for reading and writing the PCI config space. 

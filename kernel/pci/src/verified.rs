@@ -12,6 +12,14 @@ use prusti_contracts::*;
 use core::mem::size_of;
 use prusti_representation_creator::resource_identifier::ResourceIdentifier;
 
+/// There is a maximum of 256 PCI buses on one system.
+const MAX_PCI_BUSES: u16 = 256;
+/// There is a maximum of 32 slots on one PCI bus.
+const MAX_SLOTS_PER_BUS: u8 = 32;
+/// There is a maximum of 32 functions (devices) on one PCI slot.
+const MAX_FUNCTIONS_PER_SLOT: u8 = 8;
+
+
 /// The bus, slot, and function number of a given PCI device.
 /// This offers methods for reading and writing the PCI config space. 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
