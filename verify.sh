@@ -6,16 +6,16 @@ LIB_CRATES=(
 )
 
 KERNEL_CRATES=(
-    kernel_config 
-    memory_structs 
     prusti_external_spec 
+    kernel_config 
     prusti_representation_creator 
-    pci 
     prusti_frame_chunk 
     prusti_page_chunk 
+    memory_structs 
     memory 
     prusti_memory_buffer 
     prusti_borrowed_shared_mp
+    pci 
     ixgbe_flexible
 )
 
