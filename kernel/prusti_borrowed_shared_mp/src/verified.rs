@@ -8,6 +8,8 @@ use zerocopy::FromBytes;
 use prusti_contracts::*;
 #[allow(unused_imports)]
 use prusti_external_spec::{vecdeque_wrapper::*, trusted_result::*};
+#[allow(unused_imports)]
+use memory_structs::VirtualAddress; // we need this line so that prusti knows that the value() fn is pure
 
 #[derive(Clone, Copy)]
 pub enum BufferCreationError {
