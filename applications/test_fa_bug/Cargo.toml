@@ -1,0 +1,21 @@
+[package]
+name = "test_fa_bug"
+version = "0.1.0"
+authors = ["Ramla Ijaz <ijazramla@gmail.com>"]
+build = "../../build.rs"
+
+[dependencies]
+
+
+[dependencies.log]
+version = "0.4.8"
+
+
+[dependencies.terminal_print]
+path = "../../kernel/terminal_print"
+
+[dependencies.memory]
+path = "../../kernel/memory"
+
+[dependencies.nic_initialization]
+path = "../../kernel/nic_initialization"

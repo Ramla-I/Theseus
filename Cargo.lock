@@ -2915,6 +2915,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "test_fa_bug"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "memory",
+ "nic_initialization",
+ "terminal_print",
+]
+
+[[package]]
 name = "test_panic"
 version = "0.1.0"
 dependencies = [
