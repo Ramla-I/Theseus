@@ -14,9 +14,9 @@ use trusted_chunk::TrustedChunk;
 /// both of which are also based ONLY on the **starting** `Frame` of the `Chunk`.
 /// Thus, comparing two `Chunk`s with the `==` or `!=` operators may not work as expected.
 /// since it ignores their actual range of frames.
-#[derive(Debug, Clone, Eq)]
+#[derive(Debug, Eq)]
 pub struct Chunk {
-    // pub(crate) tchunk: Option<TrustedChunk>,
+    pub(crate) tchunk: Option<TrustedChunk>,
     /// The type of this memory chunk, e.g., whether it's in a free or reserved region.
     pub(crate)typ: MemoryRegionType,
     /// The Frames covered by this chunk, an inclusive range. 
@@ -32,7 +32,7 @@ impl Chunk {
     /// Returns a new `Chunk` with an empty range of frames. 
     pub(crate) fn empty() -> Chunk {
         Chunk {
-            // tchunk: None,
+            tchunk: None,
             typ: MemoryRegionType::Unknown,
             frames: FrameRange::empty(),
         }
