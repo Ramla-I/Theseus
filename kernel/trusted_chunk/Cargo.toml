@@ -1,0 +1,12 @@
+[package]
+authors = ["Ramla Ijaz <ijazramla@gmail.com>"]
+name = "trusted_chunk"
+description = "Type representing an unallocated portion of memory"
+version = "0.1.0"
+build = "../../build.rs"
+
+[dependencies]
+
+
+[lib]
+crate-type = ["rlib"]
