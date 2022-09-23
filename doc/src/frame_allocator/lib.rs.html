@@ -1,9 +1,10 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `kernel/frame_allocator/src/lib.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>lib.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceSerif4-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../FiraSans-Regular.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../FiraSans-Medium.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceCodePro-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceSerif4-Bold.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceCodePro-Semibold.ttf.woff2"><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled><link rel="stylesheet" type="text/css" href="../../dark.css" disabled><link rel="stylesheet" type="text/css" href="../../light.css" id="themeStyle"><script id="default-settings" ></script><script src="../../storage.js"></script><script src="../../crates.js"></script><script defer src="../../main.js"></script><script defer src="../../source-script.js"></script><script defer src="../../source-files.js"></script>
-    <noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../favicon.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle">&#9776;</button><a class="sidebar-logo" href="../../frame_allocator/index.html"><div class="logo-container"><img class="rust-logo" src="../../rust-logo.svg" alt="logo"></div>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `kernel/frame_allocator/src/lib.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>lib.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceSerif4-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../FiraSans-Regular.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../FiraSans-Medium.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceCodePro-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceSerif4-Bold.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceCodePro-Semibold.ttf.woff2"><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled><link rel="stylesheet" type="text/css" href="../../dark.css" disabled><link rel="stylesheet" type="text/css" href="../../light.css" id="themeStyle"><script id="default-settings" ></script><script src="../../storage.js"></script><script defer src="../../source-script.js"></script><script defer src="../../source-files.js"></script><script defer src="../../main.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../favicon.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle">&#9776;</button><a class="sidebar-logo" href="../../frame_allocator/index.html"><div class="logo-container"><img class="rust-logo" src="../../rust-logo.svg" alt="logo"></div>
         </a><h2 class="location"></h2>
     </nav>
     <nav class="sidebar"><a class="sidebar-logo" href="../../frame_allocator/index.html"><div class="logo-container"><img class="rust-logo" src="../../rust-logo.svg" alt="logo"></div>
-        </a></nav><main><div class="width-limiter"><div class="sub-container"><a class="sub-logo-container" href="../../frame_allocator/index.html"><img class="rust-logo" src="../../rust-logo.svg" alt="logo"></a><nav class="sub"><div class="theme-picker hidden"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="22" height="22" alt="Pick another theme!" src="../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><form class="search-form"><div class="search-container"><span></span><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../wheel.svg"></a></div></form></nav></div><section id="main-content" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">1</span>
+        </a></nav><main><div class="width-limiter"><div class="sub-container"><a class="sub-logo-container" href="../../frame_allocator/index.html"><img class="rust-logo" src="../../rust-logo.svg" alt="logo"></a><nav class="sub"><form class="search-form"><div class="search-container"><span></span><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><button type="button">?</button></div><div id="settings-menu" tabindex="-1">
+                                <a href="../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../wheel.svg"></a></div>
+                        </div></form></nav></div><section id="main-content" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">1</span>
 <span id="2">2</span>
 <span id="3">3</span>
 <span id="4">4</span>
@@ -993,6 +994,8 @@
 <span id="988">988</span>
 <span id="989">989</span>
 <span id="990">990</span>
+<span id="991">991</span>
+<span id="992">992</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Provides an allocator for physical memory frames.</span>
 <span class="doccomment">//! The minimum unit of allocation is a single frame. </span>
 <span class="doccomment">//!</span>
@@ -1020,7 +1023,6 @@
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">kernel_config</span>;
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">memory_structs</span>;
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">spin</span>;
-<span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">page_table_entry</span>;
 <span class="attribute">#[<span class="ident">macro_use</span>]</span> <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">static_assertions</span>;
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">intrusive_collections</span>;
 
@@ -1036,7 +1038,6 @@
 <span class="kw">use</span> <span class="ident">memory_structs</span>::{<span class="ident">PhysicalAddress</span>, <span class="ident">Frame</span>, <span class="ident">FrameRange</span>};
 <span class="kw">use</span> <span class="ident">spin::Mutex</span>;
 <span class="kw">use</span> <span class="ident">intrusive_collections::Bound</span>;
-<span class="kw">use</span> <span class="ident">page_table_entry::UnmappedFrames</span>;
 <span class="kw">use</span> <span class="ident">static_array_rb_tree</span>::<span class="kw-2">*</span>;
 
 <span class="kw">const</span> <span class="ident">FRAME_SIZE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="ident">PAGE_SIZE</span>;
@@ -1068,10 +1069,15 @@
 <span class="doccomment">/// </span>
 <span class="doccomment">/// The iterator (`R`) over reserved physical memory regions must be cloneable, </span>
 <span class="doccomment">/// as this runs before heap allocation is available, and we may need to iterate over it multiple times. </span>
+<span class="doccomment">/// </span>
+<span class="doccomment">/// ## Return</span>
+<span class="doccomment">/// Upon success, this function returns a callback function that allows the caller</span>
+<span class="doccomment">/// (the memory subsystem init function) to convert a range of unmapped frames </span>
+<span class="doccomment">/// back into an [`AllocatedFrames`] object.</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">init</span><span class="op">&lt;</span><span class="ident">F</span>, <span class="ident">R</span>, <span class="ident">P</span><span class="op">&gt;</span>(
     <span class="ident">free_physical_memory_areas</span>: <span class="ident">F</span>,
     <span class="ident">reserved_physical_memory_areas</span>: <span class="ident">R</span>,
-) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">str</span><span class="op">&gt;</span> 
+) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="kw">fn</span>(<span class="ident">FrameRange</span>) -&gt; <span class="ident">AllocatedFrames</span>, <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">str</span><span class="op">&gt;</span> 
     <span class="kw">where</span> <span class="ident">P</span>: <span class="ident">Borrow</span><span class="op">&lt;</span><span class="ident">PhysicalMemoryRegion</span><span class="op">&gt;</span>,
           <span class="ident">F</span>: <span class="ident">IntoIterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="ident">P</span><span class="op">&gt;</span>,
           <span class="ident">R</span>: <span class="ident">IntoIterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="ident">P</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Clone</span>,
@@ -1145,7 +1151,8 @@
     <span class="kw-2">*</span><span class="ident">FREE_RESERVED_FRAMES_LIST</span>.<span class="ident">lock</span>() <span class="op">=</span> <span class="ident">StaticArrayRBTree::new</span>(<span class="ident">reserved_list</span>.<span class="ident">clone</span>());
     <span class="kw-2">*</span><span class="ident">GENERAL_REGIONS</span>.<span class="ident">lock</span>()           <span class="op">=</span> <span class="ident">StaticArrayRBTree::new</span>(<span class="ident">free_list</span>);
     <span class="kw-2">*</span><span class="ident">RESERVED_REGIONS</span>.<span class="ident">lock</span>()          <span class="op">=</span> <span class="ident">StaticArrayRBTree::new</span>(<span class="ident">reserved_list</span>);
-    <span class="prelude-val">Ok</span>(())
+
+    <span class="prelude-val">Ok</span>(<span class="ident">into_allocated_frames</span>)
 }
 
 
@@ -1411,18 +1418,16 @@
     }
 }
 
-<span class="comment">// The `UnmappedFrames` type represents frames that have been unmapped</span>
-<span class="comment">// from a page that had exclusively mapped them,</span>
-<span class="comment">// meaning that no other pages have been mapped to those same frames.</span>
-<span class="comment">//</span>
-<span class="comment">// Therefore, they can be safely converted into `AllocatedFrames`</span>
-<span class="comment">// which can then be dropped and subsequently deallocated.</span>
-<span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">AllocatedFrames</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">UnmappedFrames</span> {
-    <span class="kw">fn</span> <span class="ident">into</span>(<span class="self">self</span>) -&gt; <span class="ident">AllocatedFrames</span> {
-        <span class="ident">AllocatedFrames</span> {
-            <span class="ident">frames</span>: <span class="self">self</span>.<span class="ident">deref</span>().<span class="ident">clone</span>(),
-        }
-    }
+<span class="doccomment">/// This function is a callback used to convert `UnmappedFrames` into `AllocatedFrames`.</span>
+<span class="doccomment">/// `UnmappedFrames` represents frames that have been unmapped from a page that had</span>
+<span class="doccomment">/// exclusively mapped them, indicating that no others pages have been mapped </span>
+<span class="doccomment">/// to those same frames, and thus, they can be safely deallocated.</span>
+<span class="doccomment">/// </span>
+<span class="doccomment">/// This exists to break the cyclic dependency cycle between this crate and</span>
+<span class="doccomment">/// the `page_table_entry` crate, since `page_table_entry` must depend on types</span>
+<span class="doccomment">/// from this crate in order to enforce safety when modifying page table entries.</span>
+<span class="kw">fn</span> <span class="ident">into_allocated_frames</span>(<span class="ident">frames</span>: <span class="ident">FrameRange</span>) -&gt; <span class="ident">AllocatedFrames</span> {
+    <span class="ident">AllocatedFrames</span> { <span class="ident">frames</span> }
 }
 
 <span class="kw">impl</span> <span class="ident">Drop</span> <span class="kw">for</span> <span class="ident">AllocatedFrames</span> {
@@ -1984,5 +1989,5 @@
     <span class="macro">debug!</span>(<span class="string">&quot;-----------------------------------------------------&quot;</span>);
 }
 </code></pre></div>
-</section><section id="search" class="content hidden"></section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="frame_allocator" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.61.0-nightly (c84f39e6c 2022-03-20)" ></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="frame_allocator" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (f8588549c 2022-07-18)" ></div>
 </body></html>
