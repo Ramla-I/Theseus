@@ -34,7 +34,8 @@ mod test;
 
 mod static_array_rb_tree;
 // mod static_array_linked_list;
-
+mod chunk;
+mod region;
 
 use core::{borrow::Borrow, cmp::{Ordering, min, max}, fmt, ops::{Deref, DerefMut, RangeInclusive}, marker::PhantomData};
 use kernel_config::memory::*;
@@ -42,6 +43,8 @@ use memory_structs::{PhysicalAddress, Frame, FrameRange};
 use spin::Mutex;
 use intrusive_collections::Bound;
 use static_array_rb_tree::*;
+use chunk::*;
+use region::*;
 use range_inclusive::RangeInclusiveIterator;
 
 const FRAME_SIZE: usize = PAGE_SIZE;
@@ -58,11 +61,11 @@ static FREE_RESERVED_FRAMES_LIST: Mutex<StaticArrayRBTree<Chunk>> = Mutex::new(S
 /// The fixed list of all known regions that are available for general use.
 /// This does not indicate whether these regions are currently allocated, 
 /// rather just where they exist and which regions are known to this allocator.
-static GENERAL_REGIONS: Mutex<StaticArrayRBTree<Chunk>> = Mutex::new(StaticArrayRBTree::empty());
+static GENERAL_REGIONS: Mutex<StaticArrayRBTree<Region>> = Mutex::new(StaticArrayRBTree::empty());
 /// The fixed list of all known regions that are reserved for specific purposes. 
 /// This does not indicate whether these regions are currently allocated, 
 /// rather just where they exist and which regions are known to this allocator.
-static RESERVED_REGIONS: Mutex<StaticArrayRBTree<Chunk>> = Mutex::new(StaticArrayRBTree::empty());
+static RESERVED_REGIONS: Mutex<StaticArrayRBTree<Region>> = Mutex::new(StaticArrayRBTree::empty());
 
 
 /// Initialize the frame allocator with the given list of available and reserved physical memory regions.
@@ -98,6 +101,8 @@ pub fn init<F, R, P>(
     let mut free_list_idx = 0;
     let mut reserved_list: [Option<Chunk>; 32] = Default::default();
     let mut reserved_list_idx = 0;
+    let mut free_regions: [Option<Region>; 32] = Default::default();
+    let mut reserved_regions: [Option<Region>; 32] = Default::default();
 
     // Populate the list of free regions for general-purpose usage.
     for area in free_physical_memory_areas.into_iter() {
@@ -151,10 +156,25 @@ pub fn init<F, R, P>(
         }
     }
 
-    *FREE_GENERAL_FRAMES_LIST.lock()  = StaticArrayRBTree::new(free_list.clone());
-    *FREE_RESERVED_FRAMES_LIST.lock() = StaticArrayRBTree::new(reserved_list.clone());
-    *GENERAL_REGIONS.lock()           = StaticArrayRBTree::new(free_list);
-    *RESERVED_REGIONS.lock()          = StaticArrayRBTree::new(reserved_list);
+    for i in 0..32 {
+        if let Some(chunk) = &reserved_list[i] {
+            reserved_regions[i] = Some(Region {
+                typ: MemoryRegionType::Reserved,
+                frames: chunk.frames.clone()
+            });
+        }
+        if let Some(chunk) = &free_list[i] {
+            free_regions[i] = Some(Region {
+                typ: MemoryRegionType::Free,
+                frames: chunk.frames.clone()
+            });
+        }
+    }
+
+    *FREE_GENERAL_FRAMES_LIST.lock()  = StaticArrayRBTree::new(free_list);
+    *FREE_RESERVED_FRAMES_LIST.lock() = StaticArrayRBTree::new(reserved_list);
+    *GENERAL_REGIONS.lock()           = StaticArrayRBTree::new(free_regions);
+    *RESERVED_REGIONS.lock()          = StaticArrayRBTree::new(reserved_regions);
 
     Ok(into_allocated_frames)
 }
@@ -255,67 +275,6 @@ pub enum MemoryRegionType {
     /// to do any real work (e.g., allocation, access) with an unknown memory region.
     Unknown,
 }
-
-/// A range of contiguous frames.
-///
-/// # Ordering and Equality
-///
-/// `Chunk` implements the `Ord` trait, and its total ordering is ONLY based on
-/// its **starting** `Frame`. This is useful so we can store `Chunk`s in a sorted collection.
-///
-/// Similarly, `Chunk` implements equality traits, `Eq` and `PartialEq`,
-/// both of which are also based ONLY on the **starting** `Frame` of the `Chunk`.
-/// Thus, comparing two `Chunk`s with the `==` or `!=` operators may not work as expected.
-/// since it ignores their actual range of frames.
-#[derive(Debug, Clone, Eq)]
-struct Chunk {
-    /// The type of this memory chunk, e.g., whether it's in a free or reserved region.
-    typ: MemoryRegionType,
-    /// The Frames covered by this chunk, an inclusive range. 
-    frames: FrameRange,
-}
-impl Chunk {
-    fn as_allocated_frames(&self) -> AllocatedFrames {
-        AllocatedFrames {
-            frames: self.frames.clone(),
-        }
-    }
-
-    /// Returns a new `Chunk` with an empty range of frames. 
-    const fn empty() -> Chunk {
-        Chunk {
-            typ: MemoryRegionType::Unknown,
-            frames: FrameRange::empty(),
-        }
-    }
-}
-impl Deref for Chunk {
-    type Target = FrameRange;
-    fn deref(&self) -> &FrameRange {
-        &self.frames
-    }
-}
-impl Ord for Chunk {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.frames.start().cmp(other.frames.start())
-    }
-}
-impl PartialOrd for Chunk {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-impl PartialEq for Chunk {
-    fn eq(&self, other: &Self) -> bool {
-        self.frames.start() == other.frames.start()
-    }
-}
-impl Borrow<Frame> for &'_ Chunk {
-    fn borrow(&self) -> &Frame {
-        self.frames.start()
-    }
-}
-
 
 /// Represents a range of allocated physical memory [`Frame`]s; derefs to [`FrameRange`].
 /// 
@@ -572,19 +531,25 @@ impl<'list> DeferredAllocAction<'list> {
 }
 impl<'list> Drop for DeferredAllocAction<'list> {
     fn drop(&mut self) {
+        let mut chunk1 = Chunk::empty();
+        let mut chunk2 = Chunk::empty();
+
+        core::mem::swap(&mut chunk1, &mut self.free1);
+        core::mem::swap(&mut chunk2, &mut self.free2);
+
         // Insert all of the chunks, both allocated and free ones, into the list. 
-        if self.free1.size_in_frames() > 0 {
-            match self.free1.typ {
-                MemoryRegionType::Free     => { self.free_list.lock().insert(self.free1.clone()).unwrap(); }
-                MemoryRegionType::Reserved => { self.reserved_list.lock().insert(self.free1.clone()).unwrap(); }
-                _ => error!("BUG likely: DeferredAllocAction encountered free1 chunk {:?} of a type Unknown", self.free1),
+        if chunk1.size_in_frames() > 0 {
+            match chunk1.typ {
+                MemoryRegionType::Free     => { self.free_list.lock().insert(chunk1).unwrap(); }
+                MemoryRegionType::Reserved => { self.reserved_list.lock().insert(chunk1).unwrap(); }
+                _ => error!("BUG likely: DeferredAllocAction encountered free1 chunk {:?} of a type Unknown", chunk1),
             }
         }
-        if self.free2.size_in_frames() > 0 {
-            match self.free2.typ {
-                MemoryRegionType::Free     => { self.free_list.lock().insert(self.free2.clone()).unwrap(); }
-                MemoryRegionType::Reserved => { self.reserved_list.lock().insert(self.free2.clone()).unwrap(); }
-                _ => error!("BUG likely: DeferredAllocAction encountered free2 chunk {:?} of a type Unknown", self.free2),
+        if chunk2.size_in_frames() > 0 {
+            match chunk2.typ {
+                MemoryRegionType::Free     => { self.free_list.lock().insert(chunk2).unwrap(); }
+                MemoryRegionType::Reserved => { self.reserved_list.lock().insert(chunk2).unwrap(); }
+                _ => error!("BUG likely: DeferredAllocAction encountered free2 chunk {:?} of a type Unknown", chunk2),
             };
         }
     }
@@ -599,12 +564,15 @@ enum AllocationError {
     /// The address space was full, or there was not a large-enough chunk 
     /// or enough remaining chunks that could satisfy the requested allocation size.
     OutOfAddressSpace(usize),
+    /// ToDo: remove
+    InternalError,
 }
 impl From<AllocationError> for &'static str {
     fn from(alloc_err: AllocationError) -> &'static str {
         match alloc_err {
             AllocationError::AddressNotFree(..) => "address was in use or outside of this frame allocator's range",
             AllocationError::OutOfAddressSpace(..) => "out of physical address space",
+            AllocationError::InternalError => "problem with frame allocato logic",
         }
     }
 }
@@ -627,17 +595,18 @@ fn find_specific_chunk(
                 if let Some(chunk) = elem {
                     if requested_frame >= *chunk.start() && requested_end_frame <= *chunk.end() {
                         // Here: `chunk` was big enough and did contain the requested address.
-                        return allocate_from_chosen_chunk(requested_frame, num_frames, &chunk.clone(), ValueRefMut::Array(elem));
+                        return allocate_from_chosen_chunk(requested_frame, num_frames, ValueRefMut::Array(elem));
                     }
                 }
             }
         }
         Inner::RBTree(ref mut tree) => {
+            let mut contiguous_chunk_1 = None;
             let mut cursor_mut = tree.upper_bound_mut(Bound::Included(&requested_frame));
             if let Some(chunk) = cursor_mut.get().map(|w| w.deref().clone()) {
                 if chunk.contains(&requested_frame) {
                     if requested_end_frame <= *chunk.end() {
-                        return allocate_from_chosen_chunk(requested_frame, num_frames, &chunk, ValueRefMut::RBTree(cursor_mut));
+                        return allocate_from_chosen_chunk(requested_frame, num_frames, ValueRefMut::RBTree(cursor_mut));
                     } else {
                         // We found the chunk containing the requested address, but it was too small to cover all of the requested frames.
                         // Let's try to merge the next-highest contiguous chunk to see if those two chunks together 
@@ -648,14 +617,15 @@ fn find_specific_chunk(
                         //     Requested address: {:?}, num_frames: {}, chunk: {:?}",
                         //     requested_frame, num_frames, chunk,
                         // );
-                        let next_contiguous_chunk: Option<Chunk> = {
+                        // let next_contiguous_chunk: Option<Chunk> = {
                             let next_cursor = cursor_mut.peek_next();
                             if let Some(next_chunk) = next_cursor.get().map(|w| w.deref()) {
                                 if *chunk.end() + 1 == *next_chunk.start() {
                                     // Here: next chunk was contiguous with the original chunk. 
                                     if requested_end_frame <= *next_chunk.end() {
                                         // trace!("Frame allocator: found suitably-large contiguous next {:?} after initial too-small {:?}", next_chunk, chunk);
-                                        Some(next_chunk.clone())
+                                        // Some(next_chunk.clone())
+                                        contiguous_chunk_1 = Some(ValueRefMut::RBTree(cursor_mut));
                                     } else {
                                         todo!("Frame allocator: found chunk containing requested address, but it was too small. \
                                             Theseus does not yet support merging more than two chunks during an allocation request. \
@@ -666,22 +636,37 @@ fn find_specific_chunk(
                                     }
                                 } else {
                                     trace!("Frame allocator: next {:?} was not contiguously above initial too-small {:?}", next_chunk, chunk);
-                                    None
+                                    // None
                                 }
                             } else {
                                 trace!("Frame allocator: couldn't get next chunk above initial too-small {:?}", chunk);
-                                None
+                                // None
                             }
-                        };
-                        if let Some(mut next_chunk) = next_contiguous_chunk {
-                            // We found a suitable chunk that came contiguously after the initial too-small chunk. 
-                            // Remove the initial chunk (since we have a cursor pointing to it already) 
-                            // and "merge" it into this `next_chunk`.
-                            let _removed_initial_chunk = cursor_mut.remove();
-                            // trace!("Frame allocator: removed suitably-large contiguous next {:?} after initial too-small {:?}", _removed_initial_chunk, chunk);
-                            // Here, `cursor_mut` has been moved forward to point to the `next_chunk` now. 
-                            next_chunk.frames = FrameRange::new(*chunk.start(), *next_chunk.end());
-                            return allocate_from_chosen_chunk(requested_frame, num_frames, &next_chunk, ValueRefMut::RBTree(cursor_mut));
+                        // };
+                        if let Some(ref_chunk) = contiguous_chunk_1 {
+                            let chunk1 = retrieve_chunk_from_ref(ref_chunk).ok_or(AllocationError::InternalError)?;
+                            let requested_contiguous_frame = *chunk1.end() + 1;
+                            let mut cursor_mut = tree.upper_bound_mut(Bound::Included(&requested_contiguous_frame));
+                            if let Some(next_chunk) = cursor_mut.get().map(|w| w.deref()) {
+                                if next_chunk.contains(&requested_contiguous_frame) {
+                                    // let mut next_chunk_removed = retrieve_chunk_from_ref(ValueRefMut::RBTree(cursor_mut)).ok_or(AllocationError::InternalError)?;
+                                    // next_chunk_removed.frames = FrameRange::new(*chunk1.start(), *next_chunk.end());
+                                    return adjust_chosen_chunk_contiguous(requested_frame, num_frames, chunk1, ValueRefMut::RBTree(cursor_mut));
+                                
+                                } else {
+                                    error!("chunk must contain range");
+                                    return Err(AllocationError::InternalError);
+                                }
+                            }
+                        // if let Some(mut next_chunk) = next_contiguous_chunk {
+                        //     // We found a suitable chunk that came contiguously after the initial too-small chunk. 
+                        //     // Remove the initial chunk (since we have a cursor pointing to it already) 
+                        //     // and "merge" it into this `next_chunk`.
+                        //     let _removed_initial_chunk = cursor_mut.remove();
+                        //     // trace!("Frame allocator: removed suitably-large contiguous next {:?} after initial too-small {:?}", _removed_initial_chunk, chunk);
+                        //     // Here, `cursor_mut` has been moved forward to point to the `next_chunk` now. 
+                        //     next_chunk.frames = FrameRange::new(*chunk.start(), *next_chunk.end());
+                        //     return allocate_from_chosen_chunk(requested_frame, num_frames, &next_chunk, ValueRefMut::RBTree(cursor_mut));
                         }
                     }
                 }
@@ -708,7 +693,7 @@ fn find_any_chunk<'list>(
                         continue;
                     } 
                     else {
-                        return allocate_from_chosen_chunk(*chunk.start(), num_frames, &chunk.clone(), ValueRefMut::Array(elem));
+                        return allocate_from_chosen_chunk(*chunk.start(), num_frames,  ValueRefMut::Array(elem));
                     }
                 }
             }
@@ -720,7 +705,7 @@ fn find_any_chunk<'list>(
             let mut cursor = tree.upper_bound_mut(Bound::<&Chunk>::Unbounded);
             while let Some(chunk) = cursor.get().map(|w| w.deref()) {
                 if num_frames <= chunk.size_in_frames() && chunk.typ == MemoryRegionType::Free {
-                    return allocate_from_chosen_chunk(*chunk.start(), num_frames, &chunk.clone(), ValueRefMut::RBTree(cursor));
+                    return allocate_from_chosen_chunk(*chunk.start(), num_frames, ValueRefMut::RBTree(cursor));
                 }
                 warn!("Frame allocator: inefficient scenario: had to search multiple chunks \
                     (skipping {:?}) while trying to allocate {} frames at any address.",
@@ -738,7 +723,25 @@ fn find_any_chunk<'list>(
     Err(AllocationError::OutOfAddressSpace(num_frames))
 }
 
-
+fn retrieve_chunk_from_ref(mut chosen_chunk_ref: ValueRefMut<Chunk>) -> Option<Chunk> {
+    // Remove the chosen chunk from the free frame list.
+    let removed_val = chosen_chunk_ref.remove();
+    
+    let chosen_chunk = match removed_val {
+        RemovedValue::Array(c) => c,
+        RemovedValue::RBTree(boxed_chunk) => {
+            let mut wrapped_chunk = boxed_chunk.map(|x| *x);
+            if let Some(chunk) = wrapped_chunk.as_deref_mut() {
+                let mut replacement_chunk = Chunk::empty();
+                core::mem::swap(&mut replacement_chunk, chunk);
+                Some(replacement_chunk)
+            } else {
+                None
+            }
+        }
+    };
+    chosen_chunk
+}
 
 /// The final part of the main allocation routine that splits the given chosen chunk
 /// into multiple smaller chunks, thereby "allocating" frames from it.
@@ -748,13 +751,11 @@ fn find_any_chunk<'list>(
 fn allocate_from_chosen_chunk(
     start_frame: Frame,
     num_frames: usize,
-    chosen_chunk: &Chunk,
     mut chosen_chunk_ref: ValueRefMut<Chunk>,
 ) -> Result<(AllocatedFrames, DeferredAllocAction<'static>), AllocationError> {
-    let (new_allocation, before, after) = split_chosen_chunk(start_frame, num_frames, chosen_chunk);
+    let chosen_chunk = retrieve_chunk_from_ref(chosen_chunk_ref).ok_or(AllocationError::InternalError)?;
 
-    // Remove the chosen chunk from the free frame list.
-    let _removed_chunk = chosen_chunk_ref.remove();
+    let (new_allocation, before, after) = split_chosen_chunk(start_frame, num_frames, chosen_chunk);
 
     // TODO: Re-use the allocated wrapper if possible, rather than allocate a new one entirely.
     // if let RemovedValue::RBTree(Some(wrapper_adapter)) = _removed_chunk { ... }
@@ -775,7 +776,7 @@ fn allocate_from_chosen_chunk(
 fn split_chosen_chunk(
     start_frame: Frame,
     num_frames: usize,
-    chosen_chunk: &Chunk,
+    chosen_chunk: Chunk,
 ) -> (Chunk, Option<Chunk>, Option<Chunk>) {
     // The new allocated chunk might start in the middle of an existing chunk,
     // so we need to break up that existing chunk into 3 possible chunks: before, newly-allocated, and after.
@@ -817,10 +818,38 @@ fn split_chosen_chunk(
     (new_allocation, before, after)
 }
 
+/// The final part of the main allocation routine. 
+///
+/// The given chunk is the one we've chosen to allocate from. 
+/// This function breaks up that chunk into multiple ones and returns an `AllocatedFrames` 
+/// from (part of) that chunk, ranging from `start_frame` to `start_frame + num_frames`.
+fn adjust_chosen_chunk_contiguous(
+    start_frame: Frame,
+    num_frames: usize,
+    chunk1: Chunk,
+    chunk2_ref: ValueRefMut<Chunk>,
+) -> Result<(AllocatedFrames, DeferredAllocAction<'static>), AllocationError> {
+
+    // TODO:: should merge
+    let mut chunk2 = retrieve_chunk_from_ref(chunk2_ref).ok_or(AllocationError::InternalError)?;
+    chunk2.frames = FrameRange::new(*chunk1.start(), *chunk2.end());
+
+    let chosen_chunk = chunk2;
+
+    let (new_allocation, before, after) = split_chosen_chunk(start_frame, num_frames, chosen_chunk);
+
+    // TODO: Re-use the allocated wrapper if possible, rather than allocate a new one entirely.
+    // if let RemovedValue::RBTree(Some(wrapper_adapter)) = _removed_chunk { ... }
+
+    Ok((
+        new_allocation.as_allocated_frames(),
+        DeferredAllocAction::new(before, after),
+    ))
+}
 
 /// Returns whether the given `Frame` is contained within the given `list`.
 fn frame_is_in_list(
-    list: &StaticArrayRBTree<Chunk>,
+    list: &StaticArrayRBTree<Region>,
     frame: &Frame,
 ) -> bool {
     match &list.0 {
@@ -902,6 +931,60 @@ fn add_reserved_region(
 }
 
 
+/// Adds the given `frames` to the given `list` as a Chunk of reserved frames. 
+/// 
+/// Returns the range of **new** frames that were added to the list, 
+/// which will be a subset of the given input `frames`.
+///
+/// Currently, this function adds no new frames at all if any frames within the given `frames` list
+/// overlap any existing regions at all. 
+/// Handling partially-overlapping regions 
+fn add_reserved_region_to_region_list(
+    list: &mut StaticArrayRBTree<Region>,
+    frames: FrameRange,
+) -> Result<FrameRange, &'static str> {
+
+    // Check whether the reserved region overlaps any existing regions.
+    match &mut list.0 {
+        Inner::Array(ref mut arr) => {
+            for elem in arr.iter() {
+                if let Some(chunk) = elem {
+                    if let Some(_overlap) = chunk.overlap(&frames) {
+                        // trace!("Failed to add reserved region {:?} due to overlap {:?} with existing chunk {:?}",
+                        //     frames, _overlap, chunk
+                        // );
+                        return Err("Failed to add reserved region that overlapped with existing reserved regions (array).");
+                    }
+                }
+            }
+        }
+        Inner::RBTree(ref mut tree) => {
+            let mut cursor_mut = tree.upper_bound_mut(Bound::Included(frames.start()));
+            while let Some(chunk) = cursor_mut.get().map(|w| w.deref()) {
+                if chunk.start() > frames.end() {
+                    // We're iterating in ascending order over a sorted tree,
+                    // so we can stop looking for overlapping regions once we pass the end of the new frames to add.
+                    break;
+                }
+                if let Some(_overlap) = chunk.overlap(&frames) {
+                    // trace!("Failed to add reserved region {:?} due to overlap {:?} with existing chunk {:?}",
+                    //     frames, _overlap, chunk
+                    // );
+                    return Err("Failed to add reserved region that overlapped with existing reserved regions (RBTree).");
+                }
+                cursor_mut.move_next();
+            }
+        }
+    }
+
+    list.insert(Region {
+        typ: MemoryRegionType::Reserved,
+        frames: frames.clone(),
+    }).map_err(|_c| "BUG: Failed to insert non-overlapping frames into list.")?;
+
+    Ok(frames)
+}
+
 /// The core frame allocation routine that allocates the given number of physical frames,
 /// optionally at the requested starting `PhysicalAddress`.
 /// 
@@ -955,7 +1038,7 @@ pub fn allocate_frames_deferred(
                 !frame_is_in_list(&g, &start_frame) && !frame_is_in_list(&g, &end_frame)
             } {
                 let frames = FrameRange::new(start_frame, end_frame);
-                let new_reserved_frames = add_reserved_region(&mut RESERVED_REGIONS.lock(), frames)?;
+                let new_reserved_frames = add_reserved_region_to_region_list(&mut RESERVED_REGIONS.lock(), frames)?;
                 // If we successfully added a new reserved region,
                 // then add those frames to the actual list of *available* reserved regions.
                 let _new_free_reserved_frames = add_reserved_region(&mut free_reserved_frames_list, new_reserved_frames.clone())?;
