@@ -13,16 +13,18 @@ extern crate kernel_config;
 extern crate bit_field;
 extern crate zerocopy;
 extern crate paste;
+extern crate range_inclusive;
 
 use core::{
     cmp::{min, max},
     fmt,
     iter::Step,
-    ops::{Add, AddAssign, Deref, DerefMut, RangeInclusive, Sub, SubAssign},
+    ops::{Add, AddAssign, Deref, DerefMut, Sub, SubAssign},
 };
 use kernel_config::memory::{MAX_PAGE_NUMBER, PAGE_SIZE};
 use zerocopy::FromBytes;
 use paste::paste;
+use range_inclusive::{RangeInclusive, RangeInclusiveIterator};
 
 
 /// A macro for defining `VirtualAddress` and `PhysicalAddress` structs
@@ -460,9 +462,9 @@ macro_rules! implement_page_frame_range {
             }
             impl IntoIterator for $TypeName {
                 type Item = $chunk;
-                type IntoIter = RangeInclusive<$chunk>;
+                type IntoIter = RangeInclusiveIterator<$chunk>;
                 fn into_iter(self) -> Self::IntoIter {
-                    self.0
+                    self.0.into_iter()
                 }
             }
         }

@@ -27,6 +27,7 @@ extern crate memory_structs;
 extern crate spin;
 #[macro_use] extern crate static_assertions;
 extern crate intrusive_collections;
+extern crate range_inclusive;
 
 #[cfg(test)]
 mod test;
@@ -35,12 +36,13 @@ mod static_array_rb_tree;
 // mod static_array_linked_list;
 
 
-use core::{borrow::Borrow, cmp::{Ordering, min, max}, fmt, ops::{Deref, DerefMut}, marker::PhantomData};
+use core::{borrow::Borrow, cmp::{Ordering, min, max}, fmt, ops::{Deref, DerefMut, RangeInclusive}, marker::PhantomData};
 use kernel_config::memory::*;
 use memory_structs::{PhysicalAddress, Frame, FrameRange};
 use spin::Mutex;
 use intrusive_collections::Bound;
 use static_array_rb_tree::*;
+use range_inclusive::RangeInclusiveIterator;
 
 const FRAME_SIZE: usize = PAGE_SIZE;
 const MIN_FRAME: Frame = Frame::containing_address(PhysicalAddress::zero());
@@ -482,7 +484,7 @@ impl<'f> IntoIterator for &'f AllocatedFrames {
     fn into_iter(self) -> Self::IntoIter {
         AllocatedFramesIter {
             _owner: self,
-            range: self.frames.clone(),
+            range: self.frames.clone().into_iter(),
         }
     }
 }
@@ -501,7 +503,7 @@ impl<'f> IntoIterator for &'f AllocatedFrames {
 /// does not implement [`Iterator`] itself.
 pub struct AllocatedFramesIter<'f> {
     _owner: &'f AllocatedFrames,
-    range: FrameRange,
+    range: RangeInclusiveIterator<Frame>,
 }
 impl<'f> Iterator for AllocatedFramesIter<'f> {
     type Item = AllocatedFrame<'f>;
