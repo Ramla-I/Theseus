@@ -22,3 +22,6 @@
 	path = libs/core2
 	url = https://github.com/theseus-os/core2.git
 	shallow = true
+[submodule "libs/range_inclusive"]
+	path = libs/range_inclusive
+	url = https://github.com/Ramla-I/range_inclusive
