@@ -19,6 +19,7 @@
 //! a requested address is in a chunk that needs to be merged.
 
 #![no_std]
+#![feature(box_into_inner)]
 
 extern crate alloc;
 #[macro_use] extern crate log;
@@ -48,8 +49,8 @@ use region::*;
 use range_inclusive::RangeInclusiveIterator;
 
 const FRAME_SIZE: usize = PAGE_SIZE;
-const MIN_FRAME: Frame = Frame::containing_address(PhysicalAddress::zero());
-const MAX_FRAME: Frame = Frame::containing_address(PhysicalAddress::new_canonical(usize::MAX));
+pub(crate) const MIN_FRAME: Frame = Frame::containing_address(PhysicalAddress::zero());
+pub(crate) const MAX_FRAME: Frame = Frame::containing_address(PhysicalAddress::new_canonical(usize::MAX));
 
 // Note: we keep separate lists for "free, general-purpose" areas and "reserved" areas, as it's much faster. 
 
@@ -286,7 +287,7 @@ pub enum MemoryRegionType {
 /// This object represents ownership of the range of allocated physical frames;
 /// if this object falls out of scope, its allocated frames will be auto-deallocated upon drop. 
 pub struct AllocatedFrames {
-    frames: FrameRange,
+    frames: Chunk,
 }
 
 // AllocatedFrames must not be Cloneable, and it must not expose its inner frames as mutable.
@@ -309,7 +310,7 @@ impl AllocatedFrames {
     /// Can be used as a placeholder, but will not permit any real usage. 
     pub const fn empty() -> AllocatedFrames {
         AllocatedFrames {
-            frames: FrameRange::empty()
+            frames: Chunk::empty()
         }
     }
 
@@ -321,23 +322,33 @@ impl AllocatedFrames {
     ///
     /// If either of those conditions are met, `self` is modified and `Ok(())` is returned,
     /// otherwise `Err(other)` is returned.
-    pub fn merge(&mut self, other: AllocatedFrames) -> Result<(), AllocatedFrames> {
-        if *self.start() == *other.end() + 1 {
-            // `other` comes contiguously before `self`
-            self.frames = FrameRange::new(*other.start(), *self.end());
-        } 
-        else if *self.end() + 1 == *other.start() {
-            // `self` comes contiguously before `other`
-            self.frames = FrameRange::new(*self.start(), *other.end());
-        }
-        else {
-            // non-contiguous
-            return Err(other);
+    pub fn merge(&mut self, mut other: AllocatedFrames) -> Result<(), AllocatedFrames> {
+        // if *self.start() == *other.end() + 1 {
+        //     // `other` comes contiguously before `self`
+        //     self.frames = FrameRange::new(*other.start(), *self.end());
+        // } 
+        // else if *self.end() + 1 == *other.start() {
+        //     // `self` comes contiguously before `other`
+        //     self.frames = FrameRange::new(*self.start(), *other.end());
+        // }
+        // else {
+        //     // non-contiguous
+        //     return Err(other);
+        // }
+
+        let mut chunk = core::mem::replace(&mut other.frames, Chunk::empty());
+        match self.frames.merge(chunk) {
+            Ok(_) => {
+                // ensure the now-merged AllocatedFrames doesn't run its drop handler and free its frames.
+                core::mem::forget(other); 
+                Ok(())
+            },
+            Err(chunk) => {
+                Err(AllocatedFrames{frames: chunk})
+            }
+
         }
 
-        // ensure the now-merged AllocatedFrames doesn't run its drop handler and free its frames.
-        core::mem::forget(other); 
-        Ok(())
     }
 
     /// Splits this `AllocatedFrames` into two separate `AllocatedFrames` objects:
@@ -352,34 +363,49 @@ impl AllocatedFrames {
     /// Returns an `Err` containing this `AllocatedFrames` if `at_frame` is otherwise out of bounds.
     /// 
     /// [`core::slice::split_at()`]: https://doc.rust-lang.org/core/primitive.slice.html#method.split_at
-    pub fn split(self, at_frame: Frame) -> Result<(AllocatedFrames, AllocatedFrames), AllocatedFrames> {
-        let end_of_first = at_frame - 1;
+    pub fn split(mut self, at_frame: Frame) -> Result<(AllocatedFrames, AllocatedFrames), AllocatedFrames> {
+        // let end_of_first = at_frame - 1;
 
-        let (first, second) = if at_frame == *self.start() && at_frame <= *self.end() {
-            let first  = FrameRange::empty();
-            let second = FrameRange::new(at_frame, *self.end());
-            (first, second)
-        } 
-        else if at_frame == (*self.end() + 1) && end_of_first >= *self.start() {
-            let first  = FrameRange::new(*self.start(), *self.end()); 
-            let second = FrameRange::empty();
-            (first, second)
-        }
-        else if at_frame > *self.start() && end_of_first <= *self.end() {
-            let first  = FrameRange::new(*self.start(), end_of_first);
-            let second = FrameRange::new(at_frame, *self.end());
-            (first, second)
-        }
-        else {
-            return Err(self);
-        };
+        // let (first, second) = if at_frame == *self.start() && at_frame <= *self.end() {
+        //     let first  = FrameRange::empty();
+        //     let second = FrameRange::new(at_frame, *self.end());
+        //     (first, second)
+        // } 
+        // else if at_frame == (*self.end() + 1) && end_of_first >= *self.start() {
+        //     let first  = FrameRange::new(*self.start(), *self.end()); 
+        //     let second = FrameRange::empty();
+        //     (first, second)
+        // }
+        // else if at_frame > *self.start() && end_of_first <= *self.end() {
+        //     let first  = FrameRange::new(*self.start(), end_of_first);
+        //     let second = FrameRange::new(at_frame, *self.end());
+        //     (first, second)
+        // }
+        // else {
+        //     return Err(self);
+        // };
 
         // ensure the original AllocatedFrames doesn't run its drop handler and free its frames.
-        core::mem::forget(self);   
-        Ok((
-            AllocatedFrames { frames: first }, 
-            AllocatedFrames { frames: second },
-        ))
+        // core::mem::forget(self);   
+        // Ok((
+        //     AllocatedFrames { frames: first }, 
+        //     AllocatedFrames { frames: second },
+        // ))
+        let mut chunk = core::mem::replace(&mut self.frames, Chunk::empty());
+        match chunk.split_at(at_frame) {
+            Ok((chunk1, chunk2)) => {
+                // ensure the now-merged AllocatedFrames doesn't run its drop handler and free its frames.
+                core::mem::forget(self); 
+                Ok((
+                    AllocatedFrames{frames: chunk1}, 
+                    AllocatedFrames{frames: chunk2}
+                ))
+            },
+            Err(chunk) => {
+                Err(AllocatedFrames{frames: chunk})
+            }
+
+        }
     }
 
     /// Returns an `AllocatedFrame` if this `AllocatedFrames` object contains only one frame.
@@ -404,7 +430,10 @@ impl AllocatedFrames {
 /// the `page_table_entry` crate, since `page_table_entry` must depend on types
 /// from this crate in order to enforce safety when modifying page table entries.
 fn into_allocated_frames(frames: FrameRange) -> AllocatedFrames {
-    AllocatedFrames { frames }
+    AllocatedFrames { frames: Chunk{ 
+        typ: MemoryRegionType::Unknown,
+        frames 
+    } }
 }
 
 impl Drop for AllocatedFrames {
@@ -729,12 +758,9 @@ fn retrieve_chunk_from_ref(mut chosen_chunk_ref: ValueRefMut<Chunk>) -> Option<C
     
     let chosen_chunk = match removed_val {
         RemovedValue::Array(c) => c,
-        RemovedValue::RBTree(boxed_chunk) => {
-            let mut wrapped_chunk = boxed_chunk.map(|x| *x);
-            if let Some(chunk) = wrapped_chunk.as_deref_mut() {
-                let mut replacement_chunk = Chunk::empty();
-                core::mem::swap(&mut replacement_chunk, chunk);
-                Some(replacement_chunk)
+        RemovedValue::RBTree(option_chunk) => {
+            if let Some(boxed_chunk) = option_chunk {  
+                Some(boxed_chunk.into_inner())
             } else {
                 None
             }
@@ -755,7 +781,7 @@ fn allocate_from_chosen_chunk(
 ) -> Result<(AllocatedFrames, DeferredAllocAction<'static>), AllocationError> {
     let chosen_chunk = retrieve_chunk_from_ref(chosen_chunk_ref).ok_or(AllocationError::InternalError)?;
 
-    let (new_allocation, before, after) = split_chosen_chunk(start_frame, num_frames, chosen_chunk);
+    let (new_allocation, before, after) = chosen_chunk.split(start_frame, num_frames);
 
     // TODO: Re-use the allocated wrapper if possible, rather than allocate a new one entirely.
     // if let RemovedValue::RBTree(Some(wrapper_adapter)) = _removed_chunk { ... }
@@ -767,57 +793,6 @@ fn allocate_from_chosen_chunk(
 
 }
 
-/// An inner function that breaks up the given chunk into multiple smaller chunks.
-/// 
-/// Returns a tuple of three chunks:
-/// 1. The `Chunk` containing the requested range of frames starting at `start_frame`.
-/// 2. The range of frames in the `chosen_chunk` that came before the beginning of the requested frame range.
-/// 3. The range of frames in the `chosen_chunk` that came after the end of the requested frame range.
-fn split_chosen_chunk(
-    start_frame: Frame,
-    num_frames: usize,
-    chosen_chunk: Chunk,
-) -> (Chunk, Option<Chunk>, Option<Chunk>) {
-    // The new allocated chunk might start in the middle of an existing chunk,
-    // so we need to break up that existing chunk into 3 possible chunks: before, newly-allocated, and after.
-    //
-    // Because Frames and PhysicalAddresses use saturating add/subtract, we need to double-check that 
-    // we don't create overlapping duplicate Chunks at either the very minimum or the very maximum of the address space.
-    let new_allocation = Chunk {
-        typ: chosen_chunk.typ,
-        // The end frame is an inclusive bound, hence the -1. Parentheses are needed to avoid overflow.
-        frames: FrameRange::new(start_frame, start_frame + (num_frames - 1)),
-    };
-    let before = if start_frame == MIN_FRAME {
-        None
-    } else {
-        Some(Chunk {
-            typ: chosen_chunk.typ,
-            frames: FrameRange::new(*chosen_chunk.start(), *new_allocation.start() - 1),
-        })
-    };
-    let after = if new_allocation.end() == &MAX_FRAME { 
-        None
-    } else {
-        Some(Chunk {
-            typ: chosen_chunk.typ,
-            frames: FrameRange::new(*new_allocation.end() + 1, *chosen_chunk.end()),
-        })
-    };
-
-    // some sanity checks -- these can be removed or disabled for better performance
-    if let Some(ref b) = before {
-        assert!(!new_allocation.contains(b.end()));
-        assert!(!b.contains(new_allocation.start()));
-    }
-    if let Some(ref a) = after {
-        assert!(!new_allocation.contains(a.start()));
-        assert!(!a.contains(new_allocation.end()));
-    }
-
-    (new_allocation, before, after)
-}
-
 /// The final part of the main allocation routine. 
 ///
 /// The given chunk is the one we've chosen to allocate from. 
@@ -826,17 +801,18 @@ fn split_chosen_chunk(
 fn adjust_chosen_chunk_contiguous(
     start_frame: Frame,
     num_frames: usize,
-    chunk1: Chunk,
+    mut chunk1: Chunk,
     chunk2_ref: ValueRefMut<Chunk>,
 ) -> Result<(AllocatedFrames, DeferredAllocAction<'static>), AllocationError> {
 
     // TODO:: should merge
     let mut chunk2 = retrieve_chunk_from_ref(chunk2_ref).ok_or(AllocationError::InternalError)?;
-    chunk2.frames = FrameRange::new(*chunk1.start(), *chunk2.end());
+    // chunk2.frames = FrameRange::new(*chunk1.start(), *chunk2.end());
 
-    let chosen_chunk = chunk2;
+    chunk1.merge(chunk2).expect("FRAME_ALLOCATOR: Failed to merge two chunks");
+    let chosen_chunk = chunk1;
 
-    let (new_allocation, before, after) = split_chosen_chunk(start_frame, num_frames, chosen_chunk);
+    let (new_allocation, before, after) = chosen_chunk.split(start_frame, num_frames);
 
     // TODO: Re-use the allocated wrapper if possible, rather than allocate a new one entirely.
     // if let RemovedValue::RBTree(Some(wrapper_adapter)) = _removed_chunk { ... }
