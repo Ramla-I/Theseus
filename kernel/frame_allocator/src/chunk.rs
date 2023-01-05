@@ -17,11 +17,36 @@ use core::{borrow::Borrow, cmp::{Ordering, min, max}, fmt, ops::{Deref, DerefMut
 #[derive(Debug, Eq)]
 pub struct Chunk {
     /// The type of this memory chunk, e.g., whether it's in a free or reserved region.
-    pub(crate)typ: MemoryRegionType,
+    typ: MemoryRegionType,
     /// The Frames covered by this chunk, an inclusive range. 
-    pub(crate)frames: FrameRange,
+    frames: FrameRange,
 }
+assert_not_impl_any!(Chunk: DerefMut, Clone);
+
 impl Chunk {
+
+    pub(crate) fn new(typ: MemoryRegionType, frames: FrameRange) -> Result<Chunk, &'static str>{
+        Ok(Chunk {
+            typ,
+            frames
+        })
+    }
+
+    pub(crate) fn trusted_new(typ: MemoryRegionType, frames: FrameRange) -> Chunk {
+        Chunk {
+            typ,
+            frames
+        }
+    }
+
+    pub(crate) fn frames(&self) -> FrameRange {
+        self.frames.clone()
+    }
+
+    pub(crate) fn typ(&self) -> MemoryRegionType {
+        self.typ
+    }
+
     pub(crate) fn as_allocated_frames(self) -> AllocatedFrames {
         AllocatedFrames {
             frames: self,

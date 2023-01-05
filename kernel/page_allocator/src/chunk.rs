@@ -18,6 +18,8 @@ pub(crate) struct Chunk {
 	/// The Pages covered by this chunk, an inclusive range. 
 	pub(crate) pages: PageRange,
 }
+assert_not_impl_any!(Chunk: DerefMut, Clone);
+
 impl Chunk {
 	pub(crate) fn as_allocated_pages(self) -> AllocatedPages {
 		AllocatedPages {

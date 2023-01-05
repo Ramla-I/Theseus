@@ -98,9 +98,10 @@ pub fn init<F, R, P>(
         return Err("BUG: Frame allocator was already initialized, cannot be initialized twice.");
     }
 
-    let mut free_list: [Option<Chunk>; 32] = Default::default();
+    // start with all lists using the Region type so we can merge and manipulate until we're sure we have non-overlapping regions
+    let mut free_list: [Option<Region>; 32] = Default::default();
     let mut free_list_idx = 0;
-    let mut reserved_list: [Option<Chunk>; 32] = Default::default();
+    let mut reserved_list: [Option<Region>; 32] = Default::default();
     let mut reserved_list_idx = 0;
     let mut free_regions: [Option<Region>; 32] = Default::default();
     let mut reserved_regions: [Option<Region>; 32] = Default::default();
@@ -134,7 +135,7 @@ pub fn init<F, R, P>(
             }
         }
         if !reserved_was_merged {
-            reserved_list[reserved_list_idx] = Some(Chunk {
+            reserved_list[reserved_list_idx] = Some(Region {
                 typ:  MemoryRegionType::Reserved,
                 frames: reserved.frames.clone(),
             });
@@ -157,6 +158,25 @@ pub fn init<F, R, P>(
         }
     }
 
+
+    // Here, since we're sure we now have a list of regions that we don't overlap, we can create lists of formally verified Chunks
+    let mut free_list_w_chunks: [Option<Chunk>; 32] = Default::default();
+    let mut reserved_list_w_chunks: [Option<Chunk>; 32] = Default::default();
+    for i in 0..32 {
+        if let Some(chunk) = &reserved_list[i] {
+            reserved_list_w_chunks[i] = Some(Chunk::new(
+                MemoryRegionType::Reserved,
+                chunk.frames.clone()
+            )?);
+        }
+        if let Some(chunk) = &free_list[i] {
+            free_list_w_chunks[i] = Some(Chunk::new(
+                MemoryRegionType::Free,
+                chunk.frames.clone()
+            )?);
+        }
+    }
+
     for i in 0..32 {
         if let Some(chunk) = &reserved_list[i] {
             reserved_regions[i] = Some(Region {
@@ -172,8 +192,8 @@ pub fn init<F, R, P>(
         }
     }
 
-    *FREE_GENERAL_FRAMES_LIST.lock()  = StaticArrayRBTree::new(free_list);
-    *FREE_RESERVED_FRAMES_LIST.lock() = StaticArrayRBTree::new(reserved_list);
+    *FREE_GENERAL_FRAMES_LIST.lock()  = StaticArrayRBTree::new(free_list_w_chunks);
+    *FREE_RESERVED_FRAMES_LIST.lock() = StaticArrayRBTree::new(reserved_list_w_chunks);
     *GENERAL_REGIONS.lock()           = StaticArrayRBTree::new(free_regions);
     *RESERVED_REGIONS.lock()          = StaticArrayRBTree::new(reserved_regions);
 
@@ -189,7 +209,7 @@ pub fn init<F, R, P>(
 /// the given list of `reserved_physical_memory_areas`.
 fn check_and_add_free_region<P, R>(
     area: &FrameRange,
-    free_list: &mut [Option<Chunk>; 32],
+    free_list: &mut [Option<Region>; 32],
     free_list_idx: &mut usize,
     reserved_physical_memory_areas: R,
 )
@@ -235,7 +255,7 @@ fn check_and_add_free_region<P, R>(
 
     let new_area = FrameRange::new(current_start, current_end);
     if new_area.size_in_frames() > 0 {
-        free_list[*free_list_idx] = Some(Chunk {
+        free_list[*free_list_idx] = Some(Region {
             typ:  MemoryRegionType::Free,
             frames: new_area,
         });
@@ -430,10 +450,12 @@ impl AllocatedFrames {
 /// the `page_table_entry` crate, since `page_table_entry` must depend on types
 /// from this crate in order to enforce safety when modifying page table entries.
 fn into_allocated_frames(frames: FrameRange) -> AllocatedFrames {
-    AllocatedFrames { frames: Chunk{ 
-        typ: MemoryRegionType::Unknown,
-        frames 
-    } }
+    let typ = if frame_is_in_list(&RESERVED_REGIONS.lock(), frames.start()) {
+        MemoryRegionType::Reserved
+    } else {
+        MemoryRegionType::Free
+    };
+    AllocatedFrames { frames: Chunk::trusted_new(typ, frames) }
 }
 
 impl Drop for AllocatedFrames {
@@ -449,10 +471,8 @@ impl Drop for AllocatedFrames {
 
         // Simply add the newly-deallocated chunk to the free frames list.
         let mut locked_list = list.lock();
-        let res = locked_list.insert(Chunk {
-            typ,
-            frames: self.frames.clone(),
-        });
+        let chunk = Chunk::empty();
+        let res = locked_list.insert(core::mem::replace(&mut self.frames, chunk));
         match res {
             Ok(_inserted_free_chunk) => return,
             Err(c) => error!("BUG: couldn't insert deallocated chunk {:?} into free frame list", c),
@@ -568,14 +588,14 @@ impl<'list> Drop for DeferredAllocAction<'list> {
 
         // Insert all of the chunks, both allocated and free ones, into the list. 
         if chunk1.size_in_frames() > 0 {
-            match chunk1.typ {
+            match chunk1.typ() {
                 MemoryRegionType::Free     => { self.free_list.lock().insert(chunk1).unwrap(); }
                 MemoryRegionType::Reserved => { self.reserved_list.lock().insert(chunk1).unwrap(); }
                 _ => error!("BUG likely: DeferredAllocAction encountered free1 chunk {:?} of a type Unknown", chunk1),
             }
         }
         if chunk2.size_in_frames() > 0 {
-            match chunk2.typ {
+            match chunk2.typ() {
                 MemoryRegionType::Free     => { self.free_list.lock().insert(chunk2).unwrap(); }
                 MemoryRegionType::Reserved => { self.reserved_list.lock().insert(chunk2).unwrap(); }
                 _ => error!("BUG likely: DeferredAllocAction encountered free2 chunk {:?} of a type Unknown", chunk2),
@@ -718,7 +738,7 @@ fn find_any_chunk<'list>(
             for elem in arr.iter_mut() {
                 if let Some(chunk) = elem {
                     // Skip chunks that are too-small or in the designated regions.
-                    if  chunk.size_in_frames() < num_frames || chunk.typ != MemoryRegionType::Free {
+                    if  chunk.size_in_frames() < num_frames || chunk.typ() != MemoryRegionType::Free {
                         continue;
                     } 
                     else {
@@ -733,7 +753,7 @@ fn find_any_chunk<'list>(
             // This results in an O(1) allocation time in the general case, until all address ranges are already in use.
             let mut cursor = tree.upper_bound_mut(Bound::<&Chunk>::Unbounded);
             while let Some(chunk) = cursor.get().map(|w| w.deref()) {
-                if num_frames <= chunk.size_in_frames() && chunk.typ == MemoryRegionType::Free {
+                if num_frames <= chunk.size_in_frames() && chunk.typ() == MemoryRegionType::Free {
                     return allocate_from_chosen_chunk(*chunk.start(), num_frames, ValueRefMut::RBTree(cursor));
                 }
                 warn!("Frame allocator: inefficient scenario: had to search multiple chunks \
@@ -898,10 +918,10 @@ fn add_reserved_region(
         }
     }
 
-    list.insert(Chunk {
-        typ: MemoryRegionType::Reserved,
-        frames: frames.clone(),
-    }).map_err(|_c| "BUG: Failed to insert non-overlapping frames into list.")?;
+    list.insert(Chunk::new(
+        MemoryRegionType::Reserved,
+        frames.clone(),
+    )?).map_err(|_c| "BUG: Failed to insert non-overlapping frames into list.")?;
 
     Ok(frames)
 }
