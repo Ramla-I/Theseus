@@ -11,6 +11,7 @@ var sourcesIndex = JSON.parse('{\
 "atomic_linked_list":["",[],["atomic_linked_list.rs","atomic_map.rs","lib.rs"]],\
 "block_allocator":["",[],["lib.rs"]],\
 "block_cache":["",[],["lib.rs"]],\
+"boot_info":["",[],["lib.rs","multiboot2.rs"]],\
 "bootloader_modules":["",[],["lib.rs"]],\
 "captain":["",[],["lib.rs"]],\
 "catch_unwind":["",[],["lib.rs"]],\
@@ -22,6 +23,7 @@ var sourcesIndex = JSON.parse('{\
 "context_switch_regular":["",[],["lib.rs"]],\
 "context_switch_sse":["",[],["lib.rs"]],\
 "cow_arc":["",[],["lib.rs"]],\
+"cpu":["",[],["lib.rs"]],\
 "crate_metadata":["",[],["lib.rs"]],\
 "crate_metadata_serde":["",[],["lib.rs"]],\
 "crate_name_utils":["",[],["lib.rs"]],\
@@ -34,6 +36,7 @@ var sourcesIndex = JSON.parse('{\
 "dfqueue":["",[],["lib.rs","mpsc_queue.rs"]],\
 "displayable":["",[],["lib.rs"]],\
 "dmar":["",[],["device_scope.rs","drhd.rs","lib.rs"]],\
+"dreadnought":["",[],["lib.rs","task.rs","time.rs"]],\
 "e1000":["",[],["lib.rs","regs.rs","test_e1000_driver.rs"]],\
 "environment":["",[],["lib.rs"]],\
 "ethernet_smoltcp_device":["",[],["lib.rs"]],\
@@ -85,8 +88,8 @@ var sourcesIndex = JSON.parse('{\
 "multiple_heaps":["",[],["lib.rs"]],\
 "mutex_preemption":["",[],["lib.rs","mutex_preempt.rs","rwlock_preempt.rs"]],\
 "mutex_sleep":["",[],["lib.rs","mutex.rs","rwlock.rs"]],\
-"nano_core":["",[],["lib.rs","libm.rs","stack_smash_protection.rs"]],\
-"net":["",[],["device.rs","error.rs","interface.rs","lib.rs"]],\
+"nano_core":["",[],["bios.rs","lib.rs","libm.rs","stack_smash_protection.rs"]],\
+"net":["",[],["device.rs","error.rs","interface.rs","lib.rs","socket.rs"]],\
 "network_interface_card":["",[],["lib.rs"]],\
 "network_manager":["",[],["lib.rs"]],\
 "nic_buffers":["",[],["lib.rs"]],\
@@ -94,6 +97,7 @@ var sourcesIndex = JSON.parse('{\
 "nic_queues":["",[],["lib.rs"]],\
 "no_drop":["",[],["lib.rs"]],\
 "ota_update_client":["",[],["lib.rs"]],\
+"owned_borrowed_trait":["",[],["lib.rs"]],\
 "page_allocator":["",[],["lib.rs","static_array_rb_tree.rs"]],\
 "page_attribute_table":["",[],["lib.rs"]],\
 "page_table_entry":["",[],["lib.rs"]],\
@@ -110,9 +114,7 @@ var sourcesIndex = JSON.parse('{\
 "pmu_x86":["",[],["lib.rs","stat.rs"]],\
 "port_io":["",[],["lib.rs","x86.rs"]],\
 "preemption":["",[],["lib.rs"]],\
-"print":["",[],["lib.rs"]],\
 "ps2":["",[],["lib.rs"]],\
-"ps2_controller":["",[],["lib.rs"]],\
 "pte_flags":["",[],["lib.rs","pte_flags_aarch64.rs","pte_flags_x86_64.rs"]],\
 "random":["",[],["lib.rs"]],\
 "rendezvous":["",[],["lib.rs"]],\
@@ -154,7 +156,6 @@ var sourcesIndex = JSON.parse('{\
 "str_ref":["",[],["lib.rs"]],\
 "task":["",[],["lib.rs"]],\
 "task_fs":["",[],["lib.rs"]],\
-"terminal_print":["",[],["lib.rs"]],\
 "text_display":["",[],["lib.rs"]],\
 "text_terminal":["",[],["ansi_colors.rs","ansi_style.rs","lib.rs"]],\
 "theseus_features":["",[],["lib.rs"]],\
@@ -163,6 +164,7 @@ var sourcesIndex = JSON.parse('{\
 "tlb_shootdown":["",[],["lib.rs"]],\
 "tsc":["",[],["lib.rs"]],\
 "tss":["",[],["lib.rs"]],\
+"tty":["",[],["channel.rs","discipline.rs","lib.rs"]],\
 "unwind":["",[],["lib.rs","lsda.rs","registers.rs"]],\
 "util":["",[],["lib.rs"]],\
 "vfs_node":["",[],["lib.rs"]],\
