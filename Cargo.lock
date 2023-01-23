@@ -2705,6 +2705,7 @@ dependencies = [
 [[package]]
 name = "range_inclusive"
 version = "0.1.0"
+source = "git+https://github.com/Ramla-I/range_inclusive#7998070408bc72a226c5a025f7b7df0f29a0a3c9"
 
 [[package]]
 name = "rangemap"
