@@ -1108,6 +1108,7 @@ dependencies = [
  "range_inclusive",
  "spin 0.9.4",
  "static_assertions",
+ "trusted_chunk",
 ]
 
 [[package]]
@@ -2589,6 +2590,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "prusti-contracts"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2176455bb39f9d5624a6cab7fcdd2fc01cae31bb375e32c771e12147500ad475"
+dependencies = [
+ "prusti-contracts-proc-macros",
+]
+
+[[package]]
+name = "prusti-contracts-proc-macros"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76696edede87b1c7de1b6e56c3d3e68cd9c3924b7375c6c79d15aa08685cf2fc"
+
+[[package]]
 name = "ps"
 version = "0.1.0"
 dependencies = [
@@ -3864,6 +3880,15 @@ dependencies = [
  "terminal_print",
  "test_thread_local",
  "thread_local_macro",
+]
+
+[[package]]
+name = "trusted_chunk"
+version = "0.1.0"
+dependencies = [
+ "cfg-if 1.0.0",
+ "prusti-contracts",
+ "range_inclusive",
 ]
 
 [[package]]

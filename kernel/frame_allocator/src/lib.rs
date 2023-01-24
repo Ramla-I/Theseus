@@ -29,6 +29,7 @@ extern crate spin;
 #[macro_use] extern crate static_assertions;
 extern crate intrusive_collections;
 extern crate range_inclusive;
+extern crate trusted_chunk;
 
 #[cfg(test)]
 mod test;
@@ -37,6 +38,7 @@ mod static_array_rb_tree;
 // mod static_array_linked_list;
 mod chunk;
 mod region;
+mod trusted_chunk_shim;
 
 use core::{borrow::Borrow, cmp::{Ordering, min, max}, fmt, ops::{Deref, DerefMut, RangeInclusive}, marker::PhantomData};
 use kernel_config::memory::*;
@@ -197,6 +199,7 @@ pub fn init<F, R, P>(
     *GENERAL_REGIONS.lock()           = StaticArrayRBTree::new(free_regions);
     *RESERVED_REGIONS.lock()          = StaticArrayRBTree::new(reserved_regions);
 
+    trusted_chunk_shim::INTO_VERIFIED_CHUNK_FUNC.call_once(|| trusted_chunk::init());
     Ok(into_allocated_frames)
 }
 

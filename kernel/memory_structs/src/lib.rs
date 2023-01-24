@@ -443,6 +443,11 @@ macro_rules! implement_page_frame_range {
                         None
                     }
                 }
+
+                #[doc = "Returns a `RangeInclusive<usize>` with the same bounds."]
+                pub fn to_range_inclusive(&self) -> RangeInclusive<usize> {
+                    RangeInclusive::new(self.start().number(), self.end().number())
+                }
             }
             impl fmt::Debug for $TypeName {
                 fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
