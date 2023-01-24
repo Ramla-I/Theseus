@@ -36,7 +36,7 @@ mod test;
 
 mod static_array_rb_tree;
 // mod static_array_linked_list;
-mod chunk;
+// mod chunk;
 mod region;
 mod trusted_chunk_shim;
 
@@ -46,7 +46,7 @@ use memory_structs::{PhysicalAddress, Frame, FrameRange};
 use spin::Mutex;
 use intrusive_collections::Bound;
 use static_array_rb_tree::*;
-use chunk::*;
+use trusted_chunk_shim::*;
 use region::*;
 use range_inclusive::RangeInclusiveIterator;
 
@@ -458,7 +458,7 @@ fn into_allocated_frames(frames: FrameRange) -> AllocatedFrames {
     } else {
         MemoryRegionType::Free
     };
-    AllocatedFrames { frames: Chunk::trusted_new(typ, frames) }
+    AllocatedFrames { frames: Chunk::trusted_new(typ, frames).expect("logic error: should be able to create a chunk from unmapped frames") }
 }
 
 impl Drop for AllocatedFrames {

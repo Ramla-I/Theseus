@@ -78,11 +78,11 @@ impl Chunk {
         self.typ
     }
 
-    // pub(crate) fn as_allocated_frames(self) -> AllocatedFrames {
-    //     AllocatedFrames {
-    //         frames: self,
-    //     }
-    // }
+    pub(crate) fn as_allocated_frames(self) -> AllocatedFrames {
+        AllocatedFrames {
+            frames: self,
+        }
+    }
 
     /// Returns a new `Chunk` with an empty range of frames. 
     pub(crate) const fn empty() -> Chunk {
@@ -162,36 +162,32 @@ impl Chunk {
         ))
     }
 
-    // pub fn split_at(self, at_frame: Frame) -> Result<(Chunk, Chunk), Chunk> {
-    //     let end_of_first = at_frame - 1;
+    pub fn split_at(mut self, at_frame: Frame) -> Result<(Chunk, Chunk), Chunk> {
+        if self.is_empty() {
+            return Err(self);
+        }
+        let typ = self.typ;
 
-    //     let (first, second) = if at_frame == *self.start() && at_frame <= *self.end() {
-    //         let first  = FrameRange::empty();
-    //         let second = FrameRange::new(at_frame, *self.end());
-    //         (first, second)
-    //     } 
-    //     else if at_frame == (*self.end() + 1) && end_of_first >= *self.start() {
-    //         let first  = FrameRange::new(*self.start(), *self.end()); 
-    //         let second = FrameRange::empty();
-    //         (first, second)
-    //     }
-    //     else if at_frame > *self.start() && end_of_first <= *self.end() {
-    //         let first  = FrameRange::new(*self.start(), end_of_first);
-    //         let second = FrameRange::new(at_frame, *self.end());
-    //         (first, second)
-    //     }
-    //     else {
-    //         return Err(self);
-    //     };
+        // take out the TrustedChunk
+        let verified_chunk = core::mem::replace(&mut self.verified_chunk, TrustedChunk::empty());
 
-    //     let typ = self.typ;
-    //     // ensure the original AllocatedFrames doesn't run its drop handler and free its frames.
-    //     core::mem::forget(self);   
-    //     Ok((
-    //         Chunk { typ , frames: first }, 
-    //         Chunk { typ , frames: second },
-    //     ))
-    // }
+        let (first, second) = verified_chunk.split_at(at_frame.number())
+            .map_err(|vchunk| {
+                let _ = core::mem::replace(&mut self.verified_chunk, vchunk);
+                self
+            })?;
+
+        Ok((Chunk {
+            typ,
+            frames: into_frame_range(&first.frames()),
+            verified_chunk: first
+        },
+        Chunk {
+            typ,
+            frames: into_frame_range(&second.frames()),
+            verified_chunk: second
+        }))
+    }
 }
 
 impl Deref for Chunk {
