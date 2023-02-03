@@ -1644,6 +1644,13 @@
 <a href="#1644" id="1644">1644</a>
 <a href="#1645" id="1645">1645</a>
 <a href="#1646" id="1646">1646</a>
+<a href="#1647" id="1647">1647</a>
+<a href="#1648" id="1648">1648</a>
+<a href="#1649" id="1649">1649</a>
+<a href="#1650" id="1650">1650</a>
+<a href="#1651" id="1651">1651</a>
+<a href="#1652" id="1652">1652</a>
+<a href="#1653" id="1653">1653</a>
 </pre><pre class="rust"><code><span class="doccomment">//! This crate contains the `Task` structure for supporting multithreading, 
 //! and the associated code for dealing with tasks.
 //! 
@@ -1744,7 +1751,7 @@
 <span class="kw">impl</span>&lt;<span class="lifetime">&#39;p</span>&gt; From&lt;<span class="kw-2">&amp;</span>PanicInfo&lt;<span class="lifetime">&#39;p</span>&gt;&gt; <span class="kw">for </span>PanicInfoOwned {
     <span class="kw">fn </span>from(info: <span class="kw-2">&amp;</span>PanicInfo) -&gt; PanicInfoOwned {
         <span class="kw">let </span>msg = info.message()
-            .map(|m| <span class="macro">format!</span>(<span class="string">&quot;{}&quot;</span>, m))
+            .map(|m| <span class="macro">format!</span>(<span class="string">&quot;{m}&quot;</span>))
             .unwrap_or_default();
         <span class="kw">let </span>(file, line, column) = <span class="kw">if let </span><span class="prelude-val">Some</span>(loc) = info.location() {
             (String::from(loc.file()), loc.line(), loc.column())
@@ -1827,8 +1834,8 @@
     <span class="kw">fn </span>fmt(<span class="kw-2">&amp;</span><span class="self">self</span>, f: <span class="kw-2">&amp;mut </span>fmt::Formatter) -&gt; <span class="prelude-ty">Result</span>&lt;(), fmt::Error&gt; {
         <span class="kw">match </span><span class="self">self </span>{
             <span class="self">Self</span>::Requested         =&gt; <span class="macro">write!</span>(f, <span class="string">&quot;Requested&quot;</span>),
-            <span class="self">Self</span>::Panic(panic_info) =&gt; <span class="macro">write!</span>(f, <span class="string">&quot;Panicked at {}&quot;</span>, panic_info),
-            <span class="self">Self</span>::Exception(num)    =&gt; <span class="macro">write!</span>(f, <span class="string">&quot;Exception {:#X}({})&quot;</span>, num, num),
+            <span class="self">Self</span>::Panic(panic_info) =&gt; <span class="macro">write!</span>(f, <span class="string">&quot;Panicked at {panic_info}&quot;</span>),
+            <span class="self">Self</span>::Exception(num)    =&gt; <span class="macro">write!</span>(f, <span class="string">&quot;Exception {num:#X}({num})&quot;</span>),
         }
     }
 }
@@ -2034,8 +2041,8 @@
 }
 
 <span class="comment">// Ensure that atomic fields in the `Tast` struct are actually lock-free atomics.
-</span><span class="macro">const_assert!</span>(AtomicCell::&lt;OptionU8&gt;::is_lock_free());
-<span class="macro">const_assert!</span>(AtomicCell::&lt;RunState&gt;::is_lock_free());
+</span><span class="kw">const _</span>: () = <span class="macro">assert!</span>(AtomicCell::&lt;OptionU8&gt;::is_lock_free());
+<span class="kw">const _</span>: () = <span class="macro">assert!</span>(AtomicCell::&lt;RunState&gt;::is_lock_free());
 
 <span class="kw">impl </span>fmt::Debug <span class="kw">for </span>Task {
     <span class="kw">fn </span>fmt(<span class="kw-2">&amp;</span><span class="self">self</span>, f: <span class="kw-2">&amp;mut </span>fmt::Formatter) -&gt; fmt::Result {
@@ -2144,7 +2151,7 @@
                 waker: <span class="prelude-val">None</span>,
             }),
             id: task_id,
-            name: <span class="macro">format!</span>(<span class="string">&quot;task_{}&quot;</span>, task_id),
+            name: <span class="macro">format!</span>(<span class="string">&quot;task_{task_id}&quot;</span>),
             running_on_cpu: AtomicCell::new(<span class="prelude-val">None</span>.into()),
             runstate: AtomicCell::new(RunState::Initing),
             suspended: AtomicBool::new(<span class="bool-val">false</span>),
@@ -2964,7 +2971,7 @@
     /// ## Return
     /// Returns a [`JoinableTaskRef`], which derefs into the newly-created `TaskRef`
     /// and can be used to &quot;join&quot; this task (wait for it to exit) and obtain its exit value.
-    </span><span class="kw">pub fn </span>new(task: Task) -&gt; JoinableTaskRef {
+    </span><span class="kw">pub fn </span>create(task: Task) -&gt; JoinableTaskRef {
         <span class="kw">let </span>exit_value_mailbox = Mutex::new(<span class="prelude-val">None</span>);
         <span class="kw">let </span>taskref = TaskRef(Arc::new(TaskRefInner { task, exit_value_mailbox }));
 
@@ -3109,12 +3116,12 @@
         <span class="prelude-val">None</span>,
         bootstrap_task_cleanup_failure,
     );
-    bootstrap_task.name = <span class="macro">format!</span>(<span class="string">&quot;bootstrap_task_core_{}&quot;</span>, apic_id);
+    bootstrap_task.name = <span class="macro">format!</span>(<span class="string">&quot;bootstrap_task_core_{apic_id}&quot;</span>);
     bootstrap_task.runstate.store(RunState::Runnable);
     bootstrap_task.running_on_cpu.store(<span class="prelude-val">Some</span>(apic_id).into()); 
     bootstrap_task.inner.get_mut().pinned_core = <span class="prelude-val">Some</span>(apic_id); <span class="comment">// can only run on this CPU core
     </span><span class="kw">let </span>bootstrap_task_id = bootstrap_task.id;
-    <span class="kw">let </span>joinable_taskref = TaskRef::new(bootstrap_task);
+    <span class="kw">let </span>joinable_taskref = TaskRef::create(bootstrap_task);
 
     <span class="comment">// Set this task as this CPU&#39;s current task, as it&#39;s already running.
     </span>joinable_taskref.set_as_current_task();
@@ -3178,15 +3185,15 @@
     /// 
     /// This is useful to avoid cloning a reference to the current task.
     /// 
-    /// Returns an `Err` if the current task cannot be obtained.
-    </span><span class="kw">pub fn </span>with_current_task&lt;F, R&gt;(function: F) -&gt; <span class="prelude-ty">Result</span>&lt;R, ()&gt;
+    /// Returns a `CurrentTaskNotFound`error if the current task cannot be obtained.
+    </span><span class="kw">pub fn </span>with_current_task&lt;F, R&gt;(function: F) -&gt; <span class="prelude-ty">Result</span>&lt;R, CurrentTaskNotFound&gt;
     <span class="kw">where
         </span>F: FnOnce(<span class="kw-2">&amp;</span>TaskRef) -&gt; R
     {
         <span class="kw">if let </span><span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(<span class="kw-2">ref </span>t)) = CURRENT_TASK.try_borrow().as_deref() {
             <span class="prelude-val">Ok</span>(function(t))
         } <span class="kw">else </span>{
-            <span class="prelude-val">Err</span>(())
+            <span class="prelude-val">Err</span>(CurrentTaskNotFound)
         }
     }
 
@@ -3243,22 +3250,22 @@
     /// * On success, an [`ExitableTaskRef`] for the current task,
     ///   which can only be obtained once at the very start of the task&#39;s execution,
     ///   and only from this one function. 
-    /// * Returns an `Err` if the current task has already been set.
+    /// * Returns an `Err` if the current task has already been initialized.
     </span><span class="attr">#[doc(hidden)]
     </span><span class="kw">pub fn </span>init_current_task(
         current_task_id: usize,
         current_task: <span class="prelude-ty">Option</span>&lt;TaskRef&gt;,
-    ) -&gt; <span class="prelude-ty">Result</span>&lt;ExitableTaskRef, ()&gt; {
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;ExitableTaskRef, CurrentTaskAlreadyInited&gt; {
         <span class="kw">let </span>taskref = <span class="kw">if let </span><span class="prelude-val">Some</span>(t) = current_task {
             <span class="kw">if </span>t.id != current_task_id {
-                <span class="kw">return </span><span class="prelude-val">Err</span>(());
+                <span class="kw">return </span><span class="prelude-val">Err</span>(CurrentTaskAlreadyInited);
             }
             t
         } <span class="kw">else </span>{
             TASKLIST.lock()
                 .get(<span class="kw-2">&amp;</span>current_task_id)
                 .cloned()
-                .ok_or(())<span class="question-mark">?
+                .ok_or(CurrentTaskAlreadyInited)<span class="question-mark">?
         </span>};
 
         <span class="kw">match </span>CURRENT_TASK.try_borrow_mut() {
@@ -3267,7 +3274,7 @@
                 CURRENT_TASK_ID.set(current_task_id);
                 <span class="prelude-val">Ok</span>(ExitableTaskRef { task: taskref })
             }
-            <span class="kw">_ </span>=&gt; <span class="prelude-val">Err</span>(()),
+            <span class="kw">_ </span>=&gt; <span class="prelude-val">Err</span>(CurrentTaskAlreadyInited),
         }
     }
 
@@ -3289,6 +3296,13 @@
             <span class="prelude-val">Err</span>(value)
         }
     }
+
+    <span class="doccomment">/// An error type indicating that the current task was already initialized.
+    </span><span class="attr">#[derive(Debug)]
+    </span><span class="kw">pub struct </span>CurrentTaskAlreadyInited;
+    <span class="doccomment">/// An error type indicating that the current task has not yet been initialized.
+    </span><span class="attr">#[derive(Debug)]
+    </span><span class="kw">pub struct </span>CurrentTaskNotFound;
 }
 </code></pre></div>
 </section></main><div id="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="task" data-themes="" data-resource-suffix="" data-rustdoc-version="1.68.0-nightly (0442fbabe 2023-01-10)" data-search-js="search-181581080540673f.js" data-settings-js="settings-bebeae96e00e4617.js" data-settings-css="settings-58836c674e2f7bd2.css" ></div></body></html>

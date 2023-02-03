@@ -358,7 +358,7 @@
     /// next scheduling epoch
     </span><span class="kw">pub fn </span>new(taskref: TaskRef) -&gt; PriorityTaskRef {
         PriorityTaskRef {
-            taskref: taskref,
+            taskref,
             priority: DEFAULT_PRIORITY,
             tokens_remaining: INITIAL_TOKENS,
             context_switches: <span class="number">0</span>,
@@ -366,7 +366,7 @@
     }
 
     <span class="doccomment">/// Increment the number of times the task is picked
-    </span><span class="kw">pub fn </span>increment_context_switches(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; (){
+    </span><span class="kw">pub fn </span>increment_context_switches(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
         <span class="self">self</span>.context_switches = <span class="self">self</span>.context_switches.saturating_add(<span class="number">1</span>);
     }
 }
@@ -578,8 +578,8 @@
                 <span class="prelude-val">None </span>=&gt; <span class="kw">continue</span>,
             }
         }
-        <span class="kw">return </span><span class="prelude-val">None</span>;
-    }
+        <span class="prelude-val">None
+    </span>}
 
 }
 </code></pre></div>

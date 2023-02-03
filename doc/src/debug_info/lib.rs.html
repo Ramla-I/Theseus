@@ -967,22 +967,19 @@
 <a href="#967" id="967">967</a>
 <a href="#968" id="968">968</a>
 <a href="#969" id="969">969</a>
-<a href="#970" id="970">970</a>
-<a href="#971" id="971">971</a>
-<a href="#972" id="972">972</a>
 </pre><pre class="rust"><code><span class="doccomment">//! Support for DWARF debug information from ELF files.
 //! 
 //! This is a good intro to the DWARF format:
 //! &lt;http://www.dwarfstd.org/doc/Debugging%20using%20DWARF.pdf&gt;
 
 </span><span class="attr">#![no_std]
+#![feature(int_roundings)]
 
 </span><span class="kw">extern crate </span>alloc;
 <span class="attr">#[macro_use] </span><span class="kw">extern crate </span>log;
 <span class="kw">extern crate </span>gimli;
 <span class="kw">extern crate </span>xmas_elf;
 <span class="kw">extern crate </span>goblin;
-<span class="kw">extern crate </span>util;
 <span class="kw">extern crate </span>memory;
 <span class="kw">extern crate </span>fs_node;
 <span class="kw">extern crate </span>owning_ref;
@@ -1107,7 +1104,7 @@
     /// This can be either a variable node itself or anything that may contain a variable node, e.g., lexical blocks.
     /// 
     /// A *lexical block* is DWARF&#39;s term for a lexical scope block, e.g., curly braces like so:
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// fn main() { // start
     ///     let a = 5;
     ///     { // start
@@ -1119,7 +1116,7 @@
     ///     { // start
     ///         let d = 8;
     ///     } // end
-    /// } //end
+    /// } // end
     /// ```
     /// 
     /// # Arguments
@@ -1223,7 +1220,7 @@
         </span><span class="kw">else if </span>tag == gimli::DW_TAG_variable {
             <span class="kw">let </span>variable_name = entry.attr(gimli::DW_AT_name)<span class="question-mark">?</span>.expect(<span class="string">&quot;Variable DIE didn&#39;t have a DW_AT_name attribute&quot;</span>)
                 .string_value(context.debug_str_sec).expect(<span class="string">&quot;Couldn&#39;t convert variable name attribute value to string&quot;</span>)
-                .to_string().map(|s| String::from(s))<span class="question-mark">?</span>;
+                .to_string().map(String::from)<span class="question-mark">?</span>;
             <span class="macro">debug!</span>(<span class="string">&quot;{:indent$}Variable {:?}&quot;</span>, <span class="string">&quot;&quot;</span>, variable_name, indent = ((depth) * <span class="number">2</span>));
 
             <span class="comment">// Find the latest location that this variable existed (before the instruction pointer, of course).
@@ -1262,12 +1259,9 @@
                 <span class="kw">let </span><span class="kw-2">mut </span>evaluation = location.data.evaluation(context.unit.encoding());
                 <span class="kw">let </span>eval_result = evaluation.evaluate()<span class="question-mark">?</span>;
                 <span class="macro">debug!</span>(<span class="string">&quot;{:indent$}Evaluation result {:X?}&quot;</span>, <span class="string">&quot;&quot;</span>, eval_result, indent = ((depth+<span class="number">3</span>) * <span class="number">2</span>));
-                <span class="kw">match </span>eval_result {
-                    gimli::EvaluationResult::Complete =&gt; {
-                        <span class="kw">let </span>pieces = evaluation.result();
-                        <span class="macro">debug!</span>(<span class="string">&quot;{:indent$}Completed evaluation: {:X?}&quot;</span>, <span class="string">&quot;&quot;</span>, pieces, indent = ((depth+<span class="number">4</span>) * <span class="number">2</span>));
-                    }
-                    <span class="kw">_ </span>=&gt; { }
+                <span class="kw">if let </span>gimli::EvaluationResult::Complete = eval_result {
+                    <span class="kw">let </span>pieces = evaluation.result();
+                    <span class="macro">debug!</span>(<span class="string">&quot;{:indent$}Completed evaluation: {:X?}&quot;</span>, <span class="string">&quot;&quot;</span>, pieces, indent = ((depth+<span class="number">4</span>) * <span class="number">2</span>));
                 }
                 <span class="comment">// TODO FIXME: check if one of the variable&#39;s location ranges contains the instruction pointer
                 </span><span class="kw">let </span>_type_signature = <span class="kw">match </span>entry.attr_value(gimli::DW_AT_type)<span class="question-mark">? </span>{
@@ -1344,7 +1338,7 @@
     /// while looking for a subprogram node that contains the given instruction pointer.
     /// 
     /// A *lexical block* is DWARF&#39;s term for a lexical scope block, e.g., curly braces like so:
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// fn main() { // start
     ///     let a = 5;
     ///     { // start
@@ -1356,7 +1350,7 @@
     ///     { // start
     ///         let d = 8;
     ///     } // end
-    /// } //end
+    /// } // end
     /// ```
     ///
     /// Otherwise, an error is returned upon failure, e.g., a problem parsing the debug sections.
@@ -1376,12 +1370,12 @@
         </span><span class="kw">if </span>tag == gimli::constants::DW_TAG_subprogram {
             <span class="kw">let </span>_subprogram_name = entry.attr(gimli::DW_AT_name)<span class="question-mark">?</span>.and_then(|attr| 
                 attr.string_value(context.debug_str_sec).and_then(|s| 
-                    s.to_string().ok().map(|s| String::from(s))
+                    s.to_string().ok().map(String::from)
                 )
             );
             <span class="kw">let </span>_subprogram_linkage_name = entry.attr(gimli::DW_AT_linkage_name)<span class="question-mark">?</span>.and_then(|attr| 
                 attr.string_value(context.debug_str_sec).and_then(|s| 
-                    s.to_string().ok().map(|s| String::from(s))
+                    s.to_string().ok().map(String::from)
                 )
             );
 
@@ -1722,7 +1716,7 @@
                     // At this point, there&#39;s no other way to search for the source section besides its name.
                     </span><span class="prelude-val">None </span>=&gt; {
                         <span class="kw">if let </span><span class="prelude-val">Ok</span>(source_sec_name) = source_sec_entry.get_name(<span class="kw-2">&amp;</span>elf_file) {
-                            <span class="kw">const </span>DATARELRO: <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str = <span class="string">&quot;.data.rel.ro.&quot;</span>;
+                            <span class="kw">const </span>DATARELRO: <span class="kw-2">&amp;</span>str = <span class="string">&quot;.data.rel.ro.&quot;</span>;
                             <span class="kw">let </span>source_sec_name = <span class="kw">if </span>source_sec_name.starts_with(DATARELRO) {
                                 source_sec_name.get(DATARELRO.len() ..).ok_or(<span class="string">&quot;Couldn&#39;t get name of .data.rel.ro. section&quot;</span>)<span class="question-mark">?
                             </span>} <span class="kw">else </span>{
@@ -1780,7 +1774,7 @@
         <span class="kw">let </span>create_debug_section_slice = |debug_sec: DebugSection| -&gt; <span class="prelude-ty">Result</span>&lt;DebugSectionSlice, <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str&gt; {
             ArcRef::new(Arc::clone(<span class="kw-2">&amp;</span>debug_sections_mp))
                 .try_map(|mp| mp.as_slice::&lt;u8&gt;(debug_sec.mp_offset, debug_sec.size))
-                .map(|arcref| DebugSectionSlice(arcref))
+                .map(DebugSectionSlice)
         };
 
         <span class="kw">let </span>loaded = DebugSections {
@@ -1844,7 +1838,7 @@
 
         <span class="kw">let </span>size = sec.size() <span class="kw">as </span>usize;
         <span class="kw">let </span>align = sec.align() <span class="kw">as </span>usize;
-        <span class="kw">let </span>addend = util::round_up_power_of_two(size, align);
+        <span class="kw">let </span>addend = size.next_multiple_of(align);
 
         <span class="comment">// trace!(&quot;  Looking at debug sec {:?}, size {:#X}, align {:#X} --&gt; addend {:#X}&quot;, sec.get_name(elf_file), size, align, addend);
         </span>ro_bytes += addend;

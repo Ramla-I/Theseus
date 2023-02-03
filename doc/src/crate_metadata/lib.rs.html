@@ -1105,7 +1105,6 @@
 <a href="#1105" id="1105">1105</a>
 <a href="#1106" id="1106">1106</a>
 <a href="#1107" id="1107">1107</a>
-<a href="#1108" id="1108">1108</a>
 </pre><pre class="rust"><code><span class="doccomment">//! Defines types that contain metadata about crates loaded in Theseus and their dependencies.
 //! 
 //! ## Representing dependencies between sections
@@ -1173,7 +1172,6 @@
 <span class="kw">use </span>fs_node::{FileRef, WeakFileRef};
 <span class="kw">use </span>hashbrown::HashMap;
 <span class="kw">use </span>goblin::elf::reloc::<span class="kw-2">*</span>;
-<span class="kw">use </span>static_assertions::const_assert;
 
 <span class="kw">pub use </span>str_ref::StrRef;
 <span class="kw">pub use </span>crate_metadata_serde::{
@@ -1216,20 +1214,20 @@
 );
 
 <span class="comment">// Double-check section flags were defined correctly.
-</span><span class="macro">const_assert!</span>(TEXT_SECTION_FLAGS.is_executable() &amp;&amp; !TEXT_SECTION_FLAGS.is_writable());
-<span class="macro">const_assert!</span>(!RODATA_SECTION_FLAGS.is_writable() &amp;&amp; !RODATA_SECTION_FLAGS.is_executable());
-<span class="macro">const_assert!</span>(DATA_BSS_SECTION_FLAGS.is_writable() &amp;&amp; !DATA_BSS_SECTION_FLAGS.is_executable());
+</span><span class="kw">const _</span>: () = <span class="macro">assert!</span>(TEXT_SECTION_FLAGS.is_executable() &amp;&amp; !TEXT_SECTION_FLAGS.is_writable());
+<span class="kw">const _</span>: () = <span class="macro">assert!</span>(!RODATA_SECTION_FLAGS.is_writable() &amp;&amp; !RODATA_SECTION_FLAGS.is_executable());
+<span class="kw">const _</span>: () = <span class="macro">assert!</span>(DATA_BSS_SECTION_FLAGS.is_writable() &amp;&amp; !DATA_BSS_SECTION_FLAGS.is_executable());
 
 
 <span class="doccomment">/// The Theseus Makefile appends prefixes onto bootloader module names,
 /// which are separated by the &quot;#&quot; character. 
 /// For example, &quot;k#my_crate-hash.o&quot;.
-</span><span class="kw">pub const </span>MODULE_PREFIX_DELIMITER: <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str = <span class="string">&quot;#&quot;</span>;
+</span><span class="kw">pub const </span>MODULE_PREFIX_DELIMITER: <span class="kw-2">&amp;</span>str = <span class="string">&quot;#&quot;</span>;
 <span class="doccomment">/// A crate&#39;s name and its hash are separated by &quot;-&quot;, i.e., &quot;my_crate-hash&quot;.
-</span><span class="kw">pub const </span>CRATE_HASH_DELIMITER: <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str = <span class="string">&quot;-&quot;</span>;
+</span><span class="kw">pub const </span>CRATE_HASH_DELIMITER: <span class="kw-2">&amp;</span>str = <span class="string">&quot;-&quot;</span>;
 <span class="doccomment">/// A section&#39;s demangled name and its hash are separated by &quot;::h&quot;, 
 /// e.g., `&quot;my_crate::section_name::h&lt;hash&gt;&quot;`.
-</span><span class="kw">pub const </span>SECTION_HASH_DELIMITER: <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str = <span class="string">&quot;::h&quot;</span>;
+</span><span class="kw">pub const </span>SECTION_HASH_DELIMITER: <span class="kw-2">&amp;</span>str = <span class="string">&quot;::h&quot;</span>;
 
 
 <span class="doccomment">/// The type of a crate, based on its object file naming convention.

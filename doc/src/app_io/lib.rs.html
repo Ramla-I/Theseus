@@ -437,15 +437,15 @@
         <span class="prelude-val">Some</span>(queues) =&gt; {
             <span class="kw">if </span>queues
                 .stdout
-                .write_all(<span class="macro">format!</span>(<span class="string">&quot;{}&quot;</span>, fmt_args).as_bytes())
+                .write_all(<span class="macro">format!</span>(<span class="string">&quot;{fmt_args}&quot;</span>).as_bytes())
                 .is_err()
             {
                 <span class="kw">let _ </span>= logger::write_str(<span class="string">&quot;\x1b[31m [E] failed to write to stdout \x1b[0m\n&quot;</span>);
             }
         }
         <span class="prelude-val">None </span>=&gt; {
-            <span class="kw">let _ </span>= logger::write_str(<span class="string">&quot;\x1b[31m [E] error in print!/println! macro: no stdout queue for current task \x1b[0m\n&quot;</span>);
-        }
+            <span class="comment">// let _ = logger::write_str(&quot;\x1b[31m [E] error in print!/println! macro: no stdout queue for current task \x1b[0m\n&quot;);
+        </span>}
     };
 }
 </code></pre></div>

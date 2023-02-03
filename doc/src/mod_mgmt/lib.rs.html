@@ -3342,6 +3342,7 @@
 <a href="#3342" id="3342">3342</a>
 </pre><pre class="rust"><code><span class="attr">#![allow(clippy::blocks_in_if_conditions)]
 #![no_std]
+#![feature(int_roundings)]
 #![feature(let_chains)]
 
 #[macro_use] </span><span class="kw">extern crate </span>alloc;
@@ -3356,7 +3357,6 @@
 };
 <span class="kw">use </span>spin::{Mutex, Once};
 <span class="kw">use </span>xmas_elf::{ElfFile, sections::{SHF_ALLOC, SHF_EXECINSTR, SHF_TLS, SHF_WRITE, SectionData, ShType}, symbol_table::{Binding, Type}};
-<span class="kw">use </span>util::round_up_power_of_two;
 <span class="kw">use </span>memory::{MmiRef, MemoryManagementInfo, VirtualAddress, MappedPages, PteFlags, allocate_pages_by_bytes, allocate_frames_by_bytes_at};
 <span class="kw">use </span>bootloader_modules::BootloaderModule;
 <span class="kw">use </span>cow_arc::CowArc;
@@ -3376,10 +3376,10 @@
 <span class="kw">mod </span>serde;
 
 <span class="doccomment">/// The name of the directory that contains all of the CrateNamespace files.
-</span><span class="kw">pub const </span>NAMESPACES_DIRECTORY_NAME: <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str = <span class="string">&quot;namespaces&quot;</span>;
+</span><span class="kw">pub const </span>NAMESPACES_DIRECTORY_NAME: <span class="kw-2">&amp;</span>str = <span class="string">&quot;namespaces&quot;</span>;
 
 <span class="doccomment">/// The name of the directory that contains all other &quot;extra_files&quot; contents.
-</span><span class="kw">pub const </span>EXTRA_FILES_DIRECTORY_NAME: <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str = <span class="string">&quot;extra_files&quot;</span>;
+</span><span class="kw">pub const </span>EXTRA_FILES_DIRECTORY_NAME: <span class="kw-2">&amp;</span>str = <span class="string">&quot;extra_files&quot;</span>;
 <span class="kw">const </span>EXTRA_FILES_DIRECTORY_DELIMITER: char = <span class="string">&#39;!&#39;</span>;
 
 <span class="doccomment">/// The initial `CrateNamespace` that all kernel crates are added to by default.
@@ -3473,16 +3473,16 @@
 ) -&gt; <span class="prelude-ty">Result</span>&lt;(DirRef, NamespaceDir), <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str&gt; {
 
     <span class="comment">// create the top-level directory to hold all default namespaces
-    </span><span class="kw">let </span>namespaces_dir = VFSDirectory::new(NAMESPACES_DIRECTORY_NAME.to_string(), root::get_root())<span class="question-mark">?</span>;
+    </span><span class="kw">let </span>namespaces_dir = VFSDirectory::create(NAMESPACES_DIRECTORY_NAME.to_string(), root::get_root())<span class="question-mark">?</span>;
     <span class="comment">// create the top-level directory to hold all extra files
-    </span><span class="kw">let </span>extra_files_dir = VFSDirectory::new(EXTRA_FILES_DIRECTORY_NAME.to_string(), root::get_root())<span class="question-mark">?</span>;
+    </span><span class="kw">let </span>extra_files_dir = VFSDirectory::create(EXTRA_FILES_DIRECTORY_NAME.to_string(), root::get_root())<span class="question-mark">?</span>;
 
     <span class="comment">// a map that associates a prefix string (e.g., &quot;sse&quot; in &quot;ksse#crate.o&quot;) to a namespace directory of object files 
     </span><span class="kw">let </span><span class="kw-2">mut </span>prefix_map: BTreeMap&lt;String, NamespaceDir&gt; = BTreeMap::new();
 
     <span class="comment">// Closure to create the directory for a new namespace.
     </span><span class="kw">let </span>create_dir = |dir_name: <span class="kw-2">&amp;</span>str| -&gt; <span class="prelude-ty">Result</span>&lt;NamespaceDir, <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str&gt; {
-        VFSDirectory::new(dir_name.to_string(), <span class="kw-2">&amp;</span>namespaces_dir).map(|d| NamespaceDir(d))
+        VFSDirectory::create(dir_name.to_string(), <span class="kw-2">&amp;</span>namespaces_dir).map(|d| NamespaceDir(d))
     };
 
     <span class="kw">let </span><span class="kw-2">mut </span>process_module = |name: <span class="kw-2">&amp;</span>str, size, pages| -&gt; <span class="prelude-ty">Result</span>&lt;<span class="kw">_</span>, <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str&gt; {
@@ -3598,7 +3598,7 @@
         <span class="kw">if </span>iter.peek().is_some() {
             <span class="kw">let </span>existing_dir = parent_dir.lock().get_dir(path_component);
             parent_dir = existing_dir
-                .or_else(|| VFSDirectory::new(path_component.to_string(), <span class="kw-2">&amp;</span>parent_dir).ok())
+                .or_else(|| VFSDirectory::create(path_component.to_string(), <span class="kw-2">&amp;</span>parent_dir).ok())
                 .ok_or_else(|| {
                     <span class="macro">error!</span>(<span class="string">&quot;Failed to get or create directory {:?} for extra file {:?}&quot;</span>, path_component, extra_file_name);
                     <span class="string">&quot;Failed to get or create directory for extra file&quot;
@@ -3714,7 +3714,7 @@
     /// * The file &quot;a#ps.o&quot; will be placed into &quot;./ps.o&quot;. 
     </span><span class="kw">pub fn </span>write_crate_object_file(<span class="kw-2">&amp;</span><span class="self">self</span>, crate_object_file_name: <span class="kw-2">&amp;</span>str, content: <span class="kw-2">&amp;</span>[u8]) -&gt; <span class="prelude-ty">Result</span>&lt;FileRef, <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str&gt; {
         <span class="kw">let </span>(_crate_type, _prefix, objfilename) = CrateType::from_module_name(crate_object_file_name)<span class="question-mark">?</span>;
-        <span class="kw">let </span>cfile = MemFile::new(String::from(objfilename), <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>)<span class="question-mark">?</span>;
+        <span class="kw">let </span>cfile = MemFile::create(String::from(objfilename), <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>)<span class="question-mark">?</span>;
         cfile.lock().write_at(content, <span class="number">0</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(cfile)
     }
@@ -3968,7 +3968,7 @@
     /// [`CowArc::clone()`] function on the returned value.
     </span><span class="kw">pub fn </span>get_crate(<span class="kw-2">&amp;</span><span class="self">self</span>, crate_name: <span class="kw-2">&amp;</span>str) -&gt; <span class="prelude-ty">Option</span>&lt;StrongCrateRef&gt; {
         <span class="self">self</span>.crate_tree.lock().get(crate_name.as_bytes())
-            .map(|c| CowArc::clone_shallow(c))
+            .map(CowArc::clone_shallow)
             .or_else(|| <span class="self">self</span>.recursive_namespace.as_ref().and_then(|r_ns| r_ns.get_crate(crate_name)))
     }
 
@@ -4443,7 +4443,7 @@
 
         <span class="comment">// Create the new `LoadedCrate` now such that its sections can refer back to it.
         </span><span class="kw">let </span>new_crate = CowArc::new(LoadedCrate {
-            crate_name:              crate_name,
+            crate_name,
             debug_symbols_file:      Arc::downgrade(<span class="kw-2">&amp;</span>crate_object_file),
             object_file:             crate_object_file, 
             sections:                HashMap::new(),
@@ -4997,16 +4997,16 @@
         // keeping track of the offset into each of their MappedPages as we go.
         </span><span class="kw">let </span>(<span class="kw-2">mut </span>rodata_offset, <span class="kw-2">mut </span>data_offset) = (<span class="number">0 </span>, <span class="number">0</span>);
                     
-        <span class="kw">const </span>TEXT_PREFIX:             <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str = <span class="string">&quot;.text.&quot;</span>;
-        <span class="kw">const </span>UNLIKELY_PREFIX:         <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str = <span class="string">&quot;unlikely.&quot;</span>; <span class="comment">// the full section prefix is &quot;.text.unlikely.&quot;
-        </span><span class="kw">const </span>RODATA_PREFIX:           <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str = <span class="string">&quot;.rodata.&quot;</span>;
-        <span class="kw">const </span>DATA_PREFIX:             <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str = <span class="string">&quot;.data.&quot;</span>;
-        <span class="kw">const </span>BSS_PREFIX:              <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str = <span class="string">&quot;.bss.&quot;</span>;
-        <span class="kw">const </span>TLS_DATA_PREFIX:         <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str = <span class="string">&quot;.tdata.&quot;</span>;
-        <span class="kw">const </span>TLS_BSS_PREFIX:          <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str = <span class="string">&quot;.tbss.&quot;</span>;
-        <span class="comment">// const RELRO_PREFIX:            &amp;&#39;static str = &quot;rel.ro.&quot;;
-        </span><span class="kw">const </span>GCC_EXCEPT_TABLE_PREFIX: <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str = <span class="string">&quot;.gcc_except_table.&quot;</span>;
-        <span class="kw">const </span>EH_FRAME_NAME:           <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str = <span class="string">&quot;.eh_frame&quot;</span>;
+        <span class="kw">const </span>TEXT_PREFIX:             <span class="kw-2">&amp;</span>str = <span class="string">&quot;.text.&quot;</span>;
+        <span class="kw">const </span>UNLIKELY_PREFIX:         <span class="kw-2">&amp;</span>str = <span class="string">&quot;unlikely.&quot;</span>; <span class="comment">// the full section prefix is &quot;.text.unlikely.&quot;
+        </span><span class="kw">const </span>RODATA_PREFIX:           <span class="kw-2">&amp;</span>str = <span class="string">&quot;.rodata.&quot;</span>;
+        <span class="kw">const </span>DATA_PREFIX:             <span class="kw-2">&amp;</span>str = <span class="string">&quot;.data.&quot;</span>;
+        <span class="kw">const </span>BSS_PREFIX:              <span class="kw-2">&amp;</span>str = <span class="string">&quot;.bss.&quot;</span>;
+        <span class="kw">const </span>TLS_DATA_PREFIX:         <span class="kw-2">&amp;</span>str = <span class="string">&quot;.tdata.&quot;</span>;
+        <span class="kw">const </span>TLS_BSS_PREFIX:          <span class="kw-2">&amp;</span>str = <span class="string">&quot;.tbss.&quot;</span>;
+        <span class="comment">// const RELRO_PREFIX:            &amp;str = &quot;rel.ro.&quot;;
+        </span><span class="kw">const </span>GCC_EXCEPT_TABLE_PREFIX: <span class="kw-2">&amp;</span>str = <span class="string">&quot;.gcc_except_table.&quot;</span>;
+        <span class="kw">const </span>EH_FRAME_NAME:           <span class="kw-2">&amp;</span>str = <span class="string">&quot;.eh_frame&quot;</span>;
 
         <span class="doccomment">/// A convenient macro to obtain the rest of the symbol name after its prefix,
         /// i.e., the characters after &#39;.text&#39;, &#39;.rodata&#39;, &#39;.data&#39;, etc.
@@ -5207,7 +5207,7 @@
                     </span>loaded_sections.insert(shndx, new_tls_section);
                     tls_sections.insert(shndx);
 
-                    rodata_offset += round_up_power_of_two(sec_size, sec_align);
+                    rodata_offset += sec_size.next_multiple_of(sec_align);
                 }
                 <span class="kw">else </span>{
                     <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="string">&quot;no rodata_pages were allocated when handling TLS section&quot;</span>);
@@ -5262,7 +5262,7 @@
                     );
                     data_sections.insert(shndx);
 
-                    data_offset += round_up_power_of_two(sec_size, sec_align);
+                    data_offset += sec_size.next_multiple_of(sec_align);
                 }
                 <span class="kw">else </span>{
                     <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="string">&quot;no data_pages were allocated for .data/.bss section&quot;</span>);
@@ -5302,7 +5302,7 @@
                         ))
                     );
 
-                    rodata_offset += round_up_power_of_two(sec_size, sec_align);
+                    rodata_offset += sec_size.next_multiple_of(sec_align);
                 }
                 <span class="kw">else </span>{
                     <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="string">&quot;no rodata_pages were allocated when handling .rodata section&quot;</span>);
@@ -5347,7 +5347,7 @@
                         ))
                     );
 
-                    rodata_offset += round_up_power_of_two(sec_size, sec_align);
+                    rodata_offset += sec_size.next_multiple_of(sec_align);
                 }
                 <span class="kw">else </span>{
                     <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="string">&quot;no rodata_pages were allocated when handling .gcc_except_table&quot;</span>);
@@ -5386,7 +5386,7 @@
                         ))
                     );
 
-                    rodata_offset += round_up_power_of_two(sec_size, sec_align);
+                    rodata_offset += sec_size.next_multiple_of(sec_align);
                 }
                 <span class="kw">else </span>{
                     <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="string">&quot;no rodata_pages were allocated when handling .eh_frame&quot;</span>);
@@ -5512,7 +5512,7 @@
                         // At this point, there&#39;s no other way to search for the source section besides its name.
                         </span><span class="prelude-val">None </span>=&gt; {
                             <span class="kw">if let </span><span class="prelude-val">Ok</span>(source_sec_name) = source_sec_entry.get_name(elf_file) {
-                                <span class="kw">const </span>DATARELRO: <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str = <span class="string">&quot;.data.rel.ro.&quot;</span>;
+                                <span class="kw">const </span>DATARELRO: <span class="kw-2">&amp;</span>str = <span class="string">&quot;.data.rel.ro.&quot;</span>;
                                 <span class="kw">let </span>source_sec_name = <span class="kw">if </span>source_sec_name.starts_with(DATARELRO) {
                                     source_sec_name.get(DATARELRO.len() ..).ok_or(<span class="string">&quot;Couldn&#39;t get name of .data.rel.ro. section&quot;</span>)<span class="question-mark">?
                                 </span>} <span class="kw">else </span>{
@@ -6007,7 +6007,7 @@
         <span class="comment">// We add a shared reference to that section&#39;s parent crate to this namespace as well, 
         // to prevent that crate from being dropped while this namespace still relies on it.
         </span><span class="self">self</span>.crate_tree.lock().insert(parent_crate_name, parent_crate_ref);
-        <span class="kw">return </span><span class="prelude-val">Some</span>(sec);
+        <span class="prelude-val">Some</span>(sec)
     }
 
 
@@ -6040,7 +6040,7 @@
     ) -&gt; <span class="prelude-ty">Option</span>&lt;WeakSectionRef&gt; {
         <span class="comment">// Some symbols may have multiple potential containing crates, so we try to load each one to find the missing symbol.
         </span><span class="kw">for </span>potential_crate_name <span class="kw">in </span>get_containing_crate_name(demangled_full_symbol) {
-            <span class="kw">let </span>potential_crate_name = <span class="macro">format!</span>(<span class="string">&quot;{}-&quot;</span>, potential_crate_name);
+            <span class="kw">let </span>potential_crate_name = <span class="macro">format!</span>(<span class="string">&quot;{potential_crate_name}-&quot;</span>);
  
             <span class="comment">// Try to find and load the missing crate object file from this namespace&#39;s directory or its recursive namespace&#39;s directory,
             // (or from the backup namespace&#39;s directory set).
@@ -6191,7 +6191,7 @@
 
         <span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">ref </span>r_ns) = <span class="self">self</span>.recursive_namespace {
             <span class="kw">let </span>syms_recursive = r_ns.dump_symbol_map_recursive();
-            syms = <span class="macro">format!</span>(<span class="string">&quot;{}\n{}&quot;</span>, syms, syms_recursive);
+            syms = <span class="macro">format!</span>(<span class="string">&quot;{syms}\n{syms_recursive}&quot;</span>);
         }
 
         syms
@@ -6261,7 +6261,7 @@
 
             <span class="kw">let </span>size = sec.size() <span class="kw">as </span>usize;
             <span class="kw">let </span>align = sec.align() <span class="kw">as </span>usize;
-            <span class="kw">let </span>addend = round_up_power_of_two(size, align);
+            <span class="kw">let </span>addend = size.next_multiple_of(align);
 
             <span class="comment">// filter flags for ones we care about (we already checked that it&#39;s loaded (SHF_ALLOC))
             </span><span class="kw">let </span>is_write = sec_flags &amp; SHF_WRITE     == SHF_WRITE;
@@ -6339,7 +6339,7 @@
 		<span class="kw">let </span>strong_crate_ref = weak_crate_ref.upgrade().unwrap();
         <span class="kw">let </span>strong_crate = strong_crate_ref.lock_as_ref();
 		<span class="macro">debug!</span>(<span class="string">&quot;{}{}&quot;</span>, prefix, strong_crate.crate_name);
-		dump_dependent_crates(<span class="kw-2">&amp;</span>strong_crate, <span class="macro">format!</span>(<span class="string">&quot;{}  &quot;</span>, prefix));
+		dump_dependent_crates(<span class="kw-2">&amp;</span>strong_crate, <span class="macro">format!</span>(<span class="string">&quot;{prefix}  &quot;</span>));
 	}
 }
 
@@ -6351,7 +6351,7 @@
 		<span class="macro">debug!</span>(<span class="string">&quot;{}Section \&quot;{}\&quot;: sections dependent on me (weak dependents):&quot;</span>, prefix, sec.name);
 		<span class="kw">for </span>weak_dep <span class="kw">in </span><span class="kw-2">&amp;</span>sec_inner.sections_dependent_on_me {
 			<span class="kw">if let </span><span class="prelude-val">Some</span>(wds) = weak_dep.section.upgrade() {
-				<span class="kw">let </span>prefix = <span class="macro">format!</span>(<span class="string">&quot;{}  &quot;</span>, prefix); <span class="comment">// add two spaces of indentation to the prefix
+				<span class="kw">let </span>prefix = <span class="macro">format!</span>(<span class="string">&quot;{prefix}  &quot;</span>); <span class="comment">// add two spaces of indentation to the prefix
 				</span>dump_weak_dependents(<span class="kw-2">&amp;</span>wds, prefix);
 			}
 			<span class="kw">else </span>{
@@ -6505,7 +6505,7 @@
         // skipping the first `POINTER_SIZE` bytes, which are reserved for the TLS self pointer.
         </span><span class="kw">let </span>range_after_tls_self_pointer = POINTER_SIZE .. usize::MAX;
         <span class="kw">for </span>gap <span class="kw">in </span><span class="self">self</span>.dynamic_section_offsets.gaps(<span class="kw-2">&amp;</span>range_after_tls_self_pointer) {
-            <span class="kw">let </span>aligned_start = util::round_up(gap.start, alignment);
+            <span class="kw">let </span>aligned_start = gap.start.next_multiple_of(alignment);
             <span class="kw">if </span>aligned_start + section.size &lt;= gap.end {
                 start_index = <span class="prelude-val">Some</span>(aligned_start);
                 <span class="kw">break</span>;

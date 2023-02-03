@@ -410,10 +410,6 @@
 <a href="#410" id="410">410</a>
 <a href="#411" id="411">411</a>
 <a href="#412" id="412">412</a>
-<a href="#413" id="413">413</a>
-<a href="#414" id="414">414</a>
-<a href="#415" id="415">415</a>
-<a href="#416" id="416">416</a>
 </pre><pre class="rust"><code><span class="doccomment">//! Support for the MADT ACPI table, 
 //! which includes interrupt and multicore info.
 
@@ -429,9 +425,8 @@
 <span class="kw">use </span>sdt::Sdt;
 <span class="kw">use </span>acpi_table::{AcpiSignature, AcpiTables};
 <span class="kw">use </span>zerocopy::FromBytes;
-<span class="kw">use </span>static_assertions::const_assert_eq;
 
-<span class="kw">pub const </span>MADT_SIGNATURE: <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>[u8; <span class="number">4</span>] = <span class="string">b&quot;APIC&quot;</span>;
+<span class="kw">pub const </span>MADT_SIGNATURE: <span class="kw-2">&amp;</span>[u8; <span class="number">4</span>] = <span class="string">b&quot;APIC&quot;</span>;
 
 <span class="doccomment">/// The handler for parsing the MADT table and adding it to the ACPI tables list.
 </span><span class="kw">pub fn </span>handle(
@@ -462,8 +457,8 @@
     <span class="comment">// Following this is a variable number of variable-sized table entries,
     // so we cannot include them here.
 </span>}
-<span class="macro">const_assert_eq!</span>(core::mem::size_of::&lt;MadtAcpiTable&gt;(), <span class="number">44</span>);
-<span class="macro">const_assert_eq!</span>(core::mem::align_of::&lt;MadtAcpiTable&gt;(), <span class="number">1</span>);
+<span class="kw">const _</span>: () = <span class="macro">assert!</span>(core::mem::size_of::&lt;MadtAcpiTable&gt;() == <span class="number">44</span>);
+<span class="kw">const _</span>: () = <span class="macro">assert!</span>(core::mem::align_of::&lt;MadtAcpiTable&gt;() == <span class="number">1</span>);
 
 
 <span class="doccomment">/// A wrapper around the MADT ACPI table (Multiple APIC Descriptor Table),
@@ -492,7 +487,7 @@
         <span class="kw">let </span>dynamic_part_length = total_length - size_of::&lt;MadtAcpiTable&gt;();
         <span class="kw">let </span>loc = acpi_tables.table_location(MADT_SIGNATURE)<span class="question-mark">?</span>;
         <span class="prelude-val">Some</span>(Madt {
-            table: table,
+            table,
             mapped_pages: acpi_tables.mapping(),
             dynamic_entries_starting_offset: loc.slice_offset_and_length<span class="question-mark">?</span>.<span class="number">0</span>,
             dynamic_entries_total_size: dynamic_part_length,
@@ -565,19 +560,19 @@
             </span><span class="kw">if </span>(<span class="self">self</span>.offset + entry_size) &lt;= <span class="self">self</span>.end_of_entries {
                 <span class="kw">let </span>entry: <span class="prelude-ty">Option</span>&lt;MadtEntry&gt; = <span class="kw">match </span>entry_type {
                     ENTRY_TYPE_LOCAL_APIC <span class="kw">if </span>entry_size == size_of::&lt;MadtLocalApic&gt;() =&gt; {
-                        <span class="self">self</span>.mapped_pages.as_type(<span class="self">self</span>.offset).ok().map(|ent| MadtEntry::LocalApic(ent))
+                        <span class="self">self</span>.mapped_pages.as_type(<span class="self">self</span>.offset).ok().map(MadtEntry::LocalApic)
                     },
                     ENTRY_TYPE_IO_APIC <span class="kw">if </span>entry_size == size_of::&lt;MadtIoApic&gt;() =&gt; {
-                        <span class="self">self</span>.mapped_pages.as_type(<span class="self">self</span>.offset).ok().map(|ent| MadtEntry::IoApic(ent))
+                        <span class="self">self</span>.mapped_pages.as_type(<span class="self">self</span>.offset).ok().map(MadtEntry::IoApic)
                     },
                     ENTRY_TYPE_INT_SRC_OVERRIDE <span class="kw">if </span>entry_size == size_of::&lt;MadtIntSrcOverride&gt;() =&gt; {
-                        <span class="self">self</span>.mapped_pages.as_type(<span class="self">self</span>.offset).ok().map(|ent| MadtEntry::IntSrcOverride(ent))
+                        <span class="self">self</span>.mapped_pages.as_type(<span class="self">self</span>.offset).ok().map(MadtEntry::IntSrcOverride)
                     },
                     ENTRY_TYPE_NON_MASKABLE_INTERRUPT <span class="kw">if </span>entry_size == size_of::&lt;MadtNonMaskableInterrupt&gt;() =&gt; {
-                        <span class="self">self</span>.mapped_pages.as_type(<span class="self">self</span>.offset).ok().map(|ent| MadtEntry::NonMaskableInterrupt(ent))
+                        <span class="self">self</span>.mapped_pages.as_type(<span class="self">self</span>.offset).ok().map(MadtEntry::NonMaskableInterrupt)
                     },
                     ENTRY_TYPE_LOCAL_APIC_ADDRESS_OVERRIDE <span class="kw">if </span>entry_size == size_of::&lt;MadtLocalApicAddressOverride&gt;() =&gt; {
-                        <span class="self">self</span>.mapped_pages.as_type(<span class="self">self</span>.offset).ok().map(|ent| MadtEntry::LocalApicAddressOverride(ent))
+                        <span class="self">self</span>.mapped_pages.as_type(<span class="self">self</span>.offset).ok().map(MadtEntry::LocalApicAddressOverride)
                     },
                     <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
                 };
@@ -608,8 +603,8 @@
     </span>size: u8,
 }
 <span class="kw">const </span>ENTRY_RECORD_SIZE: usize = size_of::&lt;EntryRecord&gt;();
-<span class="macro">const_assert_eq!</span>(core::mem::size_of::&lt;EntryRecord&gt;(), <span class="number">2</span>);
-<span class="macro">const_assert_eq!</span>(core::mem::align_of::&lt;EntryRecord&gt;(), <span class="number">1</span>);
+<span class="kw">const _</span>: () = <span class="macro">assert!</span>(core::mem::size_of::&lt;EntryRecord&gt;() == <span class="number">2</span>);
+<span class="kw">const _</span>: () = <span class="macro">assert!</span>(core::mem::align_of::&lt;EntryRecord&gt;() == <span class="number">1</span>);
 
 
 <span class="comment">// The following list specifies MADT entry type IDs.
@@ -652,8 +647,8 @@
     <span class="doccomment">/// Flags. 1 means that the processor is enabled
     </span><span class="kw">pub </span>flags: u32
 }
-<span class="macro">const_assert_eq!</span>(core::mem::size_of::&lt;MadtLocalApic&gt;(), <span class="number">8</span>);
-<span class="macro">const_assert_eq!</span>(core::mem::align_of::&lt;MadtLocalApic&gt;(), <span class="number">1</span>);
+<span class="kw">const _</span>: () = <span class="macro">assert!</span>(core::mem::size_of::&lt;MadtLocalApic&gt;() == <span class="number">8</span>);
+<span class="kw">const _</span>: () = <span class="macro">assert!</span>(core::mem::align_of::&lt;MadtLocalApic&gt;() == <span class="number">1</span>);
 
 <span class="doccomment">/// MADT I/O APIC
 </span><span class="attr">#[derive(Copy, Clone, Debug, FromBytes)]
@@ -668,8 +663,8 @@
     <span class="doccomment">/// Global system interrupt base
     </span><span class="kw">pub </span>gsi_base: u32
 }
-<span class="macro">const_assert_eq!</span>(core::mem::size_of::&lt;MadtIoApic&gt;(), <span class="number">12</span>);
-<span class="macro">const_assert_eq!</span>(core::mem::align_of::&lt;MadtIoApic&gt;(), <span class="number">1</span>);
+<span class="kw">const _</span>: () = <span class="macro">assert!</span>(core::mem::size_of::&lt;MadtIoApic&gt;() == <span class="number">12</span>);
+<span class="kw">const _</span>: () = <span class="macro">assert!</span>(core::mem::align_of::&lt;MadtIoApic&gt;() == <span class="number">1</span>);
 
 <span class="doccomment">/// MADT Interrupt Source Override
 </span><span class="attr">#[derive(Copy, Clone, Debug, FromBytes)]
@@ -685,8 +680,8 @@
     <span class="doccomment">/// Flags
     </span><span class="kw">pub </span>flags: u16
 }
-<span class="macro">const_assert_eq!</span>(core::mem::size_of::&lt;MadtIntSrcOverride&gt;(), <span class="number">10</span>);
-<span class="macro">const_assert_eq!</span>(core::mem::align_of::&lt;MadtIntSrcOverride&gt;(), <span class="number">1</span>);
+<span class="kw">const _</span>: () = <span class="macro">assert!</span>(core::mem::size_of::&lt;MadtIntSrcOverride&gt;() == <span class="number">10</span>);
+<span class="kw">const _</span>: () = <span class="macro">assert!</span>(core::mem::align_of::&lt;MadtIntSrcOverride&gt;() == <span class="number">1</span>);
 
 <span class="doccomment">/// MADT Non-maskable Interrupt.
 /// Use these to configure the LINT0 and LINT1 entries in the Local vector table
@@ -702,8 +697,8 @@
     <span class="doccomment">/// LINT (either 0 or 1)
     </span><span class="kw">pub </span>lint: u8,
 }
-<span class="macro">const_assert_eq!</span>(core::mem::size_of::&lt;MadtNonMaskableInterrupt&gt;(), <span class="number">6</span>);
-<span class="macro">const_assert_eq!</span>(core::mem::align_of::&lt;MadtNonMaskableInterrupt&gt;(), <span class="number">1</span>);
+<span class="kw">const _</span>: () = <span class="macro">assert!</span>(core::mem::size_of::&lt;MadtNonMaskableInterrupt&gt;() == <span class="number">6</span>);
+<span class="kw">const _</span>: () = <span class="macro">assert!</span>(core::mem::align_of::&lt;MadtNonMaskableInterrupt&gt;() == <span class="number">1</span>);
 
 <span class="doccomment">/// MADT Local APIC Address Override. 
 /// If this struct exists, the contained physical address
@@ -717,8 +712,8 @@
     <span class="doccomment">/// Local APIC physical address
     </span><span class="kw">pub </span>phys_addr: u64,
 }
-<span class="macro">const_assert_eq!</span>(core::mem::size_of::&lt;MadtLocalApicAddressOverride&gt;(), <span class="number">12</span>);
-<span class="macro">const_assert_eq!</span>(core::mem::align_of::&lt;MadtLocalApicAddressOverride&gt;(), <span class="number">1</span>);
+<span class="kw">const _</span>: () = <span class="macro">assert!</span>(core::mem::size_of::&lt;MadtLocalApicAddressOverride&gt;() == <span class="number">12</span>);
+<span class="kw">const _</span>: () = <span class="macro">assert!</span>(core::mem::align_of::&lt;MadtLocalApicAddressOverride&gt;() == <span class="number">1</span>);
 
 <span class="doccomment">/// Handles the BSP&#39;s (bootstrap processor, the first core to boot) entry in the given MADT iterator.
 /// This should be the first function invoked to initialize the BSP information, 
@@ -740,7 +735,7 @@
             ) {
                 <span class="comment">// this `lapic_entry` wasn&#39;t for the BSP, try the next one.
                 </span><span class="prelude-val">Err</span>(LapicInitError::NotBSP) =&gt; <span class="kw">continue</span>,
-                <span class="prelude-val">Err</span>(other_err) =&gt; <span class="kw">return </span><span class="prelude-val">Err</span>(Box::leak(<span class="macro">format!</span>(<span class="string">&quot;{:?}&quot;</span>, other_err).into_boxed_str())),
+                <span class="prelude-val">Err</span>(other_err) =&gt; <span class="kw">return </span><span class="prelude-val">Err</span>(Box::leak(<span class="macro">format!</span>(<span class="string">&quot;{other_err:?}&quot;</span>).into_boxed_str())),
                 <span class="prelude-val">Ok</span>(()) =&gt; { } <span class="comment">// fall through
             </span>};
 
@@ -802,7 +797,7 @@
 </span><span class="kw">fn </span>handle_ioapic_entries(madt_iter: MadtIter, page_table: <span class="kw-2">&amp;mut </span>PageTable) -&gt; <span class="prelude-ty">Result</span>&lt;(), <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str&gt; {
     <span class="kw">for </span>madt_entry <span class="kw">in </span>madt_iter {
         <span class="kw">if let </span>MadtEntry::IoApic(ioa) = madt_entry {
-            ioapic::IoApic::new(page_table, ioa.id, PhysicalAddress::new_canonical(ioa.address <span class="kw">as </span>usize), ioa.gsi_base)<span class="question-mark">?</span>;
+            ioapic::IoApic::create(page_table, ioa.id, PhysicalAddress::new_canonical(ioa.address <span class="kw">as </span>usize), ioa.gsi_base)<span class="question-mark">?</span>;
         }
     }
     <span class="prelude-val">Ok</span>(())
@@ -814,15 +809,12 @@
 /// If no entry exists, it returns the default NMI entry value: `(lint = 1, flags = 0)`.
 </span><span class="kw">pub fn </span>find_nmi_entry_for_processor(processor: u8, madt_iter: MadtIter) -&gt; (u8, u16) {
     <span class="kw">for </span>madt_entry <span class="kw">in </span>madt_iter {
-        <span class="kw">match </span>madt_entry {
-            MadtEntry::NonMaskableInterrupt(nmi) =&gt; {
-                <span class="comment">// NMI entries are based on the &quot;processor&quot; id, not the &quot;apic_id&quot;
-                // Return this Nmi entry if it&#39;s for the given lapic, or if it&#39;s for all lapics
-                </span><span class="kw">if </span>nmi.processor == processor || nmi.processor == <span class="number">0xFF  </span>{
-                    <span class="kw">return </span>(nmi.lint, nmi.flags);
-                }
+        <span class="kw">if let </span>MadtEntry::NonMaskableInterrupt(nmi) = madt_entry {
+            <span class="comment">// NMI entries are based on the &quot;processor&quot; id, not the &quot;apic_id&quot;
+            // Return this Nmi entry if it&#39;s for the given lapic, or if it&#39;s for all lapics
+            </span><span class="kw">if </span>nmi.processor == processor || nmi.processor == <span class="number">0xFF  </span>{
+                <span class="kw">return </span>(nmi.lint, nmi.flags);
             }
-            <span class="kw">_ </span>=&gt; {  }
         }
     }
 

@@ -385,6 +385,11 @@
 <a href="#385" id="385">385</a>
 <a href="#386" id="386">386</a>
 <a href="#387" id="387">387</a>
+<a href="#388" id="388">388</a>
+<a href="#389" id="389">389</a>
+<a href="#390" id="390">390</a>
+<a href="#391" id="391">391</a>
+<a href="#392" id="392">392</a>
 </pre><pre class="rust"><code><span class="doccomment">//! A full serial driver with more advanced I/O support, e.g., interrupt-based data receival.
 //!
 //! This crate builds on  [`serial_port_basic`], which provides the lower-level types
@@ -404,7 +409,6 @@
 
 #[macro_use] </span><span class="kw">extern crate </span>log;
 <span class="attr">#[macro_use] </span><span class="kw">extern crate </span>alloc;
-<span class="attr">#[macro_use] </span><span class="kw">extern crate </span>static_assertions;
 <span class="kw">extern crate </span>spin;
 <span class="kw">extern crate </span>irq_safety;
 <span class="kw">extern crate </span>interrupts;
@@ -558,7 +562,7 @@
             interrupt_handler,
             serial_port_receive_deferred,
             serial_port,
-            <span class="prelude-val">Some</span>(<span class="macro">format!</span>(<span class="string">&quot;serial_port_deferred_task_irq_{:#X}&quot;</span>, interrupt_number)),
+            <span class="prelude-val">Some</span>(<span class="macro">format!</span>(<span class="string">&quot;serial_port_deferred_task_irq_{interrupt_number:#X}&quot;</span>)),
         );
 
         <span class="kw">match </span>registration_result {
@@ -613,9 +617,9 @@
     </span><span class="kw">pub fn </span>set_data_sender(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         sender: Sender&lt;DataChunk&gt;
-    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), ()&gt; {
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), DataSenderAlreadyExists&gt; {
         <span class="kw">if </span><span class="self">self</span>.data_sender.is_some() { 
-            <span class="prelude-val">Err</span>(())
+            <span class="prelude-val">Err</span>(DataSenderAlreadyExists)
         } <span class="kw">else </span>{
             <span class="self">self</span>.data_sender = <span class="prelude-val">Some</span>(sender);
             <span class="prelude-val">Ok</span>(())
@@ -623,6 +627,11 @@
     }
 
 }
+
+<span class="doccomment">/// An empty error type indicating that a data sender could not be set
+/// for a serial port because a sender had already been set for it.
+</span><span class="attr">#[derive(Debug)]
+</span><span class="kw">pub struct </span>DataSenderAlreadyExists;
 
 
 <span class="doccomment">/// A non-blocking implementation of [`core2::io::Read`] that will read bytes into the given `buf`
@@ -738,8 +747,9 @@
     <span class="kw">pub </span>len: u8,
     <span class="kw">pub </span>data: [u8; (<span class="number">64 </span>- <span class="number">1</span>)],
 }
-<span class="macro">const_assert_eq!</span>(core::mem::size_of::&lt;DataChunk&gt;(), <span class="number">64</span>);
-<span class="macro">const_assert_eq!</span>(core::mem::align_of::&lt;DataChunk&gt;(), <span class="number">64</span>);
+<span class="kw">const _</span>: () = <span class="macro">assert!</span>(core::mem::size_of::&lt;DataChunk&gt;() == <span class="number">64</span>);
+<span class="kw">const _</span>: () = <span class="macro">assert!</span>(core::mem::align_of::&lt;DataChunk&gt;() == <span class="number">64</span>);
+
 <span class="kw">impl </span>DataChunk {
     <span class="doccomment">/// Returns a new `DataChunk` filled with zeroes that can be written into.
     </span><span class="kw">pub const fn </span>empty() -&gt; <span class="self">Self </span>{
