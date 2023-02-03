@@ -21,6 +21,7 @@ path = "../memory_structs"
 
 [dependencies.trusted_chunk]
 path = "../../libs/trusted_chunk"
+features = ["without_std"]
 
 [lib]
 crate-type = ["rlib"]
