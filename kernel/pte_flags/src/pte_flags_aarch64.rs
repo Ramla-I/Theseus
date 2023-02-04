@@ -2,14 +2,12 @@
 
 use crate::PteFlags;
 use bitflags::bitflags;
-use static_assertions::const_assert_eq;
 
 /// A mask for the bits of a page table entry that contain the physical frame address.
 pub const PTE_FRAME_MASK: u64 = 0x0000_FFFF_FFFF_F000;
 
 // Ensure that we never expose reserved bits [12:47] as part of the `PteFlagsAarch64` interface.
-const_assert_eq!(PteFlagsAarch64::all().bits() & PTE_FRAME_MASK, 0);
-
+const _: () = assert!(PteFlagsAarch64::all().bits() & PTE_FRAME_MASK == 0);
 
 bitflags! {
     /// Page table entry (PTE) flags on aarch64.
@@ -368,7 +366,7 @@ impl PteFlagsAarch64 {
     /// for use in a higher-level page table entry, e.g., P4, P3, P2.
     ///
     /// Currently, on aarch64, this does the following:
-    /// * Clears the `NOT_EXECUTABLE` bit.  
+    /// * Clears the `NOT_EXECUTABLE` bit, making it executable. 
     ///   * P4, P3, and P2 entries should never set `NOT_EXECUTABLE`,
     ///     only the lowest-level P1 entry should.
     /// * Clears the `EXCLUSIVE` bit.
@@ -376,11 +374,17 @@ impl PteFlagsAarch64 {
     ///     because another page table frame may re-use it (create another alias to it)
     ///     without our page table implementation knowing about it.
     ///   * Only P1-level PTEs can map a frame exclusively.
+    /// * Sets the `ACCESSED` bit, since Theseus currently does not use it
+    ///   and aarch64 will throw an Access Flag Fault if it is not set.
+    /// * Sets the `PAGE_DESCRIPTOR` bit, since Theseus currently does not
+    ///   use block descriptors on aarch64.
     /// * Sets the `VALID` bit, as every P4, P3, and P2 entry must be valid.
     #[must_use]
     pub fn adjust_for_higher_level_pte(self) -> Self {
         self.executable(true)
             .exclusive(false)
+            .accessed(true)
+            .page_descriptor(true)
             .valid(true)
     }
 
