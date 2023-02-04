@@ -24,12 +24,16 @@ extern crate memory_structs;
 extern crate spin;
 #[macro_use] extern crate static_assertions;
 extern crate intrusive_collections;
+extern crate range_inclusive;
+extern crate trusted_chunk;
+
 use intrusive_collections::Bound;
 
 
 mod static_array_rb_tree;
 // mod static_array_linked_list;
 mod chunk;
+mod trusted_chunk_shim;
 
 use core::{borrow::Borrow, cmp::Ordering, fmt, ops::{Deref, DerefMut}};
 use kernel_config::memory::*;

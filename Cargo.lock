@@ -2398,8 +2398,10 @@ dependencies = [
  "kernel_config",
  "log",
  "memory_structs",
+ "range_inclusive",
  "spin 0.9.4",
  "static_assertions",
+ "trusted_chunk",
 ]
 
 [[package]]
