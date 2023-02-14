@@ -1,0 +1,24 @@
+[package]
+name = "nic_queues_fast"
+description = "Defines structs that hold all information related to nic receive and transmit queues"
+version = "0.1.0"
+authors = ["Ramla-I <ijazramla@gmail.com>"]
+
+[dependencies]
+owning_ref = { git = "https://github.com/theseus-os/owning-ref-rs" }
+mpmc = "0.1.6"
+
+[dependencies.memory]
+path = "../memory"
+
+[dependencies.log]
+version = "0.4.8"
+
+[dependencies.intel_ethernet]
+path = "../intel_ethernet"
+
+[dependencies.nic_buffers_fast]
+path = "../nic_buffers_fast"
+
+[lib]
+crate-type = ["rlib"]

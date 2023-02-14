@@ -1,0 +1,19 @@
+[package]
+name = "nic_buffers_fast"
+description = "Structs for network transmit and receive buffers"
+version = "0.1.0"
+authors = ["Kevin Boos <kevinaboos@gmail.com>"]
+
+[dependencies]
+owning_ref = { git = "https://github.com/theseus-os/owning-ref-rs" }
+mpmc = "0.1.6"
+
+[dependencies.memory]
+path = "../memory"
+
+[dependencies.log]
+version = "0.4.8"
+
+
+[lib]
+crate-type = ["rlib"]

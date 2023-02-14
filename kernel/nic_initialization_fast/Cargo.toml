@@ -1,0 +1,32 @@
+[package]
+authors = ["Kevin Boos <kevinaboos@gmail.com>", "Ramla Ijaz <ijazramla@gmail.com>"]
+name = "nic_initialization_fast"
+description = "A set of functions used to initialize a Network Interface Card"
+version = "0.1.0"
+
+[dependencies]
+owning_ref = { git = "https://github.com/theseus-os/owning-ref-rs" }
+volatile = "0.2.7"
+mpmc = "0.1.6"
+
+[dependencies.log]
+version = "0.4.8"
+
+[dependencies.memory]
+path = "../memory"
+
+[dependencies.pci]
+path = "../pci"
+
+[dependencies.intel_ethernet]
+path = "../intel_ethernet"
+
+[dependencies.nic_buffers_fast]
+path = "../nic_buffers_fast"
+
+[dependencies.nic_queues_fast]
+path = "../nic_queues_fast"
+
+
+[lib]
+crate-type = ["rlib"]
