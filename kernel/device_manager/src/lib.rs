@@ -18,7 +18,7 @@ extern crate storage_manager;
 extern crate network_manager;
 extern crate ethernet_smoltcp_device;
 extern crate mpmc;
-extern crate ixgbe;
+extern crate ixgbe_fast;
 extern crate alloc;
 extern crate fatfs;
 extern crate io;
@@ -139,7 +139,7 @@ pub fn init(key_producer: Queue<Event>, mouse_producer: Queue<Event>) -> Result<
                 add_to_network_interfaces(e1000_interface);
                 continue;
             }
-            if dev.vendor_id == ixgbe::INTEL_VEND && dev.device_id == ixgbe::INTEL_82599 {
+            if dev.vendor_id == ixgbe_fast::INTEL_VEND && dev.device_id == ixgbe_fast::INTEL_82599 {
                 info!("ixgbe PCI device found at: {:?}", dev.location);
                 
                 // Initialization parameters of the NIC.
@@ -149,13 +149,13 @@ pub fn init(key_producer: Queue<Event>, mouse_producer: Queue<Event>) -> Result<
                 const RX_DESCS: u16 = 512;
                 const TX_DESCS: u16 = 512;
                 
-                let ixgbe_nic = ixgbe::IxgbeNic::init(
+                let ixgbe_nic = ixgbe_fast::IxgbeNic::init(
                     dev, 
                     dev.location,
                     VIRT_ENABLED, 
                     None, 
                     RSS_ENABLED, 
-                    ixgbe::RxBufferSizeKiB::Buffer2KiB,
+                    ixgbe_fast::RxBufferSizeKiB::Buffer2KiB,
                     RX_DESCS,
                     TX_DESCS
                 )?;
@@ -163,15 +163,15 @@ pub fn init(key_producer: Queue<Event>, mouse_producer: Queue<Event>) -> Result<
                 ixgbe_devs.push(ixgbe_nic);
                 continue;
             }
-            if dev.vendor_id == mlx5::MLX_VEND && (dev.device_id == mlx5::CONNECTX5_DEV || dev.device_id == mlx5::CONNECTX5_EX_DEV) {
-                info!("mlx5 PCI device found at: {:?}", dev.location);
-                const RX_DESCS: usize = 512;
-                const TX_DESCS: usize = 8192;
-                const MAX_MTU:  u16 = 9000;
+            // if dev.vendor_id == mlx5::MLX_VEND && (dev.device_id == mlx5::CONNECTX5_DEV || dev.device_id == mlx5::CONNECTX5_EX_DEV) {
+            //     info!("mlx5 PCI device found at: {:?}", dev.location);
+            //     const RX_DESCS: usize = 512;
+            //     const TX_DESCS: usize = 8192;
+            //     const MAX_MTU:  u16 = 9000;
 
-                mlx5::ConnectX5Nic::init(dev, TX_DESCS, RX_DESCS, MAX_MTU)?;
-                continue;
-            }
+            //     mlx5::ConnectX5Nic::init(dev, TX_DESCS, RX_DESCS, MAX_MTU)?;
+            //     continue;
+            // }
 
             // here: check for and initialize other ethernet cards
         }
@@ -180,15 +180,15 @@ pub fn init(key_producer: Queue<Event>, mouse_producer: Queue<Event>) -> Result<
     }
 
     // Once all the NICs have been initialized, we can store them and add them to the list of network interfaces.
-    let ixgbe_nics = ixgbe::IXGBE_NICS.call_once(|| ixgbe_devs);
-    for ixgbe_nic_ref in ixgbe_nics.iter() {
-        let ixgbe_interface = EthernetNetworkInterface::new_ipv4_interface(
-            ixgbe_nic_ref, 
-            DEFAULT_LOCAL_IP, 
-            &DEFAULT_GATEWAY_IP
-        )?;
-        add_to_network_interfaces(ixgbe_interface);
-    }
+    let ixgbe_nics = ixgbe_fast::IXGBE_NICS.call_once(|| ixgbe_devs);
+    // for ixgbe_nic_ref in ixgbe_nics.iter() {
+    //     let ixgbe_interface = EthernetNetworkInterface::new_ipv4_interface(
+    //         ixgbe_nic_ref, 
+    //         DEFAULT_LOCAL_IP, 
+    //         &DEFAULT_GATEWAY_IP
+    //     )?;
+    //     add_to_network_interfaces(ixgbe_interface);
+    // }
 
     // Convenience notification for developers to inform them of no networking devices
     if network_manager::NETWORK_INTERFACES.lock().is_empty() {

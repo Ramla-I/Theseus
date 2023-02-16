@@ -24,6 +24,12 @@ extern crate network_interface_card;
 extern crate ixgbe_fast;
 extern crate spawn;
 extern crate getopts;
+extern crate hpet;
+extern crate libtest;
+extern crate nic_buffers_fast;
+extern crate nic_initialization_fast;
+extern crate pmu_x86;
+extern crate irq_safety;
 
 use alloc::vec::Vec;
 use alloc::string::String;
@@ -34,7 +40,8 @@ use ixgbe_fast::{
 };
 use network_interface_card::NetworkInterfaceCard;
 use getopts::{Matches, Options};
-
+use hpet::get_hpet;
+use libtest::hpet_2_ns;
 
 const DEST_MAC_ADDR: [u8; 6] = [0xa0, 0x36, 0x9f, 0x1d, 0x94, 0x4c];
 
@@ -87,29 +94,85 @@ fn rmain(matches: &Matches, opts: &Options) -> Result<(), &'static str> {
     if ixgbe_devs.is_empty() { return Err("No ixgbe device available"); }
 
     // for (i, locked_nic) in ixgbe_devs.iter().enumerate() {
-        let mut nic = ixgbe_devs[0].lock();
-        println!("Ixgbe NIC : {} {:?}", 0 , nic.device_id());
-        for qid in 0..1/*IXGBE_NUM_TX_QUEUES_ENABLED*/ {
-            let mut buffers = Vec::with_capacity(32);
-            for _ in 0..batch_size {
-                buffers.push(create_raw_packet(&DEST_MAC_ADDR, &mac_address, &[1;46])?);
-            }
-            let (pkts_sent, free_buffers) = nic.tx_batch(qid, &mut buffers)?;
-            println!("packets sent  = {}, used buffers = {}", pkts_sent, free_buffers.len());
-        }
+        // let mut nic = ixgbe_devs[0].lock();
+        // println!("Ixgbe NIC : {} {:?}", 0 , nic.device_id());
+        // for qid in 0..1/*IXGBE_NUM_TX_QUEUES_ENABLED*/ {
+        //     let mut buffers = Vec::with_capacity(32);
+        //     for _ in 0..batch_size {
+        //         buffers.push(create_raw_packet(&DEST_MAC_ADDR, &mac_address, &[1;46])?);
+        //     }
+        //     let (pkts_sent, free_buffers) = nic.tx_batch(qid, &mut buffers)?;
+        //     println!("packets sent  = {}, used buffers = {}", pkts_sent, free_buffers.len());
+        // }
     // }
 
-    if matches.opt_present("r") {
-        for locked_nic in ixgbe_devs {
-            let mut nic = locked_nic.lock();
-            // let mut buffers = Vec::with_capacity(batch_size);
-            // loop {
-                // for qid in 0..1/*IXGBE_NUM_RX_QUEUES_ENABLED*/ {
-                //     let pkts_received = nic.rx_batch(qid as usize, &mut buffers, batch_size)?;
-                //     println!("pkts received = {}, {}", pkts_received, buffers.len());
-                // }
-            // }
+    // if matches.opt_present("r") {
+    //     for locked_nic in ixgbe_devs {
+    //         let mut nic = locked_nic.lock();
+    //         let mut buffers = Vec::with_capacity(batch_size);
+    //         // loop {
+    //             for qid in 0..1/*IXGBE_NUM_RX_QUEUES_ENABLED*/ {
+    //                 let pkts_received = nic.rx_batch(qid as usize, &mut buffers, batch_size)?;
+    //                 println!("pkts received = {}, {}", pkts_received, buffers.len());
+    //             }
+    //         // }
+    //     }
+    // }
+let interrupts = irq_safety::hold_interrupts();
+    pmu_x86::init()?;
+
+    let mut counters = pmu_x86::stat::PerformanceCounters::new()?;
+
+    let mut dev0 = ixgbe_devs[0].lock();
+    let mut dev1 = ixgbe_devs[1].lock();
+    let mut received_buffers = Vec::with_capacity(512);
+    let mut transmitted_buffers: Vec<nic_buffers_fast::PacketBuffer> = Vec::with_capacity(512);
+    let mut pool = Vec::with_capacity(512 * 2);
+
+    nic_initialization_fast::init_rx_buf_pool2(512*2, 2048, &mut pool)?;
+
+    dev0.clear_stats2();
+    dev1.clear_stats2();
+    const NANO_TO_FEMTO: u64 = 1_000_000;
+    let hpet = get_hpet().ok_or("Could not retrieve hpet counter")?;
+    let mut start_hpet: u64 = hpet.get_counter();
+    let mut delta_hpet: u64 = 0;
+	let hpet_period = get_hpet().unwrap().counter_period_femtoseconds() as u64;
+    let one_sec = (1_000_000_000 * NANO_TO_FEMTO) / hpet_period;
+    
+    println!("Link speed: {} Mbps", dev0.link_speed() as usize);
+    println!("Link speed: {} Mbps", dev1.link_speed() as usize);
+
+    let mut rx_packets = 0;
+    dev1.tx_populate(0, &mut pool);
+    println!("starting forwarder, number of buffers: {}", pool.len());
+    counters.start()?;
+    loop {
+
+        if delta_hpet >= one_sec * 5 {
+            let stats = &dev0.get_stats();
+            println!("RX: {} Gb/s", (stats.1  as f32 * 8.0) / (1_000_000_000.0 * 5.0));
+            println!("RX packets: {}", rx_packets );
+            println!("Actual Rx: {} Mpps", rx_packets as f32/ (1_000_000.0 * 5.0) );
+            println!("Dropped Rx: {} Mpps", dev0.get_rx_pkts_dropped() as f32/ (1_000_000.0 * 5.0) );
+
+
+            let stats = &dev1.get_stats();
+            println!("TX: {} Gb/s", (stats.3 as f32 * 8.0) / (1_000_000_000.0 * 5.0));
+            println!("{:?}\n", counters.read());
+
+            rx_packets = 0;
+            start_hpet = hpet.get_counter();
         }
+
+        rx_packets += dev0.rx_batch(0, &mut received_buffers, 128, &mut pool)?;
+        // pool.append(&mut received_buffers);
+        // dev1.tx_batch_pseudo1(0, 32);
+        // (_, transmitted_buffers) = dev1.tx_batch(0, &mut received_buffers)?;
+        // pool.append(&mut transmitted_buffers);
+
+        delta_hpet = hpet.get_counter() - start_hpet;
+
     }
 
     Ok(())

@@ -26,6 +26,7 @@ pub fn main(args: Vec<String>) -> isize {
         return print_usage(opts)
     }
 
+    let mut num = 0;
     let all_lapics = get_lapics();
     for lapic in all_lapics.iter() {
         let lapic = lapic.1;
@@ -35,25 +36,26 @@ pub fn main(args: Vec<String>) -> isize {
         let core_type = if is_bsp {"BSP Core"}
                         else {"AP Core"};
 
-        println!("\n{} (apic: {}, proc: {})", core_type, apic_id, processor); 
+        print!("{} (apic: {}, proc: {})", core_type, apic_id, processor); 
         
-        if let Some(runqueue) = runqueue::get_runqueue(apic_id).map(|rq| rq.read()) {
-            let mut runqueue_contents = String::new();
-            for task in runqueue.iter() {
-                runqueue_contents.push_str(&format!("{} ({}) {}\n", 
-                    task.name, 
-                    task.id,
-                    if task.is_running() { "*" } else { "" },
-                ));
-            }
-            println!("RunQueue:\n{}", runqueue_contents);
-        }
-        
-        else {
-            println!("Can't retrieve runqueue for core {}", apic_id);
-            return -1;
-        }
+        // if let Some(runqueue) = runqueue::get_runqueue(apic_id).map(|rq| rq.read()) {
+        //     let mut runqueue_contents = String::new();
+        //     for task in runqueue.iter() {
+        //         runqueue_contents.push_str(&format!("{} ({}) {}\n", 
+        //             task.name, 
+        //             task.id,
+        //             if task.is_running() { "*" } else { "" },
+        //         ));
+        //     }
+        //     println!("RunQueue:\n{}", runqueue_contents);
+        // }
+        // else {
+        //     println!("Can't retrieve runqueue for core {}", apic_id);
+        //     return -1;
+        // }
+        num += 1;
     }
+    println!("Total lapics: {}", num);
     
     0
 }

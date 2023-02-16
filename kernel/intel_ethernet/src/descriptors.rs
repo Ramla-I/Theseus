@@ -238,14 +238,17 @@ impl RxDescriptor for AdvancedRxDescriptor {
         self.header_buffer_address.write(0);
     }
 
+    #[inline]
     fn set_packet_address(&mut self, packet_buffer_address: PhysicalAddress) {
         self.packet_buffer_address.write(packet_buffer_address.value() as u64);
     }
 
+    #[inline]
     fn reset_status(&mut self) {
         self.header_buffer_address.write(0);
     }
 
+    #[inline]
     fn descriptor_done(&self) -> bool{
         (self.get_ext_status() & RX_STATUS_DD as u64) == RX_STATUS_DD as u64
     }
@@ -306,6 +309,7 @@ impl AdvancedRxDescriptor {
     /// Write Back mode function for the Advanced Receive Descriptor.
     /// Status information indicates whether a descriptor has been used 
     /// and whether the buffer is the last one for a packet
+    #[inline]
     pub fn get_ext_status(&self) -> u64{
         self.header_buffer_address.read().get_bits(0..19) 
     }
@@ -396,6 +400,11 @@ impl TxDescriptor for AdvancedTxDescriptor {
     }
 }
 
+impl AdvancedTxDescriptor {
+    pub fn clear_status(&mut self, transmit_buffer_length: u16) {
+        self.paylen_popts_cc_idx_sta.write((transmit_buffer_length as u32) << TX_PAYLEN_SHIFT);
+    }
+}
 impl fmt::Debug for AdvancedTxDescriptor {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("AdvancedTxDescriptor")

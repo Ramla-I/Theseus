@@ -89,8 +89,11 @@ const_assert_eq!(core::mem::size_of::<IntelIxgbeRxRegisters1>(), 4096);
 #[derive(FromBytes)]
 #[repr(C)]
 pub struct IntelIxgbeRegisters2 {
-    _padding1:                          [u8; 3840],             // 0x2000 - 0x2EFF
+    _padding1:                          [u8; 1052 /*3840*/],             // 0x2000 - 0x2EFF
     
+    pub fcoerpdc:                       Volatile<u32>,          // 0x241C
+    _padding1a:                         [u8; 2784],
+
     /// Receive DMA Control Register
     pub rdrxctl:                        Volatile<u32>,          // 0x2F00;
     _padding2:                          [u8; 252],              // 0x2F04 - 0x2FFF
@@ -437,6 +440,7 @@ pub const RTTDCS_ARBDIS:                u32 = 1 << 6;
 pub const TXPBSIZE_160KB:                u32 = 0xA0 << 10;
 /// For DCB and VT disabled, set RXPBSIZE.SIZE to 512KB
 pub const RXPBSIZE_512KB:                u32 = 0x200 << 10;
+pub const RXPBSIZE_128KB:                u32 = 0x00020000; // from ixy.rs
 
 // RCTL commands
 pub const BSIZEPACKET_8K:               u32 = 8;

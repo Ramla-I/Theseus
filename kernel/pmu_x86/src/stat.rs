@@ -88,6 +88,19 @@ impl PerformanceCounters {
         Ok(())
     }
 
+    /// Start running all the counters 
+    pub fn read(&mut self) -> PMUResults{
+        PMUResults {
+            inst_retired: self.inst_retired.diff(),
+            core_cycles: self.core_cycles.diff(), 
+            ref_cycles: self.ref_cycles.diff(), 
+            llc_ref: self.llc_ref.diff(), 
+            llc_miss: self.llc_miss.diff(), 
+            br_inst_ret: self.br_inst_ret.diff(), 
+            br_miss_ret: self.br_miss_ret.diff()
+        }
+    }
+
     /// Stop the counters and return the counter values.
     /// The `PerformanceCounters` object is consumed since the counters are freed in this function
     /// and should not be accessed again.

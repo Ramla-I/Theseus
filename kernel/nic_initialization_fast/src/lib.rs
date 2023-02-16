@@ -89,6 +89,17 @@ pub fn init_rx_buf_pool(num_rx_buffers: usize, buffer_size: u16, rx_buffer_pool:
     Ok(())
 }
 
+pub fn init_rx_buf_pool2(num_rx_buffers: usize, buffer_size: u16, rx_buffer_pool: &mut Vec<PacketBuffer>) -> Result<(), &'static str> {
+    let length = buffer_size;
+    for _i in 0..num_rx_buffers {
+        let (mp, phys_addr) = create_contiguous_mapping(length as usize, NIC_MAPPING_FLAGS)?; 
+        let rx_buf = PacketBuffer{mp, phys_addr, length};
+        rx_buffer_pool.push(rx_buf);
+    }
+
+    Ok(())
+}
+
 /// Steps to create and initialize a receive descriptor queue
 /// 
 /// # Arguments

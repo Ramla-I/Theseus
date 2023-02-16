@@ -71,7 +71,7 @@ use rand::{
     RngCore,
     rngs::SmallRng
 };
-use core::mem::ManuallyDrop;
+use core::mem::{ManuallyDrop, self};
 use hashbrown::HashMap;
 
 /// Vendor ID for Intel
@@ -103,11 +103,11 @@ const NUM_L34_5_TUPLE_FILTERS:              usize   = 128;
 /// The number of receive queues that are enabled. 
 /// Do NOT set this greater than 64 since the queues 65-128 don't seem to work, 
 /// most likely because they need additional configuration.
-pub const IXGBE_NUM_RX_QUEUES_ENABLED:          u8      = 64;
+pub const IXGBE_NUM_RX_QUEUES_ENABLED:          u8      = 1;
 /// The number of transmit queues that are enabled. 
 /// Do NOT set this greater than 64 since the queues 65-128 don't seem to work, 
 /// most likely because they need additional configuration.
-pub const IXGBE_NUM_TX_QUEUES_ENABLED:          u8      = 64;
+pub const IXGBE_NUM_TX_QUEUES_ENABLED:          u8      = 1;
 
 
 
@@ -170,7 +170,7 @@ pub struct IxgbeNic {
     /// The number of rx queues enabled
     num_rx_queues: u8,
     /// Vector of the enabled rx queues
-    rx_queues: Vec<RxQueue<IxgbeRxQueueRegisters,AdvancedRxDescriptor>>,
+    pub rx_queues: Vec<RxQueue<IxgbeRxQueueRegisters,AdvancedRxDescriptor>>,
     /// Registers for the disabled queues
     rx_registers_disabled: Vec<IxgbeRxQueueRegisters>,
     /// The number of tx queues enabled
@@ -351,6 +351,10 @@ impl IxgbeNic {
         info!("Link is up with speed: {} Mb/s", ixgbe_nic.link_speed() as u32);
 
         Ok(MutexIrqSafe::new(ixgbe_nic))
+    }
+
+    pub fn mac_address(&self) -> [u8; 6] {
+        self.mac_spoofed.unwrap_or(self.mac_hardware)
     }
 
     /// Returns the device id of the PCI device.
@@ -601,6 +605,18 @@ impl IxgbeNic {
         regs.gorch.read();
         regs.gotcl.read();
         regs.gotch.read();
+        regs.fcoerpdc.read();
+    }
+
+    /// Clear the statistic registers by reading from them.
+    pub fn clear_stats2(&self) {
+        self.regs2.gprc.read();
+        self.regs2.gptc.read();
+        self.regs2.gorcl.read();
+        self.regs2.gorch.read();
+        self.regs2.gotcl.read();
+        self.regs2.gotch.read();
+        self.regs2.fcoerpdc.read();
     }
 
     /// Returns the Rx and Tx statistics in the form: (Good Rx packets, Good Rx bytes, Good Tx packets, Good Tx bytes).
@@ -610,6 +626,10 @@ impl IxgbeNic {
         let tx_bytes =  ((self.regs2.gotch.read() as u64 & 0xF) << 32) | self.regs2.gotcl.read() as u64;
 
         (self.regs2.gprc.read(), rx_bytes, self.regs2.gptc.read(), tx_bytes)
+    }
+
+    pub fn get_rx_pkts_dropped(&self) -> u32 {
+        self.regs2.fcoerpdc.read()
     }
 
     /// Initializes the array of receive descriptors and their corresponding receive buffers,
@@ -631,7 +651,7 @@ impl IxgbeNic {
 
         Self::disable_rx_function(regs);
         // program RXPBSIZE according to DCB and virtualization modes (both off)
-        regs.rxpbsize[0].write(RXPBSIZE_512KB);
+        regs.rxpbsize[0].write(RXPBSIZE_128KB);
         for i in 1..8 {
             regs.rxpbsize[i].write(0);
         }
@@ -649,8 +669,8 @@ impl IxgbeNic {
             
             //set the size of the packet buffers and the descriptor format used
             let mut val = rxq.srrctl.read();
-            val.set_bits(0..4, rx_buffer_size_kbytes as u32);
-            val.set_bits(8..13, BSIZEHEADER_0B);
+            // val.set_bits(0..4, rx_buffer_size_kbytes as u32);
+            // val.set_bits(8..13, BSIZEHEADER_0B);
             val.set_bits(25..27, DESCTYPE_ADV_1BUFFER);
             val = val | DROP_ENABLE;
             rxq.srrctl.write(val);
@@ -775,7 +795,7 @@ impl IxgbeNic {
 
     /// Retrieves `num_packets` packets from queue `qid` and stores them in `buffers`.
     /// Returns the total number of received packets.
-    pub fn rx_batch(&mut self, qid: usize, buffers: &mut Vec<PacketBuffer>, num_packets: usize) -> Result<usize, &'static str> {
+    pub fn rx_batch(&mut self, qid: usize, buffers: &mut Vec<PacketBuffer>, num_packets: usize, pool: &mut Vec<PacketBuffer>) -> Result<usize, &'static str> {
         if qid >= self.rx_queues.len() {
             return Err("Invalid queue id");
         }
@@ -787,46 +807,48 @@ impl IxgbeNic {
         let mut rcvd_pkts = 0;
 
         for _ in 0..num_packets {
+            let desc = &mut queue.rx_descs[rx_cur];
             // error!("last_rx_cur = {}, rx_cur = {}", last_rx_cur, rx_cur);
-            if !queue.rx_descs[rx_cur].descriptor_done() {
+            if !desc.descriptor_done() {
                 // error!("DD = {}", queue.rx_descs[rx_cur].descriptor_done());
                 break;
             }
 
-            if !queue.rx_descs[rx_cur].end_of_packet() {
-                return Err("Currently do not support multi-descriptor packets");
-            }
+            // if !queue.rx_descs[rx_cur].end_of_packet() {
+            //     return Err("Currently do not support multi-descriptor packets");
+            // }
 
-            let length = queue.rx_descs[rx_cur].length();
+            // let length = desc.length();
 
             // Now that we are "removing" the current receive buffer from the list of receive buffers that the NIC can use,
             // (because we're saving it for higher layers to use),
             // we need to obtain a new `ReceiveBuffer` and set it up such that the NIC will use it for future receivals.
-            let new_receive_buf = match queue.rx_buffer_pool.pop() {
-                Some(rx_buf) => rx_buf,
-                None => {
-                    warn!("NIC RX BUF POOL WAS EMPTY.... reallocating! This means that no task is consuming the accumulated received ethernet frames.");
-                    // if the pool was empty, then we allocate a new receive buffer
-                    let len = queue.rx_buffer_size_bytes;
-                    let (mp, phys_addr) = create_contiguous_mapping(len as usize, NIC_MAPPING_FLAGS)?;
-                    PacketBuffer{mp, phys_addr, length: len}
-                }
-            };
+            // let new_receive_buf = match pool.pop() {
+            //     Some(rx_buf) => rx_buf,
+            //     None => {
+            //         // warn!("NIC RX BUF POOL WAS EMPTY.... reallocating! This means that no task is consuming the accumulated received ethernet frames.");
+            //         // // if the pool was empty, then we allocate a new receive buffer
+            //         // let len = queue.rx_buffer_size_bytes;
+            //         // let (mp, phys_addr) = create_contiguous_mapping(len as usize, NIC_MAPPING_FLAGS)?;
+            //         // PacketBuffer{mp, phys_addr, length: len}
+            //         panic!("ran out of buffers");
+            //     }
+            // };
+            // if let Some(new_receive_buf) = pool.pop() {
+            //     // actually tell the NIC about the new receive buffer, and that it's ready for use now
+                desc.set_packet_address(queue.rx_bufs_in_use[rx_cur].phys_addr);
+                desc.reset_status();
+                
+            //     let mut current_rx_buf = mem::replace(&mut queue.rx_bufs_in_use[rx_cur], new_receive_buf);
+            //     current_rx_buf.length = length as u16; // set the ReceiveBuffer's length to the size of the actual packet received
+            //     buffers.push(current_rx_buf);
 
-            // actually tell the NIC about the new receive buffer, and that it's ready for use now
-            queue.rx_descs[rx_cur].set_packet_address(new_receive_buf.phys_addr);
-            queue.rx_descs[rx_cur].reset_status();
-
-            // Swap in the new receive buffer at the index corresponding to this current rx_desc's receive buffer,
-            // getting back the receive buffer that is part of the received ethernet frame
-            queue.rx_bufs_in_use.push(new_receive_buf);
-            let mut current_rx_buf = queue.rx_bufs_in_use.swap_remove(rx_cur); 
-            current_rx_buf.length = length as u16; // set the ReceiveBuffer's length to the size of the actual packet received
-
-            buffers.push(current_rx_buf);
-            rcvd_pkts += 1;
-            last_rx_cur = rx_cur;
-            rx_cur = (rx_cur + 1) % queue.num_rx_descs as usize;
+                rcvd_pkts += 1;
+                last_rx_cur = rx_cur;
+                rx_cur = (rx_cur + 1) & (queue.num_rx_descs as usize - 1);
+            // } else {
+            //     break;
+            // }
         }
 
         if last_rx_cur != rx_cur {
@@ -876,6 +898,48 @@ impl IxgbeNic {
         Ok((pkts_sent, used_buffers))
     }
 
+    /// Sends all packets in `buffers` on queue `qid` if there are descriptors available.
+    /// (number of packets sent, used transmit buffers that can now be dropped or reused) are returned.
+    pub fn tx_populate(&mut self, qid: usize, buffers: &mut Vec<PacketBuffer>) {
+        let queue = &mut self.tx_queues[qid];
+
+        for i in 0..queue.num_tx_descs as usize {
+            let packet = buffers.pop().unwrap();
+            queue.tx_descs[i].send(packet.phys_addr, packet.length);
+            queue.tx_bufs_in_use.push_back(packet);
+        }
+    }
+
+    /// Sends all packets in `buffers` on queue `qid` if there are descriptors available.
+    /// (number of packets sent, used transmit buffers that can now be dropped or reused) are returned.
+    pub fn tx_batch_pseudo(&mut self, qid: usize, batch_size: usize) {
+        let queue = &mut self.tx_queues[qid];
+        let mut tx_cur = queue.tx_cur as usize;
+
+        for i in 0..batch_size {
+            queue.tx_descs[tx_cur].clear_status(queue.tx_bufs_in_use[tx_cur].length);
+            tx_cur = (tx_cur + 1) % queue.num_tx_descs as usize;
+        }
+
+        queue.tx_cur = tx_cur as u16;
+        queue.regs.set_tdt(tx_cur as u32);
+    }
+
+        /// Sends all packets in `buffers` on queue `qid` if there are descriptors available.
+    /// (number of packets sent, used transmit buffers that can now be dropped or reused) are returned.
+    pub fn tx_batch_pseudo1(&mut self, qid: usize, batch_size: usize) {
+        let queue = &mut self.tx_queues[qid];
+        let mut tx_cur = queue.tx_cur as usize;
+
+        for i in 0..batch_size {
+            queue.tx_descs[tx_cur].send(queue.tx_bufs_in_use[tx_cur].phys_addr, queue.tx_bufs_in_use[tx_cur].length);
+            tx_cur = (tx_cur + 1) % queue.num_tx_descs as usize;
+        }
+
+        queue.tx_cur = tx_cur as u16;
+        queue.regs.set_tdt(tx_cur as u32);
+    }
+    
 
     /// Removes multiples of `TX_CLEAN_BATCH` packets from `queue`.    
     /// (code taken from https://github.com/ixy-languages/ixy.rs/blob/master/src/ixgbe.rs#L1016)
@@ -975,3 +1039,45 @@ pub enum FilterProtocol {
     Other = 3
 }
 
+/// Creates a `TransmitBuffer` that contains a packet with only the ethernet header.
+pub fn create_raw_packet(
+    dest_mac_address: &[u8], 
+    source_mac_address: &[u8], 
+    message: &[u8]
+) -> Result<PacketBuffer, &'static str> {
+    
+    const ETHER_TYPE_LEN: usize = 2;
+    const MAC_ADDR_LEN: usize = 6;
+    const ETHERNET_HEADER_LEN: usize = MAC_ADDR_LEN * 2 + ETHER_TYPE_LEN;
+    const MIN_PACKET_LEN: usize = 46;
+
+    let mut len = message.len() as u16;
+    if len > 1500 {
+        return Err("Too long for a raw packet");
+    }
+    if len < MIN_PACKET_LEN as u16 {
+        len = 46;
+    }
+
+    let ether_type: [u8; ETHER_TYPE_LEN] = [(len >> 8) as u8, len as u8];
+
+    let mut transmit_buffer = PacketBuffer::new(ETHERNET_HEADER_LEN as u16 + len)?;
+    { 
+        let buffer: &mut [u8] = transmit_buffer.as_slice_mut(0, MAC_ADDR_LEN)?;
+        buffer.copy_from_slice(&dest_mac_address);
+    }
+    { 
+        let buffer: &mut [u8] = transmit_buffer.as_slice_mut(6, MAC_ADDR_LEN)?;
+        buffer.copy_from_slice(&source_mac_address);
+    }
+    { 
+        let buffer: &mut [u8] = transmit_buffer.as_slice_mut(12, ETHER_TYPE_LEN)?;
+        buffer.copy_from_slice(&ether_type);
+    }
+    { 
+        let buffer: &mut [u8] = transmit_buffer.as_slice_mut(14, message.len())?;
+        buffer.copy_from_slice(&message);
+    }
+
+    Ok(transmit_buffer)
+}
