@@ -399,6 +399,16 @@ impl PciDevice {
         Ok(mem_base)
     }
 
+    pub fn determine_prefetchable(&self, bar_index: usize) -> Result<u32, &'static str> {
+        let mut bar = if let Some(bar_value) = self.bars.get(bar_index) {
+            *bar_value
+        } else {
+            return Err("BAR index must be between 0 and 5 inclusive");
+        };
+
+        Ok(bar)
+    }
+    
     /// Returns the size in bytes of the memory region specified by the given `BAR` 
     /// (Base Address Register) for this PCI device.
     ///

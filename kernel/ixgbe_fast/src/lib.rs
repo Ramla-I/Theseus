@@ -179,6 +179,8 @@ pub struct IxgbeNic {
     tx_queues: Vec<TxQueue<IxgbeTxQueueRegisters,AdvancedTxDescriptor>>,
     /// Registers for the disabled queues
     tx_registers_disabled: Vec<IxgbeTxQueueRegisters>,
+    ///prefetchable
+    pub prefetchable: u32
 }
 
 
@@ -346,6 +348,7 @@ impl IxgbeNic {
             num_tx_queues: IXGBE_NUM_TX_QUEUES_ENABLED,
             tx_queues: tx_queues,
             tx_registers_disabled: tx_mapped_registers,
+            prefetchable: ixgbe_pci_dev.determine_prefetchable(0)?
         };
 
         info!("Link is up with speed: {} Mb/s", ixgbe_nic.link_speed() as u32);
@@ -796,9 +799,9 @@ impl IxgbeNic {
     /// Retrieves `num_packets` packets from queue `qid` and stores them in `buffers`.
     /// Returns the total number of received packets.
     pub fn rx_batch(&mut self, qid: usize, buffers: &mut Vec<PacketBuffer>, num_packets: usize, pool: &mut Vec<PacketBuffer>) -> Result<usize, &'static str> {
-        if qid >= self.rx_queues.len() {
-            return Err("Invalid queue id");
-        }
+        // if qid >= self.rx_queues.len() {
+        //     return Err("Invalid queue id");
+        // }
 
         let queue = &mut self.rx_queues[qid];
         let mut rx_cur = queue.rx_cur as usize;

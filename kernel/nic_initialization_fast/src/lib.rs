@@ -27,10 +27,17 @@ use nic_buffers_fast::PacketBuffer;
 use nic_queues_fast::{RxQueueRegisters, TxQueueRegisters};
 
 /// The mapping flags used for pages that the NIC will map.
-pub const NIC_MAPPING_FLAGS: EntryFlags = EntryFlags::from_bits_truncate(
+pub const NIC_MAPPING_FLAGS_NO_CACHE: EntryFlags = EntryFlags::from_bits_truncate(
     EntryFlags::PRESENT.bits() |
     EntryFlags::WRITABLE.bits() |
     EntryFlags::NO_CACHE.bits() |
+    EntryFlags::NO_EXECUTE.bits()
+);
+
+pub const NIC_MAPPING_FLAGS_CACHED: EntryFlags = EntryFlags::from_bits_truncate(
+    EntryFlags::PRESENT.bits() |
+    EntryFlags::WRITABLE.bits() |
+    // EntryFlags::NO_CACHE.bits() |
     EntryFlags::NO_EXECUTE.bits()
 );
 
@@ -63,7 +70,7 @@ pub fn allocate_memory(mem_base: PhysicalAddress, mem_size_in_bytes: usize) -> R
 
     let kernel_mmi_ref = get_kernel_mmi_ref().ok_or("NicInit::mem_map(): KERNEL_MMI was not yet initialized!")?;
     let mut kernel_mmi = kernel_mmi_ref.lock();
-    let nic_mapped_page = kernel_mmi.page_table.map_allocated_pages_to(pages_nic, frames_nic, NIC_MAPPING_FLAGS)?;
+    let nic_mapped_page = kernel_mmi.page_table.map_allocated_pages_to(pages_nic, frames_nic, NIC_MAPPING_FLAGS_NO_CACHE)?;
 
     Ok(nic_mapped_page)
 }
@@ -77,7 +84,7 @@ pub fn allocate_memory(mem_base: PhysicalAddress, mem_size_in_bytes: usize) -> R
 pub fn init_rx_buf_pool(num_rx_buffers: usize, buffer_size: u16, rx_buffer_pool: &'static mpmc::Queue<PacketBuffer>) -> Result<(), &'static str> {
     let length = buffer_size;
     for _i in 0..num_rx_buffers {
-        let (mp, phys_addr) = create_contiguous_mapping(length as usize, NIC_MAPPING_FLAGS)?; 
+        let (mp, phys_addr) = create_contiguous_mapping(length as usize, NIC_MAPPING_FLAGS_CACHED)?; 
         let rx_buf = PacketBuffer{mp, phys_addr, length};
         if rx_buffer_pool.push(rx_buf).is_err() {
             // if the queue is full, it returns an Err containing the object trying to be pushed
@@ -92,7 +99,7 @@ pub fn init_rx_buf_pool(num_rx_buffers: usize, buffer_size: u16, rx_buffer_pool:
 pub fn init_rx_buf_pool2(num_rx_buffers: usize, buffer_size: u16, rx_buffer_pool: &mut Vec<PacketBuffer>) -> Result<(), &'static str> {
     let length = buffer_size;
     for _i in 0..num_rx_buffers {
-        let (mp, phys_addr) = create_contiguous_mapping(length as usize, NIC_MAPPING_FLAGS)?; 
+        let (mp, phys_addr) = create_contiguous_mapping(length as usize, NIC_MAPPING_FLAGS_CACHED)?; 
         let rx_buf = PacketBuffer{mp, phys_addr, length};
         rx_buffer_pool.push(rx_buf);
     }
@@ -113,7 +120,7 @@ pub fn init_rx_queue<T: RxDescriptor, S:RxQueueRegisters>(num_desc: usize, rx_bu
     let size_in_bytes_of_all_rx_descs_per_queue = num_desc * core::mem::size_of::<T>();
     
     // Rx descriptors must be 128 byte-aligned, which is satisfied below because it's aligned to a page boundary.
-    let (rx_descs_mapped_pages, rx_descs_starting_phys_addr) = create_contiguous_mapping(size_in_bytes_of_all_rx_descs_per_queue, NIC_MAPPING_FLAGS)?;
+    let (rx_descs_mapped_pages, rx_descs_starting_phys_addr) = create_contiguous_mapping(size_in_bytes_of_all_rx_descs_per_queue, NIC_MAPPING_FLAGS_CACHED)?;
 
     // cast our physically-contiguous MappedPages into a slice of receive descriptors
     let mut rx_descs = BoxRefMut::new(Box::new(rx_descs_mapped_pages)).try_map_mut(|mp| mp.as_slice_mut::<T>(0, num_desc))?;
@@ -126,7 +133,7 @@ pub fn init_rx_queue<T: RxDescriptor, S:RxQueueRegisters>(num_desc: usize, rx_bu
         let rx_buf = rx_buffer_pool.pop()
             .ok_or("Couldn't obtain a ReceiveBuffer from the pool")
             .or_else(|_e| {
-                create_contiguous_mapping(buffer_size, NIC_MAPPING_FLAGS)
+                create_contiguous_mapping(buffer_size, NIC_MAPPING_FLAGS_CACHED)
                     .map(|(buf_mapped, buf_paddr)| 
                         PacketBuffer{mp: buf_mapped, phys_addr: buf_paddr, length: buffer_size as u16}
                     )
@@ -167,7 +174,7 @@ pub fn init_tx_queue<T: TxDescriptor, S: TxQueueRegisters>(num_desc: usize, txq_
     let size_in_bytes_of_all_tx_descs = num_desc * core::mem::size_of::<T>();
     
     // Tx descriptors must be 128 byte-aligned, which is satisfied below because it's aligned to a page boundary.
-    let (tx_descs_mapped_pages, tx_descs_starting_phys_addr) = create_contiguous_mapping(size_in_bytes_of_all_tx_descs, NIC_MAPPING_FLAGS)?;
+    let (tx_descs_mapped_pages, tx_descs_starting_phys_addr) = create_contiguous_mapping(size_in_bytes_of_all_tx_descs, NIC_MAPPING_FLAGS_CACHED)?;
 
     // cast our physically-contiguous MappedPages into a slice of transmit descriptors
     let mut tx_descs = BoxRefMut::new(Box::new(tx_descs_mapped_pages))

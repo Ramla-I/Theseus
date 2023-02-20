@@ -142,7 +142,8 @@ let interrupts = irq_safety::hold_interrupts();
     
     println!("Link speed: {} Mbps", dev0.link_speed() as usize);
     println!("Link speed: {} Mbps", dev1.link_speed() as usize);
-
+    println!("dev0 prefetchable: {:#X}. dev1 prefetchable: {:#X}", dev0.prefetchable, dev1.prefetchable);
+    // loop{}
     let mut rx_packets = 0;
     dev1.tx_populate(0, &mut pool);
     println!("starting forwarder, number of buffers: {}", pool.len());

@@ -776,7 +776,7 @@ dependencies = [
  "fatfs",
  "io",
  "iommu",
- "ixgbe",
+ "ixgbe_fast",
  "keyboard",
  "log",
  "logger",
@@ -2291,6 +2291,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "packet_forwarder"
+version = "0.1.0"
+dependencies = [
+ "getopts",
+ "hpet",
+ "irq_safety",
+ "ixgbe_fast",
+ "libtest",
+ "log",
+ "network_interface_card",
+ "nic_buffers_fast",
+ "nic_initialization_fast",
+ "pmu_x86",
+ "spawn",
+ "terminal_print",
+]
+
+[[package]]
 name = "page_allocator"
 version = "0.1.0"
 dependencies = [
@@ -3401,7 +3419,7 @@ name = "test_ixgbe_batch"
 version = "0.1.0"
 dependencies = [
  "getopts",
- "ixgbe",
+ "ixgbe_fast",
  "log",
  "network_interface_card",
  "spawn",
