@@ -76,41 +76,41 @@ pub fn main(args: Vec<String>) -> isize {
 fn rmain(matches: &Matches, opts: &Options) -> Result<(), &'static str> {
     let batch_size = 32;
 
-    let (dev_id, mac_address) = {
-        let ixgbe_devs = get_ixgbe_nics_list().ok_or("Ixgbe NICs list not initialized")?;
-        if ixgbe_devs.is_empty() { return Err("No ixgbe device available"); }
-        let nic = ixgbe_devs[0].lock();
-        (nic.device_id(), nic.mac_address())
-    };
+    // let (dev_id, mac_address) = {
+    //     let ixgbe_devs = get_ixgbe_nics_list().ok_or("Ixgbe NICs list not initialized")?;
+    //     if ixgbe_devs.is_empty() { return Err("No ixgbe device available"); }
+    //     let nic = ixgbe_devs[0].lock();
+    //     (nic.device_id(), nic.mac_address())
+    // };
 
-    let ixgbe_devs = get_ixgbe_nics_list().ok_or("Ixgbe NICs list not initialized")?;
-    if ixgbe_devs.is_empty() { return Err("No ixgbe device available"); }
+    // let ixgbe_devs = get_ixgbe_nics_list().ok_or("Ixgbe NICs list not initialized")?;
+    // if ixgbe_devs.is_empty() { return Err("No ixgbe device available"); }
 
-    // for (i, locked_nic) in ixgbe_devs.iter().enumerate() {
-        let mut nic = ixgbe_devs[0].lock();
-        println!("Ixgbe NIC : {} {:?}", 0 , nic.device_id());
-        for qid in 0..1/*IXGBE_NUM_TX_QUEUES_ENABLED*/ {
-            let mut buffers = Vec::with_capacity(32);
-            for _ in 0..batch_size {
-                buffers.push(create_raw_packet(&DEST_MAC_ADDR, &mac_address, &[1;46])?);
-            }
-            let (pkts_sent, free_buffers) = nic.tx_batch(qid, &mut buffers)?;
-            println!("packets sent  = {}, used buffers = {}", pkts_sent, free_buffers.len());
-        }
+    // // for (i, locked_nic) in ixgbe_devs.iter().enumerate() {
+    //     let mut nic = ixgbe_devs[0].lock();
+    //     println!("Ixgbe NIC : {} {:?}", 0 , nic.device_id());
+    //     for qid in 0..1/*IXGBE_NUM_TX_QUEUES_ENABLED*/ {
+    //         let mut buffers = Vec::with_capacity(32);
+    //         for _ in 0..batch_size {
+    //             buffers.push(create_raw_packet(&DEST_MAC_ADDR, &mac_address, &[1;46])?);
+    //         }
+    //         let (pkts_sent, free_buffers) = nic.tx_batch(qid, &mut buffers)?;
+    //         println!("packets sent  = {}, used buffers = {}", pkts_sent, free_buffers.len());
+    //     }
+    // // }
+
+    // if matches.opt_present("r") {
+    //     for locked_nic in ixgbe_devs {
+    //         let mut nic = locked_nic.lock();
+    //         // let mut buffers = Vec::with_capacity(batch_size);
+    //         // loop {
+    //             // for qid in 0..1/*IXGBE_NUM_RX_QUEUES_ENABLED*/ {
+    //             //     let pkts_received = nic.rx_batch(qid as usize, &mut buffers, batch_size)?;
+    //             //     println!("pkts received = {}, {}", pkts_received, buffers.len());
+    //             // }
+    //         // }
+    //     }
     // }
-
-    if matches.opt_present("r") {
-        for locked_nic in ixgbe_devs {
-            let mut nic = locked_nic.lock();
-            // let mut buffers = Vec::with_capacity(batch_size);
-            // loop {
-                // for qid in 0..1/*IXGBE_NUM_RX_QUEUES_ENABLED*/ {
-                //     let pkts_received = nic.rx_batch(qid as usize, &mut buffers, batch_size)?;
-                //     println!("pkts received = {}, {}", pkts_received, buffers.len());
-                // }
-            // }
-        }
-    }
 
     Ok(())
 }

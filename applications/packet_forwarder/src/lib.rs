@@ -18,7 +18,7 @@
 
 #![no_std]
 #[macro_use] extern crate alloc;
-// #[macro_use] extern crate log;
+#[macro_use] extern crate log;
 #[macro_use] extern crate terminal_print;
 extern crate network_interface_card;
 extern crate ixgbe_fast;
@@ -31,26 +31,33 @@ extern crate nic_initialization_fast;
 extern crate pmu_x86;
 extern crate irq_safety;
 
+
 use alloc::vec::Vec;
 use alloc::string::String;
+use irq_safety::MutexIrqSafe;
 use ixgbe_fast::{
     get_ixgbe_nics_list,
     create_raw_packet,
-    IXGBE_NUM_RX_QUEUES_ENABLED, IXGBE_NUM_TX_QUEUES_ENABLED,
+    IXGBE_NUM_RX_QUEUES_ENABLED, IXGBE_NUM_TX_QUEUES_ENABLED, IxgbeStats,
 };
+use log::error;
 use network_interface_card::NetworkInterfaceCard;
 use getopts::{Matches, Options};
 use hpet::get_hpet;
-use libtest::hpet_2_ns;
 
 const DEST_MAC_ADDR: [u8; 6] = [0xa0, 0x36, 0x9f, 0x1d, 0x94, 0x4c];
+const DESC_RING_SIZE: usize = 512;
 
 pub fn main(args: Vec<String>) -> isize {
 
     let mut opts = Options::new();
     opts.optflag("h", "help", "print this help menu");
-    opts.optflag("r", "receive", "Test receive functionality. 
-    If this flag is enabled then the program will never terminate since the queues are endlessly polled for incoming packets.");
+    opts.optflag("s", "stats", "collect tx/rx stats and print them out.");
+    opts.optflag("p", "pmu", "enable PMU monitoring. The PMU counter values are only printed if the -s flag is enabled as well.");
+    opts.optopt("c", "core", "core to run the packet forwarder thread on", "CPU_ID");
+    opts.optopt("b", "batch_size", "batch size for Rx and Tx", "BATCH");
+    opts.optopt("l", "length", "length of packets to be received/ transmitted in bytes", "LENGTH");
+
 
     let matches = match opts.parse(&args) {
         Ok(m) => m,
@@ -66,8 +73,6 @@ pub fn main(args: Vec<String>) -> isize {
         return 0;
     }
 
-    println!("Ixgbe batch test application");
-
     match rmain(&matches, &opts) {
         Ok(()) => {
             println!("Ixgbe test was successful");
@@ -81,108 +86,161 @@ pub fn main(args: Vec<String>) -> isize {
 }
 
 fn rmain(matches: &Matches, opts: &Options) -> Result<(), &'static str> {
-    let batch_size = 32;
+    let mut core = 0;
+    let mut batch_size = 32;
+    let mut packet_length_in_bytes = 64;
 
-    let (dev_id, mac_address) = {
-        let ixgbe_devs = get_ixgbe_nics_list().ok_or("Ixgbe NICs list not initialized")?;
-        if ixgbe_devs.is_empty() { return Err("No ixgbe device available"); }
-        let nic = ixgbe_devs[0].lock();
-        (nic.device_id(), nic.mac_address())
-    };
-
-    let ixgbe_devs = get_ixgbe_nics_list().ok_or("Ixgbe NICs list not initialized")?;
-    if ixgbe_devs.is_empty() { return Err("No ixgbe device available"); }
-
-    // for (i, locked_nic) in ixgbe_devs.iter().enumerate() {
-        // let mut nic = ixgbe_devs[0].lock();
-        // println!("Ixgbe NIC : {} {:?}", 0 , nic.device_id());
-        // for qid in 0..1/*IXGBE_NUM_TX_QUEUES_ENABLED*/ {
-        //     let mut buffers = Vec::with_capacity(32);
-        //     for _ in 0..batch_size {
-        //         buffers.push(create_raw_packet(&DEST_MAC_ADDR, &mac_address, &[1;46])?);
-        //     }
-        //     let (pkts_sent, free_buffers) = nic.tx_batch(qid, &mut buffers)?;
-        //     println!("packets sent  = {}, used buffers = {}", pkts_sent, free_buffers.len());
-        // }
-    // }
-
-    // if matches.opt_present("r") {
-    //     for locked_nic in ixgbe_devs {
-    //         let mut nic = locked_nic.lock();
-    //         let mut buffers = Vec::with_capacity(batch_size);
-    //         // loop {
-    //             for qid in 0..1/*IXGBE_NUM_RX_QUEUES_ENABLED*/ {
-    //                 let pkts_received = nic.rx_batch(qid as usize, &mut buffers, batch_size)?;
-    //                 println!("pkts received = {}, {}", pkts_received, buffers.len());
-    //             }
-    //         // }
-    //     }
-    // }
-let interrupts = irq_safety::hold_interrupts();
-    pmu_x86::init()?;
-
-    let mut counters = pmu_x86::stat::PerformanceCounters::new()?;
-
-    let mut dev0 = ixgbe_devs[0].lock();
-    let mut dev1 = ixgbe_devs[1].lock();
-    let mut received_buffers = Vec::with_capacity(512);
-    let mut transmitted_buffers: Vec<nic_buffers_fast::PacketBuffer> = Vec::with_capacity(512);
-    let mut pool = Vec::with_capacity(512 * 2);
-
-    nic_initialization_fast::init_rx_buf_pool2(512*2, 2048, &mut pool)?;
-
-    dev0.clear_stats2();
-    dev1.clear_stats2();
-    const NANO_TO_FEMTO: u64 = 1_000_000;
-    let hpet = get_hpet().ok_or("Could not retrieve hpet counter")?;
-    let mut start_hpet: u64 = hpet.get_counter();
-    let mut delta_hpet: u64 = 0;
-	let hpet_period = get_hpet().unwrap().counter_period_femtoseconds() as u64;
-    let one_sec = (1_000_000_000 * NANO_TO_FEMTO) / hpet_period;
-    
-    println!("Link speed: {} Mbps", dev0.link_speed() as usize);
-    println!("Link speed: {} Mbps", dev1.link_speed() as usize);
-    println!("dev0 prefetchable: {:#X}. dev1 prefetchable: {:#X}", dev0.prefetchable, dev1.prefetchable);
-    // loop{}
-    let mut rx_packets = 0;
-    dev1.tx_populate(0, &mut pool);
-    println!("starting forwarder, number of buffers: {}", pool.len());
-    counters.start()?;
-    loop {
-
-        if delta_hpet >= one_sec * 5 {
-            let stats = &dev0.get_stats();
-            println!("RX: {} Gb/s", (stats.1  as f32 * 8.0) / (1_000_000_000.0 * 5.0));
-            println!("RX packets: {}", rx_packets );
-            println!("Actual Rx: {} Mpps", rx_packets as f32/ (1_000_000.0 * 5.0) );
-            println!("Dropped Rx: {} Mpps", dev0.get_rx_pkts_dropped() as f32/ (1_000_000.0 * 5.0) );
-
-
-            let stats = &dev1.get_stats();
-            println!("TX: {} Gb/s", (stats.3 as f32 * 8.0) / (1_000_000_000.0 * 5.0));
-            println!("{:?}\n", counters.read());
-
-            rx_packets = 0;
-            start_hpet = hpet.get_counter();
-        }
-
-        rx_packets += dev0.rx_batch(0, &mut received_buffers, 128, &mut pool)?;
-        // pool.append(&mut received_buffers);
-        // dev1.tx_batch_pseudo1(0, 32);
-        // (_, transmitted_buffers) = dev1.tx_batch(0, &mut received_buffers)?;
-        // pool.append(&mut transmitted_buffers);
-
-        delta_hpet = hpet.get_counter() - start_hpet;
-
+    if let Some(i) = matches.opt_default("c", "0") {
+        core = i.parse::<u8>().map_err(|_e| "couldn't parse core ID")?;
     }
+    
+    if let Some(i) = matches.opt_default("b", "32") {
+        batch_size = i.parse::<usize>().map_err(|_e| "couldn't parse batch size")?;
+    }
+
+    if let Some(i) = matches.opt_default("l", "64") {
+        packet_length_in_bytes = i.parse::<u16>().map_err(|_e| "couldn't parse packet length")?;
+    }
+
+    let collect_stats = if matches.opt_present("s") { true } else { false };
+
+    let pmu = if matches.opt_present("p") { true } else { false };
+
+    println!("Running packet forwarder on core {}", core);
+
+    let taskref = spawn::new_task_builder(packet_forwarder, (batch_size, packet_length_in_bytes, collect_stats, pmu))
+        .name(String::from("packet_forwarder"))
+        .pin_on_core(core)
+        .spawn()?;
+
+    taskref.join()?;
 
     Ok(())
 }
 
 
+/// Args are (ixgbe devices, batch size, pmu_enabled, print stats)
+fn packet_forwarder(args: (usize, u16, bool, bool)) {
+    let batch_size = args.0;
+    let packet_length_in_bytes = args.1;
+    let collect_stats = args.2;
+    let pmu = args.3;
+
+    // get a handle on the ixgbe nics, there should be at least 2.
+    let ixgbe_devs = get_ixgbe_nics_list().expect("ixgbe NICs list not initialized");
+    if ixgbe_devs.len() < 2{ 
+        error!("Less than 2 ixgbe devices available. Can't run packet forwarder."); 
+        return; 
+    }
+    let mut dev0 = ixgbe_devs[0].lock();
+    let mut dev1 = ixgbe_devs[1].lock();
+
+    // create the buffers to store packets. 
+    // They should have a large capacity so that no heap allocation is done during the benchmark
+    let mut received_buffers: Vec<nic_buffers_fast::PacketBuffer> = Vec::with_capacity(DESC_RING_SIZE * 2);
+    let mut used_buffers: Vec<nic_buffers_fast::PacketBuffer> = Vec::with_capacity(DESC_RING_SIZE * 2);
+    
+    // Create a pool of unused packet buffers
+    let mut pool = Vec::with_capacity(DESC_RING_SIZE * 4);
+    nic_initialization_fast::init_rx_buf_pool2(DESC_RING_SIZE * 4, packet_length_in_bytes, &mut pool).expect("failed to init buf pool");
+
+    // clear the stats registers, and create an object to store the NIC stats during the benchmark
+    dev0.clear_stats2();
+    dev1.clear_stats2();
+    let mut dev0_stats = IxgbeStats::default();
+    let mut dev1_stats = IxgbeStats::default();
+
+    // variables to store the total number of RX and TX packets in each interval
+    // these should match what is returned from the NIC stat regsiters.
+    let mut rx_packets_dev0 = 0;
+    let mut tx_packets_dev0 = 0;
+    let mut rx_packets_dev1 = 0;
+    let mut tx_packets_dev1 = 0;
+
+    // calculate the #hpet cycles in one second and store
+    const NANO_TO_FEMTO: u64 = 1_000_000;
+    let hpet = get_hpet().unwrap();
+	let hpet_period = hpet.counter_period_femtoseconds() as u64;
+    let cycles_in_one_sec = (1_000_000_000 * NANO_TO_FEMTO) / hpet_period;
+
+    // timer variables 
+    let mut iterations = 0;
+    let mut start_hpet: u64 = hpet.get_counter();
+    let mut delta_hpet: u64;
+    
+    // In the case of the pseudo tx function we go ahead and store a packet buffer for each descriptor,
+    // since we aren't doing any buffer management during the benchmark
+    // dev0.tx_populate(0, &mut pool);
+
+    error!("Link speed: {} Mbps", dev0.link_speed() as usize);
+    error!("Link speed: {} Mbps", dev1.link_speed() as usize);
+
+    // start the PMU if enabled
+    let mut counters = None;
+    if pmu {
+        pmu_x86::init().unwrap();
+        counters = Some(pmu_x86::stat::PerformanceCounters::new().expect("Couldn't get performance counters"));
+        counters.as_mut().unwrap().start().expect("failed to start counters");
+    }
+
+    loop {
+
+        if collect_stats && (iterations & 0xFFF == 0){
+            delta_hpet = hpet.get_counter() - start_hpet;
+
+            if delta_hpet >= cycles_in_one_sec {
+                if pmu {
+                    error!("{:?}\n", counters.as_mut().unwrap().read());
+                }
+
+                dev0.get_stats(&mut dev0_stats);
+                dev1.get_stats(&mut dev1_stats);
+                print_stats(0, &dev0_stats,  rx_packets_dev0, tx_packets_dev0);
+                print_stats(1, &dev1_stats, rx_packets_dev1, tx_packets_dev1);
+                rx_packets_dev0 = 0; tx_packets_dev0 = 0; rx_packets_dev1 = 0; tx_packets_dev1 = 0;
+                start_hpet = hpet.get_counter();
+            }
+        }
+
+        /*** bidirectional forwarder ***/
+        // rx_packets_dev0 += dev0.rx_batch(0, &mut received_buffers, batch_size, &mut pool).expect("DEV0: RX batch failure");
+        // tx_packets_dev1 += dev1.tx_batch(0, &mut received_buffers, &mut used_buffers).expect("DEV1: TX batch failure");   
+        // pool.append(&mut used_buffers); 
+
+        // rx_packets_dev1 += dev1.rx_batch(0, &mut received_buffers, batch_size, &mut pool).expect("DEV1: RX batch failure");
+        // tx_packets_dev0 += dev0.tx_batch(0, &mut received_buffers, &mut used_buffers).expect("DEV0: TX batch failure");        
+        // pool.append(&mut used_buffers); 
+
+        /*** unidirectional forwarder 1 port (right now I'm getting a max of 11 Mpps)***/ 
+        // rx_packets_dev0 += dev0.rx_batch(0, &mut received_buffers, batch_size, &mut pool).expect("DEV0: RX batch failure");
+        // // pool.append(&mut received_buffers);
+        // tx_packets_dev0 += dev0.tx_batch(0, &mut received_buffers, &mut used_buffers).expect("DEV0: TX batch failure");   
+        // pool.append(&mut used_buffers); 
+
+        /*** unidirectional forwarder 2 ports (tested till 8.8 Mpps)***/
+        rx_packets_dev0 += dev0.rx_batch(0, &mut received_buffers, batch_size, &mut pool).expect("DEV0: RX batch failure");
+        tx_packets_dev1 += dev1.tx_batch(0, &mut received_buffers, &mut used_buffers).expect("DEV1: TX batch failure");   
+        pool.append(&mut used_buffers); 
+
+        
+        if collect_stats {
+            iterations += 1;
+        }
+
+    }
+}
+
+
+fn print_stats(device_id: usize, dev_stats: &IxgbeStats, rx_packets: usize, tx_packets: usize) {
+    error!("DEV{}: RX reg: {} Gb/s | {} Mpps all | {} Mpps", 
+        device_id, (dev_stats.rx_bytes  as f32 * 8.0) / (1_000_000_000.0), dev_stats.rx_packets as f32/ (1_000_000.0), rx_packets as f32/ (1_000_000.0));
+    error!("DEV{}: TX reg: {} Gb/s | {} Mpps all | {} Mpps", 
+        device_id, (dev_stats.tx_bytes  as f32 * 8.0) / (1_000_000_000.0), dev_stats.tx_packets as f32/ (1_000_000.0), tx_packets as f32/ (1_000_000.0));
+}
+
 fn print_usage(opts: &Options) {
     println!("{}", opts.usage(USAGE));
 }
 
-const USAGE: &'static str = "Usage: test_ixgbe [ARGS]
-Checks the receive and transmit functionality of the ixgbe NIC.";
+const USAGE: &'static str = "Usage: packet_forwarder [ARGS]
+Runs a abasic throughput test for the ixgbe NIC.";
