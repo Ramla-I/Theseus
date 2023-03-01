@@ -6,9 +6,7 @@
 //! We also disable interrupts when using virtualization, since we do not yet have support for allowing applications to register their own interrupt handlers.
 
 #![no_std]
-#![feature(untagged_unions)]
 #![allow(dead_code)] //  to suppress warnings for unused functions/methods
-#![allow(unaligned_references)] // temporary, just to suppress unsafe packed borrows 
 #![feature(abi_x86_interrupt)]
 
 #[macro_use] extern crate log;
@@ -20,7 +18,7 @@ extern crate irq_safety;
 extern crate kernel_config;
 extern crate memory;
 extern crate pci; 
-extern crate pit_clock;
+extern crate pit_clock_basic;
 extern crate bit_field;
 extern crate interrupts;
 extern crate x86_64;
@@ -251,7 +249,7 @@ impl IxgbeNic {
         num_tx_descriptors: u16
     ) -> Result<MutexIrqSafe<IxgbeNic>, &'static str> {
         // Series of checks to determine if starting parameters are acceptable
-        if (enable_virtualization && interrupts.is_some()) || (enable_virtualization && enable_rss) {
+        if enable_virtualization && (interrupts.is_some() || enable_rss) {
             return Err("Cannot enable virtualization when interrupts or RSS are enabled");
         }
 
@@ -683,7 +681,7 @@ impl IxgbeNic {
 
         //wait 10 ms
         let wait_time = 10_000;
-        let _ =pit_clock::pit_wait(wait_time);
+        pit_clock_basic::pit_wait(wait_time)?;
 
         //disable flow control.. write 0 TO FCTTV, FCRTL, FCRTH, FCRTV and FCCFG
         for fcttv in regs2.fcttv.iter_mut() {
@@ -720,7 +718,7 @@ impl IxgbeNic {
 
         while Self::acquire_semaphore(regs3)? {
             //wait 10 ms
-            let _ =pit_clock::pit_wait(wait_time);
+            pit_clock_basic::pit_wait(wait_time)?;
         }
 
         // setup PHY and the link 
@@ -758,7 +756,7 @@ impl IxgbeNic {
         let mut tries = 0;
 
         while (regs2.links.read() & LINKS_SPEED_MASK == 0) && (tries < total_tries) {
-            let _ = pit_clock::pit_wait(wait_time);
+            let _ = pit_clock_basic::pit_wait(wait_time); // wait, or try again regardless
             tries += 1;
         }
     }
@@ -1040,7 +1038,7 @@ impl IxgbeNic {
         let enabled_filters = &mut self.l34_5_tuple_filters;
 
         // find a free filter
-        let filter_num = enabled_filters.iter().position(|&r| r == false).ok_or("Ixgbe: No filter available")?;
+        let filter_num = enabled_filters.iter().position(|&r| !r).ok_or("Ixgbe: No filter available")?;
 
         // start off with the filter mask set for all the filters, and clear bits for filters that are enabled
         // bits 29:25 are set to 1.
@@ -1304,7 +1302,7 @@ fn rx_interrupt_handler(qid: u8, nic_id: PciLocation) -> Option<u8> {
         Ok(ref ixgbe_nic_ref) => {
             let mut ixgbe_nic = ixgbe_nic_ref.lock();
             let _ = ixgbe_nic.rx_queues[qid as usize].poll_queue_and_store_received_packets();
-            ixgbe_nic.interrupt_num.get(&qid).and_then(|int| Some(*int))
+            ixgbe_nic.interrupt_num.get(&qid).map(|int| *int)
         }
         Err(e) => {
             error!("BUG: ixgbe_handler_{}(): {}", qid, e);

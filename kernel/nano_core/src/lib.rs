@@ -41,6 +41,10 @@ use memory::VirtualAddress;
 use kernel_config::memory::KERNEL_OFFSET;
 use serial_port_basic::{take_serial_port, SerialPortAddress};
 
+/// Used to obtain information about this build of Theseus.
+mod build_info {
+    include!(concat!(env!("OUT_DIR"), "/built.rs"));
+}
 
 /// Just like Rust's `try!()` macro, but instead of performing an early return upon an error,
 /// it invokes the `shutdown()` function upon an error in order to cleanly exit Theseus OS.
@@ -101,6 +105,14 @@ pub extern "C" fn nano_core_start(
     info!("Logger initialized.");
     println_raw!("nano_core_start(): initialized logger."); 
 
+    // Dump basic information about this build of Theseus.
+    info!("\n    \
+        ===================== Theseus build info: =====================\n    \
+        CUSTOM CFGs: {} \n    \
+        ===============================================================",
+        build_info::CUSTOM_CFG_STR,
+    );
+
     // initialize basic exception handlers
     exceptions_early::init(Some(VirtualAddress::new_canonical(early_double_fault_stack_top)));
     println_raw!("nano_core_start(): initialized early IDT with exception handlers."); 
@@ -109,8 +121,13 @@ pub extern "C" fn nano_core_start(
     if VirtualAddress::new(multiboot_information_virtual_address).is_none() {
         try_exit!(Err("multiboot info virtual address was invalid! Ensure that nano_core_start() is being invoked properly from boot.asm!"));
     }
-    let boot_info = unsafe { multiboot2::load(multiboot_information_virtual_address) };
-    println_raw!("nano_core_start(): booted via multiboot2 with info at {:#X}.", multiboot_information_virtual_address); 
+    let boot_info = try_exit!(
+        unsafe { multiboot2::load(multiboot_information_virtual_address) }.map_err(|e| {
+            error!("Error loading multiboot2 info: {:?}", e);
+            "Error loading multiboot2 info"
+        })
+    );
+    println_raw!("nano_core_start(): booted via multiboot2 with boot info at {:#X}.", multiboot_information_virtual_address); 
 
     // init memory management: set up stack with guard page, heap, kernel text/data mappings, etc
     let (
@@ -176,10 +193,12 @@ pub extern "C" fn nano_core_start(
     };
     println_raw!("nano_core_start(): finished parsing the nano_core crate."); 
 
-    // If in loadable mode, load each of the nano_core's constituent crates such that other crates loaded in the future
-    // can depend on those dynamically-loaded instances rather than on the statically-linked sections in the nano_core's base kernel image.
     #[cfg(loadable)] {
-        try_exit!(mod_mgmt::replace_nano_core_crates::replace_nano_core_crates(&default_namespace, nano_core_crate_ref, &kernel_mmi_ref));
+        // This isn't currently necessary; we can always add it in back later if/when needed.
+        // // If in loadable mode, load each of the nano_core's constituent crates such that other crates loaded in the future
+        // // can depend on those dynamically-loaded instances rather than on the statically-linked sections in the nano_core's base kernel image.
+        // try_exit!(mod_mgmt::replace_nano_core_crates::replace_nano_core_crates(&default_namespace, nano_core_crate_ref, &kernel_mmi_ref));
+        drop(nano_core_crate_ref);
     }
     #[cfg(not(loadable))] {
         drop(nano_core_crate_ref);
@@ -217,7 +236,7 @@ pub extern "C" fn nano_core_start(
         info!("The nano_core (in loadable mode) is invoking the captain init function: {:?}", section.name);
 
         type CaptainInitFunc = fn(MmiRef, Vec<MappedPages>, stack::Stack, VirtualAddress, VirtualAddress) -> Result<(), &'static str>;
-        let func: &CaptainInitFunc = try_exit!(section.as_func());
+        let func: &CaptainInitFunc = try_exit!(unsafe { section.as_func() });
 
         try_exit!(
             func(kernel_mmi_ref, identity_mapped_pages, stack, ap_realmode_begin, ap_realmode_end)
@@ -246,3 +265,10 @@ extern {
 /// This module is a hack to get around the issue of no_mangle symbols
 /// not being exported properly from the `libm` crate in no_std environments.
 mod libm;
+
+/// Implements OS support for GCC's stack smashing protection.
+/// This isn't used at the moment, but we make it available in case 
+/// any foreign code (e.g., C code) wishes to use it.
+/// 
+/// You can disable the need for this via the `-fno-stack-protection` GCC option.
+mod stack_smash_protection;

@@ -91,7 +91,7 @@ pub fn execute_binary(wasm_binary: Vec<u8>, args: Vec<String>, preopen_dirs: Vec
             // Currently supports `wasi_snapshot_preview1`.
             if wasm_interface.eq("wasi_snapshot_preview1") {
                 let system_call = SystemCall::from_str(fn_name)
-                    .expect(&format!("Unknown WASI function {}", fn_name));
+                    .unwrap_or_else(|_| panic!("Unknown WASI function {}", fn_name));
                 // Verify that signature of system call matches expected signature.
                 if fn_signature.eq(&system_call.into()) {
                     return Ok(system_call.into());
@@ -107,7 +107,7 @@ pub fn execute_binary(wasm_binary: Vec<u8>, args: Vec<String>, preopen_dirs: Vec
         .unwrap()
         .get_env()
         .lock()
-        .get_wd_path();
+        .cwd();
 
     let mut theseus_env_vars: Vec<String> = Vec::new();
     theseus_env_vars.push(format!("PWD={}", pwd));
@@ -117,7 +117,7 @@ pub fn execute_binary(wasm_binary: Vec<u8>, args: Vec<String>, preopen_dirs: Vec
         memory: state_machine.memory,
         exit_code: 0,
         fd_table: FileDescriptorTable::new(),
-        theseus_env_vars: theseus_env_vars,
+        theseus_env_vars,
         theseus_args: args,
     };
 

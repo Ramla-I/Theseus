@@ -2,24 +2,12 @@
 #![no_std]
 
 #![allow(dead_code)] //  to suppress warnings for unused functions/methods
-#![allow(unaligned_references)] // temporary, just to suppress unsafe packed borrows 
-
 
 #[macro_use] extern crate log;
-#[macro_use] extern crate lazy_static;
 extern crate alloc;
-extern crate volatile;
-extern crate irq_safety; 
 extern crate spin;
 extern crate memory;
-extern crate kernel_config;
-extern crate ioapic;
-extern crate pit_clock;
-extern crate ap_start;
-extern crate pic; 
-extern crate apic;
 extern crate hpet;
-extern crate pause;
 extern crate acpi_table;
 extern crate acpi_table_handler;
 extern crate rsdp;
@@ -38,11 +26,9 @@ use acpi_table::AcpiTables;
 use acpi_table_handler::acpi_table_handler;
 
 
-lazy_static! {
-    /// The singleton instance of the `AcpiTables` struct,
-    /// which contains the MappedPages and location of all discovered ACPI tables.
-    static ref ACPI_TABLES: Mutex<AcpiTables> = Mutex::new(AcpiTables::default());
-}
+/// The singleton instance of the `AcpiTables` struct,
+/// which contains the MappedPages and location of all discovered ACPI tables.
+static ACPI_TABLES: Mutex<AcpiTables> = Mutex::new(AcpiTables::empty());
 
 /// Returns a reference to the singleton instance of all ACPI tables 
 /// that have been discovered, mapped, and parsed so far.
@@ -73,7 +59,7 @@ pub fn init(page_table: &mut PageTable) -> Result<(), &'static str> {
     // The RSDT/XSDT tells us where all of the rest of the ACPI tables exist.
     {
         let mut acpi_tables = ACPI_TABLES.lock();
-        for sdt_paddr in sdt_addresses.clone() {
+        for sdt_paddr in sdt_addresses {
             // debug!("RXSDT entry: {:#X}", sdt_paddr);
             let (sdt_signature, sdt_total_length) = acpi_tables.map_new_table(sdt_paddr, page_table)?;
             acpi_table_handler(&mut acpi_tables, sdt_signature, sdt_total_length, sdt_paddr)?;

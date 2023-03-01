@@ -5,38 +5,17 @@
 
 #![allow(dead_code)]
 
-
-#[macro_use] extern crate log;
-#[macro_use] extern crate vga_buffer;
-extern crate x86_64;
-extern crate spin;
-extern crate port_io;
-extern crate kernel_config;
-extern crate memory;
-extern crate apic;
-extern crate pit_clock;
-extern crate tss;
-extern crate gdt;
-extern crate exceptions_early;
-extern crate pic;
-extern crate scheduler;
-extern crate keyboard;
-extern crate mouse;
-extern crate ps2;
-extern crate sleep;
-extern crate tlb_shootdown;
-
-
 pub use pic::IRQ_BASE_OFFSET;
 
-use ps2::handle_mouse_packet;
-use x86_64::structures::idt::{InterruptStackFrame, HandlerFunc, InterruptDescriptorTable, LockedIdt};
+use x86_64::structures::idt::{InterruptStackFrame, HandlerFunc};
 use spin::Once;
-use kernel_config::time::{CONFIG_PIT_FREQUENCY_HZ}; //, CONFIG_RTC_FREQUENCY_HZ};
 // use rtc;
-use core::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
+use core::sync::atomic::{AtomicUsize, Ordering};
 use memory::VirtualAddress;
 use apic::{INTERRUPT_CHIP, InterruptChip};
+use locked_idt::LockedIdt;
+use log::{error, warn, info, debug};
+use vga_buffer::{print_raw, println_raw};
 
 
 /// The single system-wide Interrupt Descriptor Table (IDT).
@@ -47,6 +26,15 @@ pub static IDT: LockedIdt = LockedIdt::new();
 /// The single system-wide Programmable Interrupt Controller (PIC) chip.
 static PIC: Once<pic::ChainedPics> = Once::new();
 
+/// The list of IRQs reserved for Theseus-specific usage that cannot be
+/// used for general device interrupt handlers.
+/// These cannot be accessed by [`register_interrupt()`] or [`deregister_interrupt()`].
+static RESERVED_IRQ_LIST: [u8; 3] = [
+    pic::PIC_SPURIOUS_INTERRUPT_IRQ,
+    apic::LOCAL_APIC_LVT_IRQ,
+    apic::APIC_SPURIOUS_INTERRUPT_IRQ,
+];
+
 
 /// Returns `true` if the given address is the exception handler in the current `IDT`
 /// for any exception in which the CPU pushes an error code onto the stack.
@@ -56,6 +44,7 @@ static PIC: Once<pic::ChainedPics> = Once::new();
 /// Obtains a lock on the global `IDT` instance.
 pub fn is_exception_handler_with_error_code(address: u64) -> bool {
     let idt = IDT.lock();
+    let address = x86_64::VirtAddr::new_truncate(address);
     
     // These are sorted from most to least likely, in order to short-circuit sooner.
     idt.page_fault.handler_addr() == address 
@@ -128,7 +117,7 @@ pub fn init(
 
         // Fill only *missing* IDT entries with a default unimplemented interrupt handler.
         for (_idx, new_entry) in new_idt.slice_mut(32..=255).iter_mut().enumerate() {
-            if new_entry.handler_addr() != 0 {
+            if new_entry.handler_addr().as_u64() != 0 {
                 debug!("Preserved early registered interrupt handler for IRQ {:#X} at address {:#X}", 
                     _idx + IRQ_BASE_OFFSET as usize, new_entry.handler_addr(),
                 );
@@ -136,14 +125,25 @@ pub fn init(
                 new_entry.set_handler_fn(unimplemented_interrupt_handler);
             }
         }
+        // This crate has a fixed dependency on the `pic` and `apic` crates,
+        // because they are required to implement certain functions, e.g., `eoi()`.
+        // Thus, we statically reserve the IDT entries used by the PIC & APIC,
+        // instead of making it dynamically register that interrupt like other devices do.
+        new_idt[pic::PIC_SPURIOUS_INTERRUPT_IRQ as usize]
+            .set_handler_fn(pic_spurious_interrupt_handler);
+        new_idt[apic::LOCAL_APIC_LVT_IRQ as usize]
+            .set_handler_fn(lapic_timer_handler);
+        new_idt[apic::APIC_SPURIOUS_INTERRUPT_IRQ as usize]
+            .set_handler_fn(apic_spurious_interrupt_handler); 
     }
 
     // try to load our new IDT    
-    {
-        info!("trying to load IDT for BSP...");
-        IDT.load();
-        info!("loaded IDT for BSP.");
-    }
+    info!("trying to load IDT for BSP...");
+    IDT.load();
+    info!("loaded IDT for BSP.");
+
+    // Use the APIC instead of the old PIC
+    disable_pic();
 
     Ok(&IDT)
 }
@@ -158,90 +158,74 @@ pub fn init_ap(
     info!("Setting up TSS & GDT for AP {}", apic_id);
     gdt::create_and_load_tss_gdt(apic_id, double_fault_stack_top_unusable, privilege_stack_top_unusable);
 
-    // We've already created the IDT initially (currently all APs share the BSP's IDT),
+    // We've already created the IDT initially (currently all CPUs share the initial IDT),
     // so we only need to re-load it here for each AP.
     IDT.load();
     info!("loaded IDT for AP {}.", apic_id);
     Ok(&IDT)
 }
 
-
-/// Establishes the default interrupt handlers that are statically known.
-fn set_handlers(idt: &mut InterruptDescriptorTable) {
-    idt[0x20].set_handler_fn(pit_timer_handler);
-    idt[0x21].set_handler_fn(ps2_keyboard_handler);
-    idt[0x22].set_handler_fn(lapic_timer_handler);
-    idt[0x27].set_handler_fn(pic_spurious_interrupt_handler); 
-
-    // idt[0x28].set_handler_fn(rtc_handler);
-    idt[0x2C].set_handler_fn(ps2_mouse_handler);
-    idt[0x2E].set_handler_fn(primary_ata_handler);
-    idt[0x2F].set_handler_fn(secondary_ata_handler);
-
-    idt[apic::APIC_SPURIOUS_INTERRUPT_VECTOR as usize].set_handler_fn(apic_spurious_interrupt_handler); 
-    idt[tlb_shootdown::TLB_SHOOTDOWN_IPI_IRQ as usize].set_handler_fn(ipi_handler);
-}
-
-
-pub fn init_handlers_apic() {
-    // first, do the standard interrupt remapping, but mask all PIC interrupts / disable the PIC
+/// Disables the PIC by masking all of its interrupts, indicating this system uses an APIC.
+fn disable_pic() {
     PIC.call_once(|| pic::ChainedPics::init(0xFF, 0xFF)); // disable all PIC IRQs
-    
-    set_handlers(&mut IDT.lock());
 }
 
-
-pub fn init_handlers_pic() {
-    set_handlers(&mut IDT.lock());
-
-    // init PIC, PIT and RTC interrupts
+/// Enable the PIC by enabling all of its interrupts.
+/// This indicates the system does not have an APIC or that we don't wish to use it.
+/// 
+/// Note: currently we assume all systems have an APIC, so this is not used.
+///       If we ever did re-enable it, we would also need to set up PIT/RTC timer interrupts
+///       for preemptive task switching instead of the APIC LVT timer.
+fn _enable_pic() {
     let master_pic_mask: u8 = 0x0; // allow every interrupt
     let slave_pic_mask: u8 = 0b0000_1000; // everything is allowed except 0x2B 
     PIC.call_once(|| pic::ChainedPics::init(master_pic_mask, slave_pic_mask));
 
-    pit_clock::init(CONFIG_PIT_FREQUENCY_HZ);
+    // pit_clock::init(CONFIG_PIT_FREQUENCY_HZ);
     // let rtc_handler = rtc::init(CONFIG_RTC_FREQUENCY_HZ, rtc_interrupt_func);
     // IDT.lock()[0x28].set_handler_fn(rtc_handler.unwrap());
 }
 
-/// Registers an interrupt handler. 
-/// The function fails if the interrupt number is already in use. 
-/// 
+/// Registers an interrupt handler at the given IRQ interrupt number.
+///
+/// The function fails if the interrupt number is reserved or is already in use.
+///
 /// # Arguments 
 /// * `interrupt_num`: the interrupt (IRQ vector) that is being requested.
 /// * `func`: the handler to be registered, which will be invoked when the interrupt occurs.
-/// 
+///
 /// # Return
 /// * `Ok(())` if successfully registered, or
 /// * `Err(existing_handler_address)` if the given `interrupt_num` was already in use.
 pub fn register_interrupt(interrupt_num: u8, func: HandlerFunc) -> Result<(), u64> {
     let mut idt = IDT.lock();
 
-    // If the existing handler stored in the IDT either missing (has an address of `0`)
+    // If the existing handler stored in the IDT is either missing (has an address of `0`)
     // or is the default handler, that signifies the interrupt number is available.
     let idt_entry = &mut idt[interrupt_num as usize];
-    let existing_handler_addr = idt_entry.handler_addr();
+    let existing_handler_addr = idt_entry.handler_addr().as_u64();
     if existing_handler_addr == 0 || existing_handler_addr == unimplemented_interrupt_handler as u64 {
         idt_entry.set_handler_fn(func);
         Ok(())
     } else {
-        trace!("register_interrupt: the requested interrupt IRQ {} was already in use", interrupt_num);
+        error!("register_interrupt: the requested interrupt IRQ {} was already in use", interrupt_num);
         Err(existing_handler_addr)
     }
 } 
 
-/// Returns an interrupt number assigned by the OS and sets its handler function. 
-/// The function fails if there is no unused interrupt number.
-/// 
+/// Allocates and returns an unused interrupt number and sets its handler function.
+///
+/// Returns an error if there are no unused interrupt number, which is highly unlikely.
+///
 /// # Arguments
-/// * `func` - the handler for the assigned interrupt number
+/// * `func`: the handler for the assigned interrupt number.
 pub fn register_msi_interrupt(func: HandlerFunc) -> Result<u8, &'static str> {
     let mut idt = IDT.lock();
 
     // try to find an unused interrupt number in the IDT
     let interrupt_num = idt.slice(32..=255)
         .iter()
-        .rposition(|&entry| entry.handler_addr() == unimplemented_interrupt_handler as u64)
+        .rposition(|&entry| entry.handler_addr().as_u64() == unimplemented_interrupt_handler as u64)
         .map(|entry| entry + 32)
         .ok_or("register_msi_interrupt: no available interrupt handlers (BUG: IDT is full?)")?;
 
@@ -250,19 +234,26 @@ pub fn register_msi_interrupt(func: HandlerFunc) -> Result<u8, &'static str> {
     Ok(interrupt_num as u8)
 } 
 
-/// Returns an interrupt to the system by setting the handler to the default function. 
-/// The application provides the current interrupt handler as a safety check. 
-/// The function fails if the current handler and 'func' do not match
-/// 
+/// Deregisters an interrupt handler, making it available to the rest of the system again.
+///
+/// As a sanity/safety check, the caller must provide the `interrupt_handler`
+/// that is currently registered for the given IRQ `interrupt_num`.
+/// This function returns an error if the currently-registered handler does not match 'func'.
+///
 /// # Arguments
-/// * `interrupt_num` - the interrupt that needs to be deregistered
-/// * `func` - the handler that should currently be stored for 'interrupt_num'
+/// * `interrupt_num`: the IRQ that needs to be deregistered
+/// * `func`: the handler that should currently be stored for 'interrupt_num'
 pub fn deregister_interrupt(interrupt_num: u8, func: HandlerFunc) -> Result<(), &'static str> {
     let mut idt = IDT.lock();
 
+    if RESERVED_IRQ_LIST.contains(&interrupt_num) {
+        error!("deregister_interrupt: Cannot free reserved interrupt number, IRQ {}", interrupt_num);
+        return Err("deregister_interrupt: Cannot free reserved interrupt IRQ number");
+    }
+
     // check if the handler stored is the same as the one provided
     // this is to make sure no other application can deregister your interrupt
-    if idt[interrupt_num as usize].handler_addr() == func as u64 {
+    if idt[interrupt_num as usize].handler_addr().as_u64() == func as u64 {
         idt[interrupt_num as usize].set_handler_fn(unimplemented_interrupt_handler);
         Ok(())
     }
@@ -274,7 +265,7 @@ pub fn deregister_interrupt(interrupt_num: u8, func: HandlerFunc) -> Result<(), 
 
 /// Send an end of interrupt signal, notifying the interrupt chip that
 /// the given interrupt request `irq` has been serviced. 
-/// 
+///
 /// This function supports all types of interrupt chips -- APIC, x2apic, PIC --
 /// and will perform the correct EOI operation based on which chip is currently active.
 ///
@@ -303,87 +294,6 @@ pub fn eoi(irq: Option<u8>) {
     }
 }
 
-
-/// 0x20
-extern "x86-interrupt" fn pit_timer_handler(_stack_frame: InterruptStackFrame) {
-    pit_clock::handle_timer_interrupt();
-
-	eoi(Some(IRQ_BASE_OFFSET + 0x0));
-}
-
-
-// see this: https://forum.osdev.org/viewtopic.php?f=1&t=32655
-static EXTENDED_SCANCODE: AtomicBool = AtomicBool::new(false);
-
-/// 0x21
-extern "x86-interrupt" fn ps2_keyboard_handler(_stack_frame: InterruptStackFrame) {
-
-    let indicator = ps2::ps2_status_register();
-
-    // whether there is any data on the port 0x60
-    if indicator & 0x01 == 0x01 {
-        //whether the data is coming from the mouse
-        if indicator & 0x20 != 0x20 {
-            // in this interrupt, we must read the PS2_PORT scancode register before acknowledging the interrupt.
-            let scan_code = ps2::ps2_read_data();
-            // trace!("PS2_PORT interrupt: raw scan_code {:#X}", scan_code);
-
-
-            let extended = EXTENDED_SCANCODE.load(Ordering::SeqCst);
-
-            // 0xE0 indicates an extended scancode, so we must wait for the next interrupt to get the actual scancode
-            if scan_code == 0xE0 {
-                if extended {
-                    error!("PS2_PORT interrupt: got two extended scancodes (0xE0) in a row! Shouldn't happen.");
-                }
-                // mark it true for the next interrupt
-                EXTENDED_SCANCODE.store(true, Ordering::SeqCst);
-            } else if scan_code == 0xE1 {
-                error!("PAUSE/BREAK key pressed ... ignoring it!");
-                // TODO: handle this, it's a 6-byte sequence (over the next 5 interrupts)
-                EXTENDED_SCANCODE.store(true, Ordering::SeqCst);
-            } else { // a regular scancode, go ahead and handle it
-                // if the previous interrupt's scan_code was an extended scan_code, then this one is not
-                if extended {
-                    EXTENDED_SCANCODE.store(false, Ordering::SeqCst);
-                }
-                if scan_code != 0 {  // a scan code of zero is a PS2_PORT error that we can ignore
-                    if let Err(e) = keyboard::handle_keyboard_input(scan_code, extended) {
-                        error!("ps2_keyboard_handler: error handling PS2_PORT input: {:?}", e);
-                    }
-                }
-            }
-        }
-    }
-    
-    eoi(Some(IRQ_BASE_OFFSET + 0x1));
-}
-
-/// 0x2C
-extern "x86-interrupt" fn ps2_mouse_handler(_stack_frame: InterruptStackFrame) {
-
-    let indicator = ps2::ps2_status_register();
-
-    // whether there is any data on the port 0x60
-    if indicator & 0x01 == 0x01 {
-        //whether the data is coming from the mouse
-        if indicator & 0x20 == 0x20 {
-            let readdata = handle_mouse_packet();
-            if (readdata & 0x80 == 0x80) || (readdata & 0x40 == 0x40) {
-                error!("The overflow bits in the mouse data packet's first byte are set! Discarding the whole packet.");
-            } else if readdata & 0x08 == 0 {
-                error!("Third bit should in the mouse data packet's first byte should be always be 1. Discarding the whole packet since the bit is 0 now.");
-            } else {
-                let _mouse_event = mouse::handle_mouse_input(readdata);
-                // mouse::mouse_to_print(&_mouse_event);
-            }
-
-        }
-
-    }
-
-    eoi(Some(IRQ_BASE_OFFSET + 0xc));
-}
 
 pub static APIC_TIMER_TICKS: AtomicUsize = AtomicUsize::new(0);
 /// 0x22
@@ -481,24 +391,3 @@ extern "x86-interrupt" fn pic_spurious_interrupt_handler(_stack_frame: Interrupt
     
 //     rtc::handle_rtc_interrupt();
 // }
-
-
-/// 0x2E
-extern "x86-interrupt" fn primary_ata_handler(_stack_frame: InterruptStackFrame ) {
-    info!("Primary ATA Interrupt (0x2E)");
-
-    eoi(Some(IRQ_BASE_OFFSET + 0xE));
-}
-
-
-/// 0x2F
-extern "x86-interrupt" fn secondary_ata_handler(_stack_frame: InterruptStackFrame ) {
-    info!("Secondary ATA Interrupt (0x2F)");
-    
-    eoi(Some(IRQ_BASE_OFFSET + 0xF));
-}
-
-
-extern "x86-interrupt" fn ipi_handler(_stack_frame: InterruptStackFrame) {
-    eoi(None);
-}

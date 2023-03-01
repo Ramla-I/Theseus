@@ -33,11 +33,11 @@ use keycodes_ascii::{Keycode, KeyAction, KeyEvent};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use path::Path;
-use task::{TaskRef, ExitValue, KillReason};
+use task::{ExitValue, KillReason, JoinableTaskRef};
 use libterm::Terminal;
 use dfqueue::{DFQueue, DFQueueConsumer, DFQueueProducer};
 use alloc::sync::Arc;
-use spin::{Mutex, MutexGuard};
+use spin::Mutex;
 use environment::Environment;
 use core::mem;
 use alloc::collections::BTreeMap;
@@ -45,7 +45,7 @@ use stdio::{Stdio, KeyEventQueue, KeyEventQueueReader, KeyEventQueueWriter,
             StdioReader, StdioWriter};
 use core2::io::Write;
 use core::ops::Deref;
-use app_io::{IoStreams, IoControlFlags};
+use app_io::IoStreams;
 use fs_node::FileOrDir;
 
 /// The status of a job.
@@ -66,7 +66,7 @@ enum JobStatus {
 struct Job {
     /// References to the tasks that form this job. They are stored in the same sequence as
     /// in the command line.
-    tasks: Vec<TaskRef>,
+    tasks: Vec<JoinableTaskRef>,
     /// A copy of the task ids. Mainly for performance optimization. Task ids are stored
     /// in the same sequence as in `tasks`.
     task_ids: Vec<usize>,
@@ -189,9 +189,7 @@ impl Shell {
         // this function call will do nothing. 
         print::set_default_print_output(print_producer.obtain_producer());
 
-        let env = Environment {
-            working_dir: Arc::clone(root::get_root()), 
-        };
+        let env = Environment::default();
 
         let terminal = Arc::new(Mutex::new(Terminal::new()?));
 
@@ -398,24 +396,23 @@ impl Shell {
 
         // Ctrl+C signals the shell to exit the job
         if keyevent.modifiers.is_control() && keyevent.keycode == Keycode::C {
-            if let Some(ref fg_job_num) = self.fg_job_num {
-                let task_refs = match self.jobs.get(fg_job_num) {
-                    Some(job) => job.tasks.clone(), 
-                    None => {
-                        self.clear_cmdline(true)?;
-                        self.input_buffer.clear();
-                        self.terminal.lock().print_to_terminal("^C\n".to_string());
-                        self.redisplay_prompt();
-                        return Ok(());
-                    }
-                };
+            let fg_job_num = if let Some(fg_job_num) = self.fg_job_num {
+                fg_job_num
+            } else {
+                // If there is no running foreground job, simply print "^C", refresh, and return.
+                self.clear_cmdline(false)?;
+                self.input_buffer.clear();
+                self.terminal.lock().print_to_terminal("^C\n".to_string());
+                self.history_index = 0;
+                self.redisplay_prompt();
+                return Ok(());
+            };
 
+            if let Some(task_refs) = self.jobs.get(&fg_job_num).map(|job| &job.tasks) {
                 // Lock the shared structure in `app_io` and then kill the running application
-                app_io::lock_and_execute(&move |_flags_guard: MutexGuard<BTreeMap<usize, IoControlFlags>>,
-                                                _streamss_guard: MutexGuard<BTreeMap<usize, IoStreams>>| {
-
+                app_io::lock_and_execute(&|_flags_guard, _streams_guard| {
                     // Kill all tasks in the job.
-                    for task_ref in &task_refs {
+                    for task_ref in task_refs {
                         if task_ref.has_exited() { continue; }
                         match task_ref.kill(KillReason::Requested) {
                             Ok(_) => {
@@ -441,33 +438,30 @@ impl Shell {
                 });
                 self.terminal.lock().print_to_terminal("^C\n".to_string());
             } else {
-                self.clear_cmdline(false)?;
+                self.clear_cmdline(true)?;
                 self.input_buffer.clear();
                 self.terminal.lock().print_to_terminal("^C\n".to_string());
-                self.history_index = 0;
                 self.redisplay_prompt();
+                return Ok(());
             }
+            
             return Ok(());
         }
 
         // Ctrl+Z signals the shell to stop the job
         if keyevent.modifiers.is_control() && keyevent.keycode == Keycode::Z {
-            // Do nothing if we have no running foreground job.
+            let fg_job_num = if let Some(fg_job_num) = self.fg_job_num {
+                fg_job_num
+            } else {
+                // Do nothing if we have no running foreground job.
+                return Ok(());
+            };
 
-            if let Some(ref fg_job_num) = self.fg_job_num {
-                let task_refs = match self.jobs.get(fg_job_num) {
-                    Some(job) => job.tasks.clone(), 
-                    None => {
-                        return Ok(());
-                    }
-                };
-
+            if let Some(task_refs) = self.jobs.get(&fg_job_num).map(|job| &job.tasks) {
                 // Lock the shared structure in `app_io` and then stop the running application
-                app_io::lock_and_execute(&move |_flags_guard: MutexGuard<BTreeMap<usize, IoControlFlags>>,
-                                                _streams_guard: MutexGuard<BTreeMap<usize, IoStreams>>| {
-                    
+                app_io::lock_and_execute(&|_flags_guard, _streams_guard| {
                     // Stop all tasks in the job.
-                    for task_ref in &task_refs {
+                    for task_ref in task_refs {
                         if task_ref.has_exited() { continue; }
                         task_ref.block();
 
@@ -485,7 +479,6 @@ impl Shell {
                     }
                 });
             }
-
             return Ok(());
         }
 
@@ -545,7 +538,7 @@ impl Shell {
                 return Ok(());
             } else { // start a new job
                 self.terminal.lock().print_to_terminal("\n".to_string());
-                self.command_history.push(cmdline.clone());
+                self.command_history.push(cmdline);
                 self.command_history.dedup(); // Removes any duplicates
                 self.history_index = 0;
 
@@ -561,7 +554,6 @@ impl Shell {
                         if last == "&" {
                             self.terminal.lock().print_to_terminal(
                                 format!("[{}] [running] {}\n", new_job_num, self.cmdline)
-                                .to_string()
                             );
                             self.fg_job_num = None;
                             self.clear_cmdline(false)?;
@@ -659,7 +651,7 @@ impl Shell {
 
     /// Create a single task. `cmd` is the name of the application. `args` are the provided
     /// arguments. It returns a task reference on success.
-    fn create_single_task(&mut self, cmd: String, args: Vec<String>) -> Result<TaskRef, AppErr> {
+    fn create_single_task(&mut self, cmd: String, args: Vec<String>) -> Result<JoinableTaskRef, AppErr> {
 
         // Check that the application actually exists
         let namespace_dir = task::get_my_current_task()
@@ -689,12 +681,12 @@ impl Shell {
     /// Evaluate the command line. It creates a sequence of jobs, which forms a chain of applications that
     /// pipe the output from one to the next, and finally back to the shell. If any task fails to start up,
     /// all tasks that have already been spawned will be killed immeidately before returning error.
-    fn eval_cmdline(&mut self) -> Result<Vec<TaskRef>, AppErr> {
+    fn eval_cmdline(&mut self) -> Result<Vec<JoinableTaskRef>, AppErr> {
 
         let cmdline = self.cmdline.clone();
         let mut task_refs = Vec::new();
 
-        for single_task_cmd in cmdline.split("|") {
+        for single_task_cmd in cmdline.split('|') {
             let mut args: Vec<String> = single_task_cmd.split_whitespace().map(|s| s.to_string()).collect();
             let command = args.remove(0);
 
@@ -758,7 +750,7 @@ impl Shell {
 
                     // Insert print event producer to `terminal_print` to support legacy output.
                     if let Err(msg) = terminal_print::add_child(*task_id, self.print_producer.obtain_producer()) {
-                        self.terminal.lock().print_to_terminal(format!("{}\n", msg).to_string());
+                        self.terminal.lock().print_to_terminal(format!("{}\n", msg));
                         return Err(msg);
                     }
                 }
@@ -807,7 +799,7 @@ impl Shell {
                 };
                 self.terminal.lock().print_to_terminal(err_msg);
                 if let Err(msg) = self.clear_cmdline(false) {
-                    self.terminal.lock().print_to_terminal(format!("{}\n", msg).to_string());
+                    self.terminal.lock().print_to_terminal(format!("{}\n", msg));
                 }
                 self.redisplay_prompt();
                 Err("Failed to evaluate command line.")
@@ -844,7 +836,7 @@ impl Shell {
         // Drop the extension name and hash value.
         let mut clean_name = String::new();
         for name in names.iter_mut() {
-            if let Some(prefix) = name.split("-").next() {
+            if let Some(prefix) = name.split('-').next() {
                 clean_name = prefix.to_string();
             }
             if !clean_name.is_empty() {
@@ -880,7 +872,7 @@ impl Shell {
         };
 
         // Split the path by slash and filter out consecutive slashes.
-        let mut nodes: Vec<_> = incomplete_cmd.split("/").filter(|node| { node.len() > 0 }).collect();
+        let mut nodes: Vec<_> = incomplete_cmd.split('/').filter(|node| { node.len() > 0 }).collect();
 
         // Get the last node in the path, which is to be completed.
         let incomplete_node = {
@@ -889,10 +881,7 @@ impl Shell {
             if slash_ending {
                 ""
             } else {
-                match nodes.pop() {
-                    Some(node) => node,
-                    None => ""
-                }
+                nodes.pop().unwrap_or("")
             }
         };
 
@@ -1005,13 +994,13 @@ impl Shell {
 
         // Get the last string slice in the pipe chain.
         let cmdline = self.cmdline[0..self.cmdline.len()-self.terminal.lock().get_cursor_offset_from_end()].to_string();
-        let last_cmd_in_pipe = match cmdline.split("|").last() {
+        let last_cmd_in_pipe = match cmdline.split('|').last() {
             Some(cmd) => cmd,
             None => return Ok(())
         };
 
         // Get the last word in the args (or maybe the command name itself).
-        let last_word_in_cmd = match last_cmd_in_pipe.split(" ").last() {
+        let last_word_in_cmd = match last_cmd_in_pipe.split(' ').last() {
             Some(word) => word.to_string(),
             None => return Ok(())
         };
@@ -1055,7 +1044,7 @@ impl Shell {
             let mut has_alive = false;  // mark if there is still non-exited task in the job
             let mut is_stopped = false; // mark if any one of the task has been stopped in this job
 
-            let task_refs = job.tasks.clone();
+            let task_refs = &job.tasks;
             for task_ref in task_refs {
                 if task_ref.has_exited() { // a task has exited
                     let exited_task_id = task_ref.id;
@@ -1378,7 +1367,7 @@ impl Shell {
     fn is_internal_command(&self) -> bool {
         let mut iter = self.cmdline.split_whitespace();
         if let Some(cmd) = iter.next() {
-            match cmd.as_ref() {
+            match cmd {
                 "jobs" => return true,
                 "fg" => return true,
                 "bg" => return true,
@@ -1395,7 +1384,7 @@ impl Shell {
         let cmdline_copy = self.cmdline.clone();
         let mut iter = cmdline_copy.split_whitespace();
         if let Some(cmd) = iter.next() {
-            match cmd.as_ref() {
+            match cmd {
                 "jobs" => self.execute_internal_jobs(),
                 "fg" => self.execute_internal_fg(),
                 "bg" => self.execute_internal_bg(),
@@ -1438,7 +1427,7 @@ impl Shell {
                     self.redisplay_prompt();
                     return Ok(());
                 }
-                self.terminal.lock().print_to_terminal(format!("No job number {} found!\n", job_num).to_string());
+                self.terminal.lock().print_to_terminal(format!("No job number {} found!\n", job_num));
                 return Ok(());
             }
         }
@@ -1469,7 +1458,7 @@ impl Shell {
                     }
                     return Ok(());
                 }
-                self.terminal.lock().print_to_terminal(format!("No job number {} found!\n", job_num).to_string());
+                self.terminal.lock().print_to_terminal(format!("No job number {} found!\n", job_num));
                 return Ok(());
             }
         }

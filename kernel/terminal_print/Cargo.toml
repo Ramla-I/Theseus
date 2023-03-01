@@ -3,7 +3,6 @@ name = "terminal_print"
 version = "0.1.0"
 authors = ["Andrew Pham <apham727@gmail.com>"]
 description = "Offers applications the ability to print to the terminal via the print! and println! macros"
-build = "../../build.rs"
 
 
 [dependencies]
@@ -17,11 +16,6 @@ path = "../../kernel/task"
 
 [dependencies.logger]
 path = "../../kernel/logger"
-
-
-[dependencies.lazy_static]
-features = ["spin_no_std"]
-version = "1.4.0"
 
 [dependencies.event_types]
 path = "../../kernel/event_types"
