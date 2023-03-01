@@ -852,6 +852,24 @@
 <a href="#852" id="852">852</a>
 <a href="#853" id="853">853</a>
 <a href="#854" id="854">854</a>
+<a href="#855" id="855">855</a>
+<a href="#856" id="856">856</a>
+<a href="#857" id="857">857</a>
+<a href="#858" id="858">858</a>
+<a href="#859" id="859">859</a>
+<a href="#860" id="860">860</a>
+<a href="#861" id="861">861</a>
+<a href="#862" id="862">862</a>
+<a href="#863" id="863">863</a>
+<a href="#864" id="864">864</a>
+<a href="#865" id="865">865</a>
+<a href="#866" id="866">866</a>
+<a href="#867" id="867">867</a>
+<a href="#868" id="868">868</a>
+<a href="#869" id="869">869</a>
+<a href="#870" id="870">870</a>
+<a href="#871" id="871">871</a>
+<a href="#872" id="872">872</a>
 </pre><pre class="rust"><code><span class="doccomment">//! Routines for parsing the `nano_core`, the fully-linked, already-loaded base kernel image,
 //! in other words, the code that is currently executing.
 //! As such, it performs no loading, but rather just creates metadata that represents
@@ -859,8 +877,8 @@
 
 </span><span class="attr">#![allow(clippy::type_complexity)]
 
-</span><span class="kw">use crate</span>::{CrateNamespace, mp_range};
-<span class="kw">use </span>alloc::{collections::{BTreeMap, BTreeSet}, string::{String, ToString}, sync::Arc};
+</span><span class="kw">use </span>alloc::{collections::{BTreeMap, BTreeSet}, string::{String, ToString}, sync::Arc};
+<span class="kw">use crate</span>::{CrateNamespace, mp_range};
 <span class="kw">use </span>fs_node::FileRef;
 <span class="kw">use </span>path::Path;
 <span class="kw">use </span>rustc_demangle::demangle;
@@ -871,12 +889,24 @@
 <span class="kw">use </span>crate_metadata::<span class="kw-2">*</span>;
 <span class="kw">use </span>hashbrown::HashMap;
 <span class="kw">use </span>xmas_elf::{ElfFile, sections::{SectionData, ShType, SHF_ALLOC, SHF_WRITE, SHF_EXECINSTR, SHF_TLS}};
+<span class="kw">use </span>no_drop::NoDrop;
 
 
 <span class="doccomment">/// The file name (without extension) that we expect to see in the namespace&#39;s kernel crate directory.
 /// The trailing period &#39;.&#39; is there to avoid matching the &quot;nano_core-&lt;hash&gt;.o&quot; object file.
 </span><span class="kw">const </span>NANO_CORE_FILENAME_PREFIX: <span class="kw-2">&amp;</span>str = <span class="string">&quot;nano_core.&quot;</span>;
 <span class="kw">const </span>NANO_CORE_CRATE_NAME: <span class="kw-2">&amp;</span>str = <span class="string">&quot;nano_core&quot;</span>;
+
+<span class="doccomment">/// The items returned from the [`parse_nano_core()`] routine.
+</span><span class="kw">pub struct </span>NanoCoreItems {
+    <span class="doccomment">/// A reference to the newly-created nano_core crate.
+    </span><span class="kw">pub </span>nano_core_crate_ref: StrongCrateRef,
+    <span class="doccomment">/// The symbols in the `.init` ELF section, which maps the symbol&#39;s name to its constant value.
+    /// This map contains assembler and linker constants.
+    </span><span class="kw">pub </span>init_symbol_values: BTreeMap&lt;String, usize&gt;,
+    <span class="doccomment">/// The number of new symbols in the nano_core crate added to the symbol map.
+    </span><span class="kw">pub </span>num_new_symbols: usize,
+}
 
 
 <span class="doccomment">/// Parses and/or deserializes the file containing details about the already loaded
@@ -887,26 +917,20 @@
 /// compiler builtins, such as memset, memcpy, etc, are symbols with weak linkage in newer versions of Rust (2021 and later).
 ///
 /// # Return
-/// If successful, this returns a tuple of the following:
-/// * `nano_core_crate_ref`: A reference to the newly-created nano_core crate.
-/// * `init_symbols`: a map of symbol name to its constant value, which contains assembler and linker constants.
-/// * The number of new symbols added to the symbol map (a `usize`).
-///
-/// If an error occurs, the returned `Result::Err` contains the passed-in `text_pages`, `rodata_pages`, and `data_pages`
-/// because those cannot be dropped, as they hold the currently-running code, and dropping them would cause endless exceptions.
+/// * If successful, this returns the set of important [`NanoCoreItems`].
+/// * If an error occurs, the returned `Result::Err` contains the passed-in `text_pages`, `rodata_pages`, and `data_pages`,
+///   wrapped in [`NoDrop`] in order to avoid prematurely/accidentally dropping them,
+///   which would cause endless exceptions.
 </span><span class="kw">pub fn </span>parse_nano_core(
     namespace: <span class="kw-2">&amp;</span>Arc&lt;CrateNamespace&gt;,
     text_pages: MappedPages,
     rodata_pages: MappedPages,
     data_pages: MappedPages,
     verbose_log: bool,
-) -&gt; <span class="prelude-ty">Result</span>&lt;
-    (StrongCrateRef, BTreeMap&lt;String, usize&gt;, usize),
-    (<span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str, [Arc&lt;Mutex&lt;MappedPages&gt;&gt;; <span class="number">3</span>]),
-&gt; {
-    <span class="kw">let </span>text_pages = Arc::new(Mutex::new(text_pages));
+) -&gt; <span class="prelude-ty">Result</span>&lt;NanoCoreItems, (<span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str, NoDrop&lt;[Arc&lt;Mutex&lt;MappedPages&gt;&gt;; <span class="number">3</span>]&gt;)&gt; {
+    <span class="kw">let </span>text_pages   = Arc::new(Mutex::new(text_pages));
     <span class="kw">let </span>rodata_pages = Arc::new(Mutex::new(rodata_pages));
-    <span class="kw">let </span>data_pages = Arc::new(Mutex::new(data_pages));
+    <span class="kw">let </span>data_pages   = Arc::new(Mutex::new(data_pages));
 
     <span class="doccomment">/// Just like Rust&#39;s `try!()` macro, but packages up the given error message in a tuple
     /// with an array of the above 3 MappedPages objects.
@@ -914,7 +938,10 @@
         (<span class="macro-nonterminal">$expr</span>:expr) =&gt; {
             <span class="kw">match </span><span class="macro-nonterminal">$expr </span>{
                 <span class="prelude-val">Ok</span>(val) =&gt; val,
-                <span class="prelude-val">Err</span>(err_msg) =&gt; <span class="kw">return </span><span class="prelude-val">Err</span>((err_msg, [text_pages, rodata_pages, data_pages])),
+                <span class="prelude-val">Err</span>(err_msg) =&gt; <span class="kw">return </span><span class="prelude-val">Err</span>((
+                    err_msg,
+                    NoDrop::new([text_pages, rodata_pages, data_pages]),
+                )),
             }
         };
     }
@@ -928,7 +955,6 @@
         <span class="string">&quot;parse_nano_core(): trying to load and parse the nano_core file: {:?}&quot;</span>,
         nano_core_file_path
     );
-
 
     <span class="kw">let </span>nano_core_file_locked = nano_core_file.lock();
     <span class="kw">let </span>size = nano_core_file_locked.len();
@@ -987,7 +1013,17 @@
         ),
     };
 
-    <span class="prelude-val">Ok</span>(<span class="macro">try_mp!</span>(parse_result))
+    <span class="kw">let </span>(nano_core_crate_ref, init_symbol_values, num_new_symbols) = <span class="macro">try_mp!</span>(parse_result);
+
+    <span class="comment">// Now that we&#39;ve initialized the nano_core, i.e., set up its sections,
+    // we can obtain a new TLS data image and initialize the TLS register to point to it.
+    </span>early_tls::insert(namespace.get_tls_initializer_data());
+
+    <span class="prelude-val">Ok</span>(NanoCoreItems {
+        nano_core_crate_ref,
+        init_symbol_values,
+        num_new_symbols,
+    })
 }
 
 <span class="attr">#[allow(clippy::too_many_arguments)]

@@ -190,6 +190,16 @@
 <a href="#190" id="190">190</a>
 <a href="#191" id="191">191</a>
 <a href="#192" id="192">192</a>
+<a href="#193" id="193">193</a>
+<a href="#194" id="194">194</a>
+<a href="#195" id="195">195</a>
+<a href="#196" id="196">196</a>
+<a href="#197" id="197">197</a>
+<a href="#198" id="198">198</a>
+<a href="#199" id="199">199</a>
+<a href="#200" id="200">200</a>
+<a href="#201" id="201">201</a>
+<a href="#202" id="202">202</a>
 </pre><pre class="rust"><code><span class="doccomment">//! The main initialization routine and setup logic of the OS. 
 //!
 //! The `captain` steers the ship of Theseus, meaning that it contains basic logic 
@@ -220,7 +230,7 @@
 <span class="kw">use </span>no_drop::NoDrop;
 
 
-<span class="attr">#[cfg(mirror_log_to_vga)]
+<span class="attr">#[cfg(all(mirror_log_to_vga, target_arch = <span class="string">&quot;x86_64&quot;</span>))]
 </span><span class="kw">mod </span>mirror_log_callbacks {
     <span class="doccomment">/// The callback for use in the logger crate to mirror log functions to the early VGA screen.
     </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>mirror_to_early_vga(args: core::fmt::Arguments) {
@@ -231,6 +241,16 @@
     /// fully-featured terminal-based display.
     </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>mirror_to_terminal(args: core::fmt::Arguments) {
         <span class="macro">app_io::println!</span>(<span class="string">&quot;{}&quot;</span>, args);
+    }
+}
+
+<span class="doccomment">/// Items that must be held until the end of [`init()`] and should be dropped after.
+</span><span class="kw">pub struct </span>DropAfterInit {
+    <span class="kw">pub </span>identity_mappings: NoDrop&lt;EarlyIdentityMappedPages&gt;,
+}
+<span class="kw">impl </span>DropAfterInit {
+    <span class="kw">fn </span>drop_all(<span class="self">self</span>) {
+        drop(<span class="self">self</span>.identity_mappings.into_inner());
     }
 }
 
@@ -253,16 +273,16 @@
 ///    if available and provided by the bootloader.
 </span><span class="kw">pub fn </span>init(
     kernel_mmi_ref: MmiRef,
-    identity_mapped_pages: NoDrop&lt;EarlyIdentityMappedPages&gt;,
     bsp_initial_stack: NoDrop&lt;Stack&gt;,
+    drop_after_init: DropAfterInit,
     ap_start_realmode_begin: VirtualAddress,
     ap_start_realmode_end: VirtualAddress,
     ap_gdt: VirtualAddress,
     rsdp_address: <span class="prelude-ty">Option</span>&lt;PhysicalAddress&gt;,
 ) -&gt; <span class="prelude-ty">Result</span>&lt;(), <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str&gt; {
-    <span class="attr">#[cfg(mirror_log_to_vga)] </span>{
+    <span class="attr">#[cfg(all(mirror_log_to_vga, target_arch = <span class="string">&quot;x86_64&quot;</span>))] </span>{
         <span class="comment">// Enable early mirroring of logger output to VGA buffer (for real hardware)
-        </span>logger::set_log_mirror_function(mirror_log_callbacks::mirror_to_early_vga);
+        </span>logger_x86_64::set_log_mirror_function(mirror_log_callbacks::mirror_to_early_vga);
     }
 
     <span class="comment">// calculate TSC period and initialize it
@@ -288,8 +308,10 @@
     <span class="comment">// get BSP&#39;s apic id
     </span><span class="kw">let </span>bsp_apic_id = cpu::bootstrap_cpu().ok_or(<span class="string">&quot;captain::init(): couldn&#39;t get ID of bootstrap CPU!&quot;</span>)<span class="question-mark">?</span>;
 
-    <span class="comment">// create the initial `Task`, which is bootstrapped from this execution context.
-    </span><span class="kw">let </span>bootstrap_task = spawn::init(kernel_mmi_ref.clone(), bsp_apic_id, bsp_initial_stack)<span class="question-mark">?</span>;
+    <span class="comment">// Initialize the scheduler and create the initial `Task`,
+    // which is bootstrapped from this current execution context.
+    </span>scheduler::init()<span class="question-mark">?</span>;
+    <span class="kw">let </span>bootstrap_task = spawn::init(kernel_mmi_ref.clone(), bsp_apic_id, bsp_initial_stack)<span class="question-mark">?</span>;
     <span class="macro">info!</span>(<span class="string">&quot;Created initial bootstrap task: {:?}&quot;</span>, bootstrap_task);
 
     <span class="comment">// after we&#39;ve initialized the task subsystem, we can use better exception handlers
@@ -310,7 +332,7 @@
         <span class="comment">// Currently, handling the AP cores also siwtches the graphics mode
         // (from text mode VGA to a graphical framebuffer).
         // Thus, we can now use enable the function that mirrors logger output to the terminal.
-        </span>logger::set_log_mirror_function(mirror_log_callbacks::mirror_to_terminal);
+        </span>logger_x86_64::set_log_mirror_function(mirror_log_callbacks::mirror_to_terminal);
     }
 
     <span class="comment">// Now that other CPUs are fully booted, init TLB shootdowns,
@@ -339,11 +361,6 @@
     </span>device_manager::init(key_producer, mouse_producer)<span class="question-mark">?</span>;
     task_fs::init()<span class="question-mark">?</span>;
 
-
-    <span class="comment">// We can drop and unmap the identity mappings after the initial bootstrap is complete.
-    // We could probably do this earlier, but we definitely can&#39;t do it until after the APs boot.
-    </span>drop(identity_mapped_pages.into_inner());
-    
     <span class="comment">// create a SIMD personality
     </span><span class="attr">#[cfg(simd_personality)] </span>{
         <span class="attr">#[cfg(simd_personality_sse)]
@@ -356,9 +373,12 @@
             .spawn()<span class="question-mark">?</span>;
     }
 
-    <span class="comment">// Now that key subsystems are initialized, we can spawn various system tasks/daemons
-    // and then the first application(s).
-    </span>console::start_connection_detection()<span class="question-mark">?</span>;
+    <span class="comment">// Now that key subsystems are initialized, we can:
+    // 1. Drop the items that needed to be held through initialization,
+    // 2. Spawn various system tasks/daemons,
+    // 3. Start the first application(s).
+    </span>drop_after_init.drop_all();
+    console::start_connection_detection()<span class="question-mark">?</span>;
     first_application::start()<span class="question-mark">?</span>;
 
     <span class="macro">info!</span>(<span class="string">&quot;captain::init(): initialization done! Spawning an idle task on BSP core {} and enabling interrupts...&quot;</span>, bsp_apic_id);
