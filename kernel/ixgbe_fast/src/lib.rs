@@ -819,6 +819,7 @@ impl IxgbeNic {
                 // error!("DD = {}", queue.rx_descs[rx_cur].descriptor_done());
                 break;
             }
+            // error!("received a packet");
 
             if !desc.end_of_packet() {
                 return Err("Currently do not support multi-descriptor packets");
@@ -889,7 +890,7 @@ impl IxgbeNic {
 
     /// Sends all packets in `buffers` on queue `qid` if there are descriptors available.
     /// (number of packets sent, used transmit buffers that can now be dropped or reused) are returned.
-    pub fn tx_batch(&mut self, qid: usize, buffers: &mut Vec<PacketBuffer>, used_buffers: &mut Vec<PacketBuffer>) -> Result<usize, &'static str> {
+    pub fn tx_batch(&mut self, qid: usize, batch_size: usize,  buffers: &mut Vec<PacketBuffer>, used_buffers: &mut Vec<PacketBuffer>) -> Result<usize, &'static str> {
         if qid >= self.tx_queues.len() {
             return Err("Invalid queue id");
         }
@@ -902,22 +903,27 @@ impl IxgbeNic {
         let tx_clean = queue.tx_clean;
         // debug!("tx_cur = {}, tx_clean ={}", tx_cur, tx_clean);
 
-        while let Some(packet) = buffers.pop() {
-            let tx_next = (tx_cur + 1) % queue.num_tx_descs;
-
-            if tx_clean == tx_next {
-                // tx queue of device is full, push packet back onto the
-                // queue of to-be-sent packets
-                buffers.push(packet);
+        for _ in 0.. batch_size {
+            if let Some(packet) = buffers.pop() {
+                let tx_next = (tx_cur + 1) % queue.num_tx_descs;
+    
+                if tx_clean == tx_next {
+                    // tx queue of device is full, push packet back onto the
+                    // queue of to-be-sent packets
+                    buffers.push(packet);
+                    break;
+                }
+    
+                queue.tx_descs[tx_cur as usize].send(packet.phys_addr, packet.length);
+                queue.tx_bufs_in_use.push_back(packet);
+    
+                tx_cur = tx_next;
+                pkts_sent += 1;
+            } else {
                 break;
             }
-
-            queue.tx_descs[tx_cur as usize].send(packet.phys_addr, packet.length);
-            queue.tx_bufs_in_use.push_back(packet);
-
-            tx_cur = tx_next;
-            pkts_sent += 1;
         }
+
 
         queue.tx_cur = tx_cur;
         queue.regs.set_tdt(tx_cur as u32);
