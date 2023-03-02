@@ -776,7 +776,7 @@ dependencies = [
  "fatfs",
  "io",
  "iommu",
- "ixgbe_intralingual",
+ "ixgbe_verified",
  "keyboard",
  "log",
  "logger",
@@ -1423,7 +1423,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ixgbe_intralingual"
+name = "ixgbe_verified"
 version = "0.1.0"
 dependencies = [
  "acpi",
@@ -3352,7 +3352,7 @@ name = "test_ixgbe"
 version = "0.1.0"
 dependencies = [
  "getopts",
- "ixgbe_intralingual",
+ "ixgbe_verified",
  "log",
  "network_interface_card",
  "spawn",
