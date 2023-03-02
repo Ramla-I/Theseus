@@ -21,13 +21,13 @@
 // #[macro_use] extern crate log;
 #[macro_use] extern crate terminal_print;
 extern crate network_interface_card;
-extern crate ixgbe_intralingual;
+extern crate ixgbe_verified;
 extern crate spawn;
 extern crate getopts;
 
 use alloc::vec::Vec;
 use alloc::string::String;
-use ixgbe_intralingual::{
+use ixgbe_verified::{
     // virtual_function, 
     get_ixgbe_nics_list,
     test_packets::create_raw_packet,
