@@ -18,7 +18,7 @@ extern crate storage_manager;
 extern crate network_manager;
 extern crate ethernet_smoltcp_device;
 extern crate mpmc;
-extern crate ixgbe_intralingual;
+extern crate ixgbe_verified;
 extern crate alloc;
 extern crate fatfs;
 extern crate io;
@@ -139,7 +139,7 @@ pub fn init(key_producer: Queue<Event>, mouse_producer: Queue<Event>) -> Result<
                 add_to_network_interfaces(e1000_interface);
                 continue;
             }
-            if dev.vendor_id == ixgbe_intralingual::INTEL_VEND && dev.device_id == ixgbe_intralingual::INTEL_82599 {
+            if dev.vendor_id == ixgbe_verified::INTEL_VEND && dev.device_id == ixgbe_verified::INTEL_82599 {
                 info!("ixgbe PCI device found at: {:?}", dev.location);
                 
                 // Initialization parameters of the NIC.
@@ -148,15 +148,15 @@ pub fn init(key_producer: Queue<Event>, mouse_producer: Queue<Event>) -> Result<
                 // const RSS_ENABLED: bool = false;
                 // const RX_DESCS: u16 = 8;
                 
-                let ixgbe_nic = ixgbe_intralingual::IxgbeNic::init(
+                let ixgbe_nic = ixgbe_verified::IxgbeNic::init(
                     dev, 
                     dev.location,
                     // VIRT_ENABLED, 
                     // None, 
                     // RSS_ENABLED, 
-                    // ixgbe_intralingual::RxBufferSizeKiB::Buffer2KiB,
+                    // ixgbe_verified::RxBufferSizeKiB::Buffer2KiB,
                     // RX_DESCS,
-                    ixgbe_intralingual::NumDesc::Descs16
+                    ixgbe_verified::NumDesc::Descs16
                 )?;
 
                 ixgbe_devs.push(ixgbe_nic);
@@ -179,7 +179,7 @@ pub fn init(key_producer: Queue<Event>, mouse_producer: Queue<Event>) -> Result<
     }
 
     // Once all the NICs have been initialized, we can store them and add them to the list of network interfaces.
-    let ixgbe_nics = ixgbe_intralingual::IXGBE_NICS.call_once(|| ixgbe_devs);
+    let ixgbe_nics = ixgbe_verified::IXGBE_NICS.call_once(|| ixgbe_devs);
     for ixgbe_nic_ref in ixgbe_nics.iter() {
         let ixgbe_interface = EthernetNetworkInterface::new_ipv4_interface(
             ixgbe_nic_ref, 

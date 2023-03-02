@@ -51,6 +51,7 @@ pub mod test_packets;
 mod descriptors;
 mod queues;
 mod nic_states;
+// mod packet_buffers;
 
 use regs::*;
 use queue_registers::*;
