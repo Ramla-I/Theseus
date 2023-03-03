@@ -624,7 +624,7 @@ pub(crate) struct RegistersTx {
     _padding1:                          [u8; 12],               // 0x601C - 0x6027
 
     /// Transmit Descriptor Control
-    txdctl:                             Volatile<u32>,          // 0x6028
+    pub txdctl:                             Volatile<u32>,          // 0x6028
     _padding2:                          [u8; 12],               // 0x602C - 0x6037
 
     /// Transmit Descriptor Completion Write Back Address Low

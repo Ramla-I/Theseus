@@ -4,40 +4,12 @@
 //! the registers to be accessed through virtual NICs
 
 use crate::mapped_pages_fragments::{MappedPagesFragments, Fragment};
-use super::regs::{RegistersRx, RegistersTx};
-use alloc::{
-    sync::Arc,
-    boxed::Box
-};
+use super::hal::regs::{RegistersRx, RegistersTx};
 use core::ops::{Deref, DerefMut};
-use core::mem::ManuallyDrop;
-use memory::MappedPages;
-
-
-/// Struct that stores a pointer to registers for one ixgbe receive queue
-/// as well as a shared reference to the backing `MappedPages` where these registers are located.
-pub struct IxgbeRxQueueRegisters {
-    /// We prevent the drop handler from dropping the `regs` because the backing memory is not in the heap,
-    /// but in the stored mapped pages. The memory will be deallocated when the `backing_pages` are dropped.
-    pub regs: ManuallyDrop<Box<RegistersRx>>,
-    pub backing_pages: Arc<MappedPages>
-}
-
-impl Deref for IxgbeRxQueueRegisters {
-    type Target = Box<RegistersRx>;
-    fn deref(&self) -> &Box<RegistersRx> {
-        &self.regs
-    }
-}
-impl DerefMut for IxgbeRxQueueRegisters {
-    fn deref_mut(&mut self) -> &mut Box<RegistersRx> {
-        &mut self.regs
-    }
-}
 
 /// Struct that stores a pointer to registers for one ixgbe transmit queue
 /// as well as a shared reference to the backing `MappedPages` where these registers are located.
-pub(crate) struct IxgbeTxQueueRegisters {
+pub(crate) struct TxQueueRegisters {
     /// the ID of the tx queue that these registers control
     id: usize,
     /// We prevent the drop handler from dropping the `regs` because the backing memory is not in the heap,
@@ -45,11 +17,11 @@ pub(crate) struct IxgbeTxQueueRegisters {
     regs: Fragment<RegistersTx>
 }
 
-impl IxgbeTxQueueRegisters {
-    pub fn new(queue_id: usize, mp: &mut MappedPagesFragments) -> Result<IxgbeTxQueueRegisters, &'static str> {
+impl TxQueueRegisters {
+    pub fn new(queue_id: usize, mp: &mut MappedPagesFragments) -> Result<TxQueueRegisters, &'static str> {
         let fragment = mp.fragment(queue_id * core::mem::size_of::<RegistersTx>())?;
 
-        Ok(IxgbeTxQueueRegisters {
+        Ok(TxQueueRegisters {
             id: queue_id,
             regs: fragment
         })
@@ -60,16 +32,55 @@ impl IxgbeTxQueueRegisters {
     }
 }
 
-impl Deref for IxgbeTxQueueRegisters {
+impl Deref for TxQueueRegisters {
     type Target = Fragment<RegistersTx>;
     fn deref(&self) -> &Fragment<RegistersTx> {
         &self.regs
     }
 }
 
-impl DerefMut for IxgbeTxQueueRegisters {
+impl DerefMut for TxQueueRegisters {
     fn deref_mut(&mut self) -> &mut Fragment<RegistersTx> {
         &mut self.regs
     }
 }
 
+
+
+/// Struct that stores a pointer to registers for one ixgbe receive queue
+/// as well as a shared reference to the backing `MappedPages` where these registers are located.
+pub struct RxQueueRegisters {
+    /// the ID of the rx queue that these registers control
+    id: usize,
+    /// We prevent the drop handler from dropping the `regs` because the backing memory is not in the heap,
+    /// but in the stored mapped pages. The memory will be deallocated when the `backing_pages` are dropped.
+    regs: Fragment<RegistersRx>
+}
+
+impl RxQueueRegisters {
+    pub fn new(queue_id: usize, mp: &mut MappedPagesFragments) -> Result<RxQueueRegisters, &'static str> {
+        let fragment = mp.fragment(queue_id * core::mem::size_of::<RegistersRx>())?;
+
+        Ok(RxQueueRegisters {
+            id: queue_id,
+            regs: fragment
+        })
+    }
+
+    pub fn id(&self) -> usize {
+        self.id
+    }
+}
+
+impl Deref for RxQueueRegisters {
+    type Target = Fragment<RegistersRx>;
+    fn deref(&self) -> &Fragment<RegistersRx> {
+        &self.regs
+    }
+}
+
+impl DerefMut for RxQueueRegisters {
+    fn deref_mut(&mut self) -> &mut Fragment<RegistersRx> {
+        &mut self.regs
+    }
+}

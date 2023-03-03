@@ -70,14 +70,8 @@ path = "../network_interface_card"
 [dependencies.nic_initialization]
 path = "../nic_initialization"
 
-[dependencies.intel_ethernet]
-path = "../intel_ethernet"
-
 [dependencies.nic_buffers]
 path = "../nic_buffers"
-
-[dependencies.nic_queues]
-path = "../nic_queues"
 
 [dependencies.physical_nic]
 path = "../physical_nic"
