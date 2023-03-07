@@ -1,0 +1,34 @@
+[package]
+name = "packet_forwarder"
+version = "0.1.0"
+authors = ["Ramla Ijaz <ijazramla@gmail.com>"]
+
+[dependencies]
+getopts = "0.2.21"
+
+[dependencies.log]
+version = "0.4.8"
+
+[dependencies.terminal_print]
+path = "../../kernel/terminal_print"
+
+[dependencies.ixgbe_verified]
+path = "../../kernel/ixgbe_verified"
+
+[dependencies.spawn]
+path = "../../kernel/spawn"
+
+[dependencies.network_interface_card]
+path = "../../kernel/network_interface_card"
+
+[dependencies.hpet]
+path = "../../kernel/acpi/hpet"
+
+[dependencies.libtest]
+path = "../../kernel/libtest"
+
+[dependencies.pmu_x86]
+path = "../../kernel/pmu_x86"
+
+[dependencies.irq_safety]
+git = "https://github.com/theseus-os/irq_safety"

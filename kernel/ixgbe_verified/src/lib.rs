@@ -43,17 +43,18 @@ mod queue_registers;
 // pub mod virtual_function;
 mod mapped_pages_fragments;
 pub mod test_packets;
-mod queues;
-mod packet_buffers;
-mod hal;
-mod allocator;
+pub mod queues;
+pub mod packet_buffers;
+pub mod hal;
+pub mod allocator;
 
+pub use hal::*;
 use hal::regs::*;
-use hal::descriptors::*;
 use queue_registers::*;
 use mapped_pages_fragments::MappedPagesFragments;
 use queues::{TxQueue, RxQueue};
 use allocator::*;
+use packet_buffers::*;
 
 use spin::Once;
 use alloc::{
@@ -69,25 +70,14 @@ use bit_field::BitField;
 /// Vendor ID for Intel
 pub const INTEL_VEND:                   u16 = 0x8086;  
 
-/// Device ID for the 82599ES, used to identify the device from the PCI space
-pub const INTEL_82599:                  u16 = 0x10FB;  
+/// Device ID for the 82599ES ethernet controller, used to identify the device from the PCI space
+/// (https://www.intel.com/content/www/us/en/products/sku/41282/intel-82599es-10-gigabit-ethernet-controller/specifications.html)
+pub const INTEL_82599ES:                  u16 = 0x10FB;  
 
-
-/*** Hardware Device Parameters of the Intel 82599 NIC (taken from the datasheet) ***/
-
-/// The maximum number of receive descriptors per queue.
-/// This is the maximum value that has been tested for the 82599 device.
-const IXGBE_MAX_RX_DESC: u16            = 8192;
-/// The maximum number of transmit descriptors per queue.
-/// This is the maximum value that has been tested for the 82599 device.
-const IXGBE_MAX_TX_DESC: u16            = 8192;
-/// The maximum number of rx queues available on this NIC. 
-const IXGBE_MAX_RX_QUEUES: u8           = 128;
-/// The maximum number of tx queues available on this NIC.
-const IXGBE_MAX_TX_QUEUES: u8           = 128;
-/// The number of l34 5-tuple filters.
-const NUM_L34_5_TUPLE_FILTERS: usize    = 128; 
-
+/// Device ID for the X520-DA2 network adapter, used to identify the device from the PCI space.
+/// I'm not sure what makes this different from the `INTEL_82599ES` device, because its spec states it uses the 82599 controller as well.
+/// (https://ark.intel.com/content/www/us/en/ark/products/39776/intel-ethernet-converged-network-adapter-x520da2.html)
+pub const INTEL_X520_DA2:                  u16 = 0x154D;  
 
 
 /*** Developer Parameters of the Intel 82599 NIC ***/
@@ -104,9 +94,10 @@ pub const IXGBE_NUM_TX_QUEUES_ENABLED: u8      = 64;
 pub const DEFAULT_RX_BUFFER_SIZE_2KB: RxBufferSizeKiB   = RxBufferSizeKiB::Buffer2KiB;
 
 
+/*** Functions to get access to the IXGBE NICs once they've been initialized ***/
+
 /// All the 82599 NICs found in the PCI space are initialized and then stored here.
 pub static IXGBE_NICS: Once<Vec<MutexIrqSafe<IxgbeNic>>> = Once::new();
-
 
 /// Returns a reference to the IxgbeNic wrapped in a MutexIrqSafe, if it exists and has been initialized.
 /// Currently we use the pci location of the device as identification since it should not change after initialization.
@@ -122,6 +113,8 @@ pub fn get_ixgbe_nics_list() -> Option<&'static Vec<MutexIrqSafe<IxgbeNic>>> {
     IXGBE_NICS.get()
 }
 
+
+
 /// A struct representing an ixgbe network interface card.
 pub struct IxgbeNic {
     /// Device ID of the NIC assigned by the device manager.
@@ -131,10 +124,6 @@ pub struct IxgbeNic {
     bar_type: u8,
     /// MMIO Base Address     
     mem_base: PhysicalAddress,
-    // /// Hashmap to store the interrupt number for each msi vector.
-    // /// The key is the id of the queue the interrupt is generated for,
-    // /// and the value is the interrupt number.
-    // interrupt_num: HashMap<u8,u8>,
     /// The actual MAC address burnt into the hardware  
     mac_hardware: [u8;6],       
     /// Memory-mapped control registers
@@ -145,8 +134,6 @@ pub struct IxgbeNic {
     regs3: BoxRefMut<MappedPages, IntelIxgbeRegisters3>,
     /// Memory-mapped control registers
     regs_mac: BoxRefMut<MappedPages, IntelIxgbeMacRegisters>,
-    // /// Memory-mapped msi-x vector table
-    // msix_vector_table: BoxRefMut<MappedPages, MsixVectorTable>,
     // /// Array to store which L3/L4 5-tuple filters have been used.
     // /// There are 128 such filters available.
     // l34_5_tuple_filters: [bool; 128],
@@ -224,7 +211,7 @@ impl IxgbeNic {
         Self::start_link(&mut mapped_registers1, &mut mapped_registers2, &mut mapped_registers3, &mut mapped_registers_mac)?;
 
         // clear stats registers
-        Self::clear_stats(&mapped_registers2);
+        Self::clear_stats_internal(&mapped_registers2);
 
         // store the mac address of this device
         let mac_addr_hardware = Self::read_mac_address_from_nic(&mut mapped_registers_mac);
@@ -271,6 +258,50 @@ impl IxgbeNic {
     /// Returns the device id of the PCI device.
     pub fn device_id(&self) -> PciLocation {
         self.dev_id
+    }
+
+    pub fn num_rx_queues_available(&self) -> usize {
+        self.rx_queues.len()
+    }
+
+    pub fn num_tx_queues_available(&self) -> usize {
+        self.tx_queues.len()
+    }
+
+    /// Returns the Rx queue located at this index. 
+    /// This doesn't have to match the queue ID.
+    pub fn get_rx_queue(&mut self, idx: usize) -> Result<&mut RxQueue, &'static str> {
+        if idx >= self.rx_queues.len() {
+            return Err("Queue index is out of range");
+        }
+
+        Ok(&mut self.rx_queues[idx])
+    }
+
+    /// Returns the Tx queue located at this index. 
+    /// This doesn't have to match the queue ID.
+    pub fn get_tx_queue(&mut self, idx: usize) -> Result<&mut TxQueue, &'static str> {
+        if idx >= self.tx_queues.len() {
+            return Err("Queue index is out of range");
+        }
+
+        Ok(&mut self.tx_queues[idx])
+    }
+
+    pub fn tx_batch(&mut self, qid: usize, batch_size: usize,  buffers: &mut Vec<PacketBufferS>, used_buffers: &mut Vec<PacketBufferS>) -> Result<usize, &'static str> {
+        if qid >= self.tx_queues.len() {
+            return Err("Queue index is out of range");
+        }
+
+        self.tx_queues[qid].tx_batch(batch_size, buffers, used_buffers)
+    }
+
+    pub fn rx_batch(&mut self, qid: usize, buffers: &mut Vec<PacketBufferS>, batch_size: usize, pool: &mut Vec<PacketBufferS>) -> Result<usize, &'static str> {
+        if qid >= self.rx_queues.len() {
+            return Err("Queue index is out of range");
+        }
+
+        self.rx_queues[qid].rx_batch(buffers, batch_size, pool)
     }
 
     /// Returns the memory-mapped control registers of the nic and the rx/tx queue registers.
@@ -461,7 +492,7 @@ impl IxgbeNic {
     }
 
     /// Clear the statistic registers by reading from them.
-    fn clear_stats(regs: &IntelIxgbeRegisters2) {
+    fn clear_stats_internal(regs: &IntelIxgbeRegisters2) {
         regs.gprc.read();
         regs.gptc.read();
         regs.gorcl.read();
@@ -470,13 +501,21 @@ impl IxgbeNic {
         regs.gotch.read();
     }
 
-    /// Returns the Rx and Tx statistics in the form: (Good Rx packets, Good Rx bytes, Good Tx packets, Good Tx bytes).
+    /// Clear the statistic registers by reading from them.
+    pub fn clear_stats(&self) {
+        Self::clear_stats_internal(&self.regs2);
+    }
+
+    /// Returns the Rx and Tx statistics for good packets.
     /// A good packet is one that is >= 64 bytes including ethernet header and CRC
-    pub fn get_stats(&self) -> (u32,u64,u32,u64){
+    pub fn get_stats(&self, stats: &mut IxgbeStats) {
         let rx_bytes =  ((self.regs2.gorch.read() as u64 & 0xF) << 32) | self.regs2.gorcl.read() as u64;
         let tx_bytes =  ((self.regs2.gotch.read() as u64 & 0xF) << 32) | self.regs2.gotcl.read() as u64;
 
-        (self.regs2.gprc.read(), rx_bytes, self.regs2.gptc.read(), tx_bytes)
+        stats.rx_bytes = rx_bytes;
+        stats.tx_bytes = tx_bytes;
+        stats.rx_packets = self.regs2.gprc.read();
+        stats.tx_packets = self.regs2.gptc.read();
     }
 
     /// Initializes the array of receive descriptors and their corresponding receive buffers,
@@ -775,69 +814,15 @@ impl IxgbeNic {
     // }
 }
 
-/// Possible link speeds of the 82599 NIC
-#[derive(PartialEq)]
-pub enum LinkSpeedMbps {
-    LS100 = 100,
-    LS1000 = 1000,
-    LS10000 = 10000, 
-    LSUnknown = 0,
-}
 
-impl LinkSpeedMbps {
-    /// Converts between a u32 and a LinkSpeedMbps enum.
-    /// The u32 number is the value in the links register that represents the link speed.
-    fn from_links_register_value(value: u32) -> LinkSpeedMbps {
-        if value == (1 << 28) {
-            Self::LS100
-        } else if value == (2 << 28) {
-            Self::LS1000
-        } else if value == (3 << 28) {
-            Self::LS10000
-        } else {
-            Self::LSUnknown
-        }
-    }
-}
 
-/// The set of receive buffer sizes that are accepted by the 82599 device.
-#[derive(Copy, Clone)]
-pub enum RxBufferSizeKiB {
-    Buffer1KiB = 1,
-    Buffer2KiB = 2,
-    Buffer3KiB = 3,
-    Buffer4KiB = 4,
-    Buffer5KiB = 5,
-    Buffer6KiB = 6,
-    Buffer7KiB = 7,
-    Buffer8KiB = 8,
-    Buffer9KiB = 9,
-    Buffer10KiB = 10,
-    Buffer11KiB = 11,
-    Buffer12KiB = 12,
-    Buffer13KiB = 13,
-    Buffer14KiB = 14,
-    Buffer15KiB = 15,
-    Buffer16KiB = 16
+#[derive(Default, Debug)]
+pub struct IxgbeStats{
+    pub rx_bytes: u64,
+    pub tx_bytes: u64,
+    pub rx_packets: u32,
+    pub tx_packets: u32,
 }
-
-/// Options for the filter protocol used in the 5-tuple filters.
-pub enum FilterProtocol {
-    Tcp = 0,
-    Udp = 1,
-    Sctp = 2,
-    Other = 3
-}
-
-#[derive(Copy, Clone)]
-pub enum NumDesc {
-    Descs16 = 16,
-    Descs1k = 1024,
-    Descs2k = 2048,
-    Descs4k = 4096,
-    Descs8k = 8192
-}
-
 // /// A helper function to poll the nic receive queues (only for testing purposes).
 // pub fn rx_poll_mq(qid: usize, nic_id: PciLocation) -> Result<ReceivedFrame, &'static str> {
 //     let nic_ref = get_ixgbe_nic(nic_id)?;

@@ -74,7 +74,7 @@ pub struct AdvancedTxDescriptor {
 }
 
 impl AdvancedTxDescriptor {
-    pub fn send(&mut self, transmit_buffer_addr: PhysicalAddress, transmit_buffer_length: u16) {
+    pub(crate) fn send(&mut self, transmit_buffer_addr: PhysicalAddress, transmit_buffer_length: u16) {
         self.packet_buffer_address.write(transmit_buffer_addr.value() as u64);
         self.data_len.write(transmit_buffer_length);
         self.dtyp_mac_rsv.write(TX_DTYP_ADV);
@@ -87,6 +87,11 @@ impl AdvancedTxDescriptor {
             // error!("tx desc status: {:#X}", self.desc.read());
         } 
     }
+
+    pub fn desc_done(&self) -> bool {
+        (self.paylen_popts_cc_idx_sta.read() as u8 & TX_STATUS_DD) == TX_STATUS_DD
+    }
+
 }
 
 impl Descriptor for AdvancedTxDescriptor {
@@ -117,17 +122,17 @@ pub struct AdvancedRxDescriptor {
 }
 
 impl AdvancedRxDescriptor {
-    pub fn init (&mut self, packet_buffer_address: PhysicalAddress) {
+    pub(crate) fn init (&mut self, packet_buffer_address: PhysicalAddress) {
         self.packet_buffer_address.write(packet_buffer_address.value() as u64);
         // set the header address to 0 because packet splitting is not supposed to be enabled in the 82599
         self.header_buffer_address.write(0);
     }
 
-    pub fn set_packet_address(&mut self, packet_buffer_address: PhysicalAddress) {
+    pub(crate) fn set_packet_address(&mut self, packet_buffer_address: PhysicalAddress) {
         self.packet_buffer_address.write(packet_buffer_address.value() as u64);
     }
 
-    fn reset_status(&mut self) {
+    pub(crate) fn reset_status(&mut self) {
         self.header_buffer_address.write(0);
     }
 

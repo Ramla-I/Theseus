@@ -1,6 +1,6 @@
 use memory::{MappedPages, create_contiguous_mapping, PhysicalAddress, EntryFlags};
 use zerocopy::FromBytes;
-use crate::{hal::descriptors::{AdvancedTxDescriptor, AdvancedRxDescriptor, Descriptor}, packet_buffers::MTU, RxBufferSizeKiB, DEFAULT_RX_BUFFER_SIZE_2KB};
+use crate::{hal::descriptors::{AdvancedTxDescriptor, AdvancedRxDescriptor, Descriptor}, packet_buffers::{MTU, PacketBufferS}, RxBufferSizeKiB, DEFAULT_RX_BUFFER_SIZE_2KB};
 use crate::queue_registers::{TxQueueRegisters, RxQueueRegisters};
 use crate::NumDesc;
 use crate::packet_buffers::PacketBuffer;
@@ -9,7 +9,7 @@ use owning_ref::BoxRefMut;
 use core::{ops::{DerefMut, Deref}};
 use alloc::{
     boxed::Box,
-    vec::Vec,
+    vec::Vec, collections::VecDeque,
 };
 
 /// A struct that holds all information for a transmit queue. 
@@ -25,6 +25,10 @@ pub struct TxQueue {
     num_tx_descs: u16,
     /// Current transmit descriptor index
     tx_cur: u16,
+    /// The packet buffers that descriptors have stored information of
+    tx_bufs_in_use: VecDeque<PacketBufferS>,
+    /// first descriptor that has been used but not checked for transmit completion
+    tx_clean: u16,
     /// The cpu which this queue is mapped to. 
     /// This in itself doesn't guarantee anything but we use this value when setting the cpu id for interrupts and DCA.
     cpu_id : Option<u8>
@@ -46,23 +50,86 @@ impl TxQueue {
         regs.tdh.write(0);
         regs.tdt.write(0);
 
-        Ok(TxQueue { id: regs.id() as u8, regs, tx_descs, num_tx_descs: num_tx_descs as u16, tx_cur: 0, cpu_id })
+        Ok(TxQueue { id: regs.id() as u8, regs, tx_descs, num_tx_descs: num_tx_descs as u16, tx_cur: 0, tx_bufs_in_use: VecDeque::with_capacity(num_tx_descs), tx_clean: 0, cpu_id })
     }
 
-    /// Sends a packet on the transmit queue
-    /// 
-    /// # Arguments:
-    /// * `transmit_buffer`: buffer containing the packet to be sent
-    pub fn send_on_queue(&mut self, packet_buffer: PacketBuffer<{MTU::Standard}>) {
-        self.tx_descs[self.tx_cur as usize].send(packet_buffer.phys_addr, packet_buffer.length);  
-        // update the tx_cur value to hold the next free descriptor
-        let old_cur = self.tx_cur;
-        self.tx_cur = (self.tx_cur + 1) % self.num_tx_descs;
-        // update the tdt register by 1 so that it knows the previous descriptor has been used
-        // and has a packet to be sent
-        self.regs.tdt.write(self.tx_cur as u32);
-        // Wait for the packet to be sent
-        self.tx_descs[old_cur as usize].wait_for_packet_tx();
+    /// Sends a maximum of `batch_size` number of packets from the stored `buffers`.
+    /// The number of packets sent are returned.
+    pub fn tx_batch(&mut self, batch_size: usize,  buffers: &mut Vec<PacketBufferS>, used_buffers: &mut Vec<PacketBufferS>) -> Result<usize, &'static str> {
+        let mut pkts_sent = 0;
+        let mut tx_cur = self.tx_cur;
+
+        self.tx_clean(used_buffers);
+        let tx_clean = self.tx_clean;
+        // debug!("tx_cur = {}, tx_clean ={}", tx_cur, tx_clean);
+
+        for _ in 0.. batch_size {
+            if let Some(packet) = buffers.pop() {
+                let tx_next = (tx_cur + 1) % self.num_tx_descs;
+    
+                if tx_clean == tx_next {
+                    // tx queue of device is full, push packet back onto the
+                    // queue of to-be-sent packets
+                    buffers.push(packet);
+                    break;
+                }
+    
+                self.tx_descs[tx_cur as usize].send(packet.phys_addr, packet.length);
+                self.tx_bufs_in_use.push_back(packet);
+    
+                tx_cur = tx_next;
+                pkts_sent += 1;
+            } else {
+                break;
+            }
+        }
+
+
+        self.tx_cur = tx_cur;
+        self.regs.tdt.write(tx_cur as u32);
+
+        Ok(pkts_sent)
+    }
+
+    /// Removes multiples of `TX_CLEAN_BATCH` packets from `queue`.    
+    /// (code taken from https://github.com/ixy-languages/ixy.rs/blob/master/src/ixgbe.rs#L1016)
+    fn tx_clean(&mut self, used_buffers: &mut Vec<PacketBufferS>)  {
+        const TX_CLEAN_BATCH: usize = 32;
+
+        let mut tx_clean = self.tx_clean as usize;
+        let tx_cur = self.tx_cur;
+
+        loop {
+            let mut cleanable = tx_cur as i32 - tx_clean as i32;
+
+            if cleanable < 0 {
+                cleanable += self.num_tx_descs as i32;
+            }
+    
+            if cleanable < TX_CLEAN_BATCH as i32 {
+                break;
+            }
+    
+            let mut cleanup_to = tx_clean + TX_CLEAN_BATCH - 1;
+
+            if cleanup_to >= self.num_tx_descs as usize {
+                cleanup_to -= self.num_tx_descs as usize;
+            }
+
+            if self.tx_descs[cleanup_to].desc_done() {
+                if TX_CLEAN_BATCH >= self.tx_bufs_in_use.len() {
+                    used_buffers.extend(self.tx_bufs_in_use.drain(..))
+                } else {
+                    used_buffers.extend(self.tx_bufs_in_use.drain(..TX_CLEAN_BATCH))
+                };
+
+                tx_clean = (cleanup_to + 1) % self.num_tx_descs as usize;
+            } else {
+                break;
+            }
+        }
+
+        self.tx_clean = tx_clean as u16;
     }
 }
 
@@ -97,10 +164,10 @@ pub struct RxQueue {
     pub rx_cur: u16,
     /// The list of rx buffers, in which the index in the vector corresponds to the index in `rx_descs`.
     /// For example, `rx_bufs_in_use[2]` is the receive buffer that will be used when `rx_descs[2]` is the current rx descriptor (rx_cur = 2).
-    pub rx_bufs_in_use: Vec<PacketBuffer<{MTU::Standard}>>,
+    pub rx_bufs_in_use: Vec<PacketBufferS>,
     pub rx_buffer_size: RxBufferSizeKiB,
     /// Pool where `ReceiveBuffer`s are stored.
-    pub rx_buffer_pool: Vec<PacketBuffer<{MTU::Standard}>>,
+    pub rx_buffer_pool: Vec<PacketBufferS>,
     /// The cpu which this queue is mapped to. 
     /// This in itself doesn't guarantee anything, but we use this value when setting the cpu id for interrupts and DCA.
     pub cpu_id: Option<u8>,
@@ -115,7 +182,7 @@ impl RxQueue {
         let num_rx_descs = rx_descs.len();
 
         // create a buffer pool with 2KiB size buffers. This ensures that 1 ethernet frame (which can be 1.5KiB) will always fit in one buffer
-        let mut rx_buffer_pool = init_rx_buf_pool(num_rx_descs * 2, DEFAULT_RX_BUFFER_SIZE_2KB)?;
+        let mut rx_buffer_pool = init_rx_buf_pool(num_rx_descs * 2)?;
 
         // now that we've created the rx descriptors, we can fill them in with initial values
         let mut rx_bufs_in_use: Vec<PacketBuffer<{MTU::Standard}>> = Vec::with_capacity(num_rx_descs);
@@ -158,6 +225,55 @@ impl RxQueue {
         })
     }
 
+    /// Retrieves a maximum of `batch_size` number of packets and stores them in `buffers`.
+    /// Returns the total number of received packets.
+    pub fn rx_batch(&mut self, buffers: &mut Vec<PacketBufferS>, batch_size: usize, pool: &mut Vec<PacketBufferS>) -> Result<usize, &'static str> {
+        let mut rx_cur = self.rx_cur as usize;
+        let mut last_rx_cur = self.rx_cur as usize;
+
+        let mut rcvd_pkts = 0;
+
+        for _ in 0..batch_size {
+            let desc = &mut self.rx_descs[rx_cur];
+
+            if !desc.descriptor_done() {
+                break;
+            }
+
+            if !desc.end_of_packet() {
+                return Err("Currently do not support multi-descriptor packets");
+            }
+
+            let length = desc.length();
+
+            // Now that we are "removing" the current receive buffer from the list of receive buffers that the NIC can use,
+            // (because we're saving it for higher layers to use),
+            // we need to obtain a new `ReceiveBuffer` and set it up such that the NIC will use it for future receivals.
+            if let Some(new_receive_buf) = pool.pop() {
+                // actually tell the NIC about the new receive buffer, and that it's ready for use now
+                desc.set_packet_address(new_receive_buf.phys_addr);
+                desc.reset_status();
+                
+                let mut current_rx_buf = core::mem::replace(&mut self.rx_bufs_in_use[rx_cur], new_receive_buf);
+                current_rx_buf.length = length as u16; // set the ReceiveBuffer's length to the size of the actual packet received
+                buffers.push(current_rx_buf);
+
+                rcvd_pkts += 1;
+                last_rx_cur = rx_cur;
+                rx_cur = (rx_cur + 1) & (self.num_rx_descs as usize - 1);
+            } else {
+                return Err("Ran out of packet buffers");
+            }
+        }
+
+        if last_rx_cur != rx_cur {
+            self.rx_cur = rx_cur as u16;
+            self.regs.rdt.write(last_rx_cur as u32); 
+        }
+
+        Ok(rcvd_pkts)
+
+    }
 }
 
 impl Deref for RxQueue {
@@ -188,4 +304,121 @@ fn create_desc_ring<T: Descriptor + FromBytes>(num_desc: NumDesc) -> Result<(Box
     for desc in desc_ring.iter_mut() { desc.clear() }
 
     Ok((desc_ring, descs_starting_phys_addr))
+}
+
+
+
+// implementation of pseudo functions that should only be used for testing
+impl TxQueue {
+    /// Sets all the descriptors in the tx queue with a valid packet buffer but doesn't update the TDT.
+    /// Requires that the length of `buffers` is equal to the number of descriptors in the queue
+    pub fn tx_populate(&mut self, buffers: &mut Vec<PacketBufferS>) {
+        assert!(buffers.len() == self.tx_descs.len());
+
+        for desc in self.tx_descs.iter_mut() {
+            let packet = buffers.pop().unwrap();
+            desc.send(packet.phys_addr, packet.length);
+            self.tx_bufs_in_use.push_back(packet);
+        }
+
+        assert!(self.tx_bufs_in_use.len() == self.tx_descs.len());
+    }
+
+
+    /// Send a max `batch_size` number of packets.
+    /// There is no buffer management, and this function simply reuses the packet buffer that's already stored.
+    /// The number of packets sent is returned.
+    pub fn tx_batch_pseudo(&mut self, batch_size: usize) -> usize {
+        let mut pkts_sent = 0;
+        let mut tx_cur = self.tx_cur;
+
+        self.tx_clean_pseudo();
+        let tx_clean = self.tx_clean;
+
+        for _ in 0..batch_size {
+            let tx_next = (tx_cur + 1) % self.num_tx_descs;
+
+            if tx_clean == tx_next {
+                // tx queue of device is full
+                break;
+            }
+
+            self.tx_descs[tx_cur as usize].send(self.tx_bufs_in_use[tx_cur as usize].phys_addr, self.tx_bufs_in_use[tx_cur as usize].length);
+
+            tx_cur = tx_next;
+            pkts_sent += 1;
+        }
+
+        self.tx_cur = tx_cur;
+        self.regs.tdt.write(tx_cur as u32);
+
+        pkts_sent
+    }
+
+    fn tx_clean_pseudo(&mut self) {
+        const TX_CLEAN_BATCH: usize = 32;
+        let mut tx_clean = self.tx_clean as usize;
+        let tx_cur = self.tx_cur;
+
+        loop {
+            let mut cleanable = tx_cur as i32 - tx_clean as i32;
+
+            if cleanable < 0 {
+                cleanable += self.num_tx_descs as i32;
+            }
+    
+            if cleanable < TX_CLEAN_BATCH as i32 {
+                break;
+            }
+    
+            let mut cleanup_to = tx_clean + TX_CLEAN_BATCH - 1;
+
+            if cleanup_to >= self.num_tx_descs as usize {
+                cleanup_to -= self.num_tx_descs as usize;
+            }
+
+            if self.tx_descs[cleanup_to].desc_done() {
+                tx_clean = (cleanup_to + 1) % self.num_tx_descs as usize;
+            } else {
+                break;
+            }
+        }
+        self.tx_clean = tx_clean as u16;
+    }
+}
+
+// implementation of pseudo functions that should only be used for testing
+impl RxQueue {
+    /// Simply iterates through a max of `batch_size` descriptors and resets the descriptors. 
+    /// There is no buffer management, and this function simply reuses the packet buffer that's already stored.
+    /// Returns the total number of received packets.
+    pub fn rx_batch_pseudo(&mut self, batch_size: usize) -> usize {
+        let mut rx_cur = self.rx_cur as usize;
+        let mut last_rx_cur = self.rx_cur as usize;
+
+        let mut rcvd_pkts = 0;
+
+        for _ in 0..batch_size {
+            let desc = &mut self.rx_descs[rx_cur];
+            if !desc.descriptor_done() {
+                break;
+            }
+
+            // actually tell the NIC about the new receive buffer, and that it's ready for use now
+            desc.set_packet_address(self.rx_bufs_in_use[rx_cur].phys_addr);
+            desc.reset_status();
+                
+            rcvd_pkts += 1;
+            last_rx_cur = rx_cur;
+            rx_cur = (rx_cur + 1) & (self.num_rx_descs as usize - 1);
+        }
+
+        if last_rx_cur != rx_cur {
+            self.rx_cur = rx_cur as u16;
+            self.regs.rdt.write(last_rx_cur as u32); 
+        }
+
+        rcvd_pkts
+    }
+
 }

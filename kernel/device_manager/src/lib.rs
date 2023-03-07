@@ -139,7 +139,7 @@ pub fn init(key_producer: Queue<Event>, mouse_producer: Queue<Event>) -> Result<
                 add_to_network_interfaces(e1000_interface);
                 continue;
             }
-            if dev.vendor_id == ixgbe_verified::INTEL_VEND && dev.device_id == ixgbe_verified::INTEL_82599 {
+            if dev.vendor_id == ixgbe_verified::INTEL_VEND && (dev.device_id == ixgbe_verified::INTEL_82599ES || dev.device_id == ixgbe_verified::INTEL_X520_DA2)  {
                 info!("ixgbe PCI device found at: {:?}", dev.location);
                 
                 // Initialization parameters of the NIC.
