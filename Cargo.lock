@@ -2252,6 +2252,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "packet_forwarder"
+version = "0.1.0"
+dependencies = [
+ "getopts",
+ "hpet",
+ "irq_safety",
+ "ixgbe_verified",
+ "libtest",
+ "log",
+ "network_interface_card",
+ "pmu_x86",
+ "spawn",
+ "terminal_print",
+]
+
+[[package]]
 name = "page_allocator"
 version = "0.1.0"
 dependencies = [
