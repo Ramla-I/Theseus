@@ -210,8 +210,8 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
         // pool.append(&mut used_buffers); 
 
         /*** Packet sink and Packet source (get up to 14.5 Mpps)***/ 
-        // rx_packets_dev0 += dev0.rx_batch_pseudo(0, batch_size);
-        tx_packets_dev0 += dev0.tx_batch_pseudo(0, batch_size);
+        rx_packets_dev0 += dev0.rx_batch_pseudo(0, batch_size);
+        // tx_packets_dev0 += dev0.tx_batch_pseudo(0, batch_size);
         
         // rx_packets_dev0 += dev0.rx_batch(0, &mut received_buffers, batch_size, &mut pool).expect("DEV0: RX batch failure");
         // pool.append(&mut received_buffers);

@@ -75,6 +75,7 @@ pub enum FilterProtocol {
 #[derive(Copy, Clone)]
 pub enum NumDesc {
     Descs16 = 16,
+    Descs512 = 512,
     Descs1k = 1024,
     Descs2k = 2048,
     Descs4k = 4096,

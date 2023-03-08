@@ -314,6 +314,7 @@ impl IxgbeNic {
         self.rx_queues[qid].rx_batch(buffers, batch_size, pool)
     }
 
+    #[inline(always)]
     pub fn rx_batch_pseudo(&mut self, qid: usize, batch_size: usize) -> usize {
         // if qid >= self.rx_queues.len() {
         //     return Err("Queue index is out of range");

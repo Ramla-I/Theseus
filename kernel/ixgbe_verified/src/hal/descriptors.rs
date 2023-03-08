@@ -128,14 +128,17 @@ impl AdvancedRxDescriptor {
         self.header_buffer_address.write(0);
     }
 
+    #[inline(always)]
     pub(crate) fn set_packet_address(&mut self, packet_buffer_address: PhysicalAddress) {
         self.packet_buffer_address.write(packet_buffer_address.value() as u64);
     }
 
+    #[inline(always)]
     pub(crate) fn reset_status(&mut self) {
         self.header_buffer_address.write(0);
     }
 
+    #[inline(always)]
     pub fn descriptor_done(&self) -> bool{
         (self.get_ext_status() & RX_STATUS_DD as u64) == RX_STATUS_DD as u64
     }
