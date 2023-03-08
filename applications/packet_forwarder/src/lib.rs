@@ -132,6 +132,8 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
     let mut dev0 = ixgbe_devs[0].lock();
     let mut dev1 = ixgbe_devs[1].lock();
 
+    let (rxq_dev0, txq_dev0) = dev0.get_queue_pair(0, 0).expect("Failed to get queue pair.");
+
     // create the buffers to store packets. 
     // They should have a large capacity so that no heap allocation is done during the benchmark
     let mut received_buffers: Vec<PacketBufferS> = Vec::with_capacity(DESC_RING_SIZE * 2);
@@ -166,7 +168,7 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
     
     // In the case of the pseudo tx function we go ahead and store a packet buffer for each descriptor,
     // since we aren't doing any buffer management during the benchmark
-    // dev0.tx_populate(0, &mut pool);
+    dev0.tx_populate(0, &mut pool);
 
     error!("Link speed: {} Mbps", dev0.link_speed() as usize);
     error!("Link speed: {} Mbps", dev1.link_speed() as usize);
@@ -208,15 +210,18 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
         // pool.append(&mut used_buffers); 
 
         /*** Packet sink and Packet source (get up to 14.5 Mpps)***/ 
+        // rx_packets_dev0 += dev0.rx_batch_pseudo(0, batch_size);
+        tx_packets_dev0 += dev0.tx_batch_pseudo(0, batch_size);
+        
         // rx_packets_dev0 += dev0.rx_batch(0, &mut received_buffers, batch_size, &mut pool).expect("DEV0: RX batch failure");
         // pool.append(&mut received_buffers);
         // tx_packets_dev0 += dev0.tx_batch(0, batch_size, &mut pool, &mut used_buffers).expect("DEV0: TX batch failure");   
         // pool.append(&mut used_buffers); 
 
         /*** unidirectional forwarder 1 port (right now I'm getting a max of 11 Mpps)***/ 
-        rx_packets_dev0 += dev0.rx_batch(0, &mut received_buffers, batch_size, &mut pool).expect("DEV0: RX batch failure");
-        tx_packets_dev0 += dev0.tx_batch(0, batch_size, &mut received_buffers, &mut used_buffers).expect("DEV0: TX batch failure");   
-        pool.append(&mut used_buffers); 
+        // rx_packets_dev0 += dev0.rx_batch(0, &mut received_buffers, batch_size, &mut pool).expect("DEV0: RX batch failure");
+        // tx_packets_dev0 += dev0.tx_batch(0, batch_size, &mut received_buffers, &mut used_buffers).expect("DEV0: TX batch failure");   
+        // pool.append(&mut used_buffers); 
 
         /*** unidirectional forwarder 2 ports (tested till 8.8 Mpps)***/
         // rx_packets_dev0 += dev0.rx_batch(0, &mut received_buffers, batch_size, &mut pool).expect("DEV0: RX batch failure");

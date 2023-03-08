@@ -296,7 +296,7 @@ fn create_desc_ring<T: Descriptor + FromBytes>(num_desc: NumDesc) -> Result<(Box
     let size_in_bytes_of_all_tx_descs = num_desc as usize * core::mem::size_of::<T>();
     
     // descriptor rings must be 128 byte-aligned, which is satisfied below because it's aligned to a page boundary.
-    let (descs_mapped_pages, descs_starting_phys_addr) = create_contiguous_mapping(size_in_bytes_of_all_tx_descs, EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)?;
+    let (descs_mapped_pages, descs_starting_phys_addr) = create_contiguous_mapping(size_in_bytes_of_all_tx_descs, NIC_MAPPING_FLAGS_CACHED)?;
 
     let mut desc_ring = BoxRefMut::new(Box::new(descs_mapped_pages))
         .try_map_mut(|mp| mp.as_slice_mut::<T>(0, num_desc as usize))?;
@@ -313,10 +313,11 @@ impl TxQueue {
     /// Sets all the descriptors in the tx queue with a valid packet buffer but doesn't update the TDT.
     /// Requires that the length of `buffers` is equal to the number of descriptors in the queue
     pub fn tx_populate(&mut self, buffers: &mut Vec<PacketBufferS>) {
-        assert!(buffers.len() == self.tx_descs.len());
+        // assert!(buffers.len() == self.tx_descs.len());
 
         for desc in self.tx_descs.iter_mut() {
-            let packet = buffers.pop().unwrap();
+            let mut packet = buffers.pop().unwrap();
+            packet.length = 64;
             desc.send(packet.phys_addr, packet.length);
             self.tx_bufs_in_use.push_back(packet);
         }

@@ -288,6 +288,16 @@ impl IxgbeNic {
         Ok(&mut self.tx_queues[idx])
     }
 
+    /// Returns the Tx queue located at this index. 
+    /// This doesn't have to match the queue ID.
+    pub fn get_queue_pair(&mut self, rq_idx: usize, tq_idx: usize) -> Result<(&mut RxQueue, &mut TxQueue), &'static str> {
+        if tq_idx >= self.tx_queues.len() || rq_idx >= self.rx_queues.len() {
+            return Err("Queue index is out of range");
+        }
+
+        Ok((&mut self.rx_queues[rq_idx], &mut self.tx_queues[tq_idx]))
+    }
+
     pub fn tx_batch(&mut self, qid: usize, batch_size: usize,  buffers: &mut Vec<PacketBufferS>, used_buffers: &mut Vec<PacketBufferS>) -> Result<usize, &'static str> {
         if qid >= self.tx_queues.len() {
             return Err("Queue index is out of range");
@@ -302,6 +312,30 @@ impl IxgbeNic {
         }
 
         self.rx_queues[qid].rx_batch(buffers, batch_size, pool)
+    }
+
+    pub fn rx_batch_pseudo(&mut self, qid: usize, batch_size: usize) -> usize {
+        // if qid >= self.rx_queues.len() {
+        //     return Err("Queue index is out of range");
+        // }
+
+        self.rx_queues[qid].rx_batch_pseudo(batch_size)
+    }
+
+    pub fn tx_populate(&mut self, qid: usize, pool: &mut Vec<PacketBufferS>){
+        // if qid >= self.rx_queues.len() {
+        //     return Err("Queue index is out of range");
+        // }
+
+        self.tx_queues[qid].tx_populate(pool)
+    }
+
+    pub fn tx_batch_pseudo(&mut self, qid: usize, batch_size: usize) -> usize {
+        // if qid >= self.rx_queues.len() {
+        //     return Err("Queue index is out of range");
+        // }
+
+        self.tx_queues[qid].tx_batch_pseudo(batch_size)
     }
 
     /// Returns the memory-mapped control registers of the nic and the rx/tx queue registers.
@@ -530,14 +564,17 @@ impl IxgbeNic {
 
         Self::disable_rx_function(regs);
         // program RXPBSIZE according to DCB and virtualization modes (both off)
-        regs.rxpbsize_set_buffer_size(0, RXPBSIZE_512KB)?;
+        // regs.rxpbsize_set_buffer_size(0, RXPBSIZE_128KB)?;
         for i in 1..8 {
             regs.rxpbsize_set_buffer_size(i, 0)?;
         }
         //CRC offloading
         regs.hlreg0_crc_strip();
         regs.rdrxctl_crc_strip();
-
+        
+        // Clear bits
+        regs.rdrxctl.write(regs.rdrxctl.read() & !RDRXCTL_RSCFRSTSIZE);
+        
         let mut rx_all_queues = Vec::new();
 
         for rxq_reg in rx_regs {      
@@ -545,8 +582,8 @@ impl IxgbeNic {
 
             // set the size of the packet buffers and the descriptor format used
             let mut val = rxq.regs.srrctl_read();
-            val.set_bits(0..4, DEFAULT_RX_BUFFER_SIZE_2KB as u32);
-            val.set_bits(8..13, BSIZEHEADER_0B);
+            // val.set_bits(0..4, DEFAULT_RX_BUFFER_SIZE_2KB as u32);
+            // val.set_bits(8..13, BSIZEHEADER_0B);
             val.set_bits(25..27, DESCTYPE_ADV_1BUFFER);
             val = val | DROP_ENABLE;
             rxq.regs.srrctl_write(val)?;

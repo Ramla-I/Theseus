@@ -2,7 +2,7 @@ use memory::{MappedPages, PhysicalAddress, create_contiguous_mapping, EntryFlags
 use core::ops::{Deref, DerefMut};
 use zerocopy::FromBytes;
 
-use crate::DEFAULT_RX_BUFFER_SIZE_2KB;
+use crate::{DEFAULT_RX_BUFFER_SIZE_2KB, allocator::NIC_MAPPING_FLAGS_CACHED};
 
 /// Size of ether type field in ethernet frame header
 pub const ETHER_TYPE_LEN_IN_BYTES:                      u16 = 2;
@@ -50,7 +50,7 @@ impl<const N: MTU> PacketBuffer<N> {
 
         let (mut mp, starting_phys_addr) = create_contiguous_mapping(
             DEFAULT_RX_BUFFER_SIZE_2KB as usize,
-            EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE,
+            NIC_MAPPING_FLAGS_CACHED,
         )?;
         
         // let buffer = mp.as_type_mut::<EthernetFrame>(0)? as *mut EthernetFrame;

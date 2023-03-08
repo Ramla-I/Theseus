@@ -1,6 +1,6 @@
 use memory::{EntryFlags, PhysicalAddress, allocate_pages_by_bytes, allocate_frames_by_bytes_at, get_kernel_mmi_ref, MappedPages, create_contiguous_mapping};
 use pci::{PciDevice};
-use crate::{packet_buffers::{PacketBuffer, MTU}, RxBufferSizeKiB, DEFAULT_RX_BUFFER_SIZE_2KB};
+use crate::{packet_buffers::{PacketBuffer, MTU, MAX_STANDARD_ETHERNET_FRAME_LEN_IN_BYTES}, RxBufferSizeKiB, DEFAULT_RX_BUFFER_SIZE_2KB};
 use alloc::vec::Vec;
 
 
@@ -61,10 +61,10 @@ pub fn allocate_memory(mem_base: PhysicalAddress, mem_size_in_bytes: usize, mapp
 /// * `num_buffers`: number of buffers that are initially added to the pool 
 /// * `buffer_size`: size of the receive buffers in bytes
 pub fn init_rx_buf_pool(num_buffers: usize) -> Result<Vec<PacketBuffer<{MTU::Standard}>>, &'static str> {
-    let buffer_size_in_bytes = DEFAULT_RX_BUFFER_SIZE_2KB as u16 * 1024;
+    // let buffer_size_in_bytes = DEFAULT_RX_BUFFER_SIZE_2KB as u16 * 1024;
     let mut buffer_pool = Vec::with_capacity(num_buffers);
     for _i in 0..num_buffers {
-        let rx_buf = PacketBuffer::<{MTU::Standard}>::new(buffer_size_in_bytes)?;
+        let rx_buf = PacketBuffer::<{MTU::Standard}>::new(MAX_STANDARD_ETHERNET_FRAME_LEN_IN_BYTES)?;
         buffer_pool.push(rx_buf);
     }
     Ok(buffer_pool)
