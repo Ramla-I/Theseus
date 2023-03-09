@@ -50,6 +50,7 @@ pub mod allocator;
 
 pub use hal::*;
 use hal::regs::*;
+use lazy_static::__Deref;
 use queue_registers::*;
 use mapped_pages_fragments::MappedPagesFragments;
 use queues::{TxQueue, RxQueue};
@@ -63,7 +64,7 @@ use alloc::{
 };
 use irq_safety::MutexIrqSafe;
 use memory::{PhysicalAddress, MappedPages};
-use pci::{PciDevice, PciConfigSpaceAccessMechanism, PciLocation};
+use pci::{PciDevice, PciConfigSpaceAccessMechanism, PciLocation, BAR, PciBaseAddr};
 use owning_ref::BoxRefMut;
 use bit_field::BitField;
 
@@ -121,9 +122,9 @@ pub struct IxgbeNic {
     dev_id: PciLocation,
     /// Type of Base Address Register 0,
     /// if it's memory mapped or I/O.
-    bar_type: u8,
+    bar_type: PciConfigSpaceAccessMechanism,
     /// MMIO Base Address     
-    mem_base: PhysicalAddress,
+    mem_base: PciBaseAddr,
     /// The actual MAC address burnt into the hardware  
     mac_hardware: [u8;6],       
     /// Memory-mapped control registers
@@ -175,7 +176,6 @@ impl IxgbeNic {
     /// * `num_tx_descriptors`: The number of descriptors in each transmit queue.
     pub fn init(
         ixgbe_pci_dev: &PciDevice,
-        dev_id: PciLocation,
         // enable_virtualization: bool,
         // enable_rss: bool,
         num_rx_descriptors: NumDesc,
@@ -186,26 +186,28 @@ impl IxgbeNic {
         //     return Err("Cannot enable virtualization when interrupts or RSS are enabled");
         // }
 
-        // Start the initialization procedure
-        let bar0 = ixgbe_pci_dev.bars[0];
-        // Determine the type from the base address register
-        let bar_type = (bar0 as u8) & 0x01;    
+        let bar_type = ixgbe_pci_dev.determine_pci_space();
 
         // If the base address is not memory mapped then exit
-        if bar_type == PciConfigSpaceAccessMechanism::IoPort as u8 {
+        if bar_type == PciConfigSpaceAccessMechanism::IoPort {
             error!("ixgbe::init(): BAR0 is of I/O type");
             return Err("ixgbe::init(): BAR0 is of I/O type")
         }
 
         // 16-byte aligned memory mapped base address
-        let mem_base =  ixgbe_pci_dev.determine_mem_base(0)?;
+        let mem_base =  ixgbe_pci_dev.determine_pci_base_addr(BAR::BAR0)?;
 
         // set the bus mastering bit for this PciDevice, which allows it to use DMA
         ixgbe_pci_dev.pci_set_command_bus_master_bit();
 
         // map the IntelIxgbeRegisters structs to the address found from the pci space
-        let (mut mapped_registers1, mut mapped_registers2, mut mapped_registers3, mut mapped_registers_mac, 
-            mut rx_mapped_registers, mut tx_mapped_registers) = Self::mapped_reg(mem_base)?;
+        let (mut mapped_registers1, 
+            mut mapped_registers2, 
+            mut mapped_registers3, 
+            mut mapped_registers_mac, 
+            mut rx_mapped_registers, 
+            mut tx_mapped_registers
+        ) = Self::mapped_reg(&mem_base)?;
 
         // link initialization
         Self::start_link(&mut mapped_registers1, &mut mapped_registers2, &mut mapped_registers3, &mut mapped_registers_mac)?;
@@ -233,7 +235,7 @@ impl IxgbeNic {
         Self::wait_for_link(&mapped_registers2, 10_000_000);
 
         let ixgbe_nic = IxgbeNic {
-            dev_id: dev_id,
+            dev_id: ixgbe_pci_dev.location,
             bar_type: bar_type,
             mem_base: mem_base,
             mac_hardware: mac_addr_hardware,
@@ -341,7 +343,7 @@ impl IxgbeNic {
 
     /// Returns the memory-mapped control registers of the nic and the rx/tx queue registers.
     fn mapped_reg(
-        mem_base: PhysicalAddress
+        mem_base: &PciBaseAddr
     ) -> Result<(
         BoxRefMut<MappedPages, IntelIxgbeRegisters1>, 
         BoxRefMut<MappedPages, IntelIxgbeRegisters2>, 
@@ -360,7 +362,7 @@ impl IxgbeNic {
         const GENERAL_REGISTERS_3_SIZE_BYTES:   usize = 18 * 4096;
 
         // Allocate memory for the registers, making sure each successive memory region begins where the previous region ended.
-        let mut offset = mem_base;
+        let mut offset = *mem_base.deref();
         let nic_regs1_mapped_page = allocate_memory(offset, GENERAL_REGISTERS_1_SIZE_BYTES, NIC_MAPPING_FLAGS_NO_CACHE)?;
 
         offset += GENERAL_REGISTERS_1_SIZE_BYTES;

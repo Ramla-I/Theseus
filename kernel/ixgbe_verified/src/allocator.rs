@@ -21,18 +21,6 @@ pub const NIC_MAPPING_FLAGS_CACHED: EntryFlags = EntryFlags::from_bits_truncate(
 );
 
 
-/// Allocates memory for the NIC registers
-/// 
-/// # Arguments 
-/// * `dev`: reference to pci device 
-/// * `mem_base`: starting physical address of the device's memory mapped registers
-pub fn allocate_device_register_memory(dev: &PciDevice, mem_base: PhysicalAddress) -> Result<MappedPages, &'static str> {
-    //find out amount of space needed
-    let mem_size_in_bytes = dev.determine_mem_size(0) as usize;
-
-    allocate_memory(mem_base, mem_size_in_bytes, NIC_MAPPING_FLAGS_NO_CACHE)
-}
-
 /// Helper function to allocate memory at required address
 /// 
 /// # Arguments

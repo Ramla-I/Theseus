@@ -359,7 +359,58 @@ pub struct PciDevice {
     pub int_line: u8,
 }
 
+pub struct PciBaseAddr(PhysicalAddress);
+impl Deref for PciBaseAddr {
+    type Target = PhysicalAddress;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum BAR {
+    BAR0 = 0,
+    BAR1 = 1,
+    BAR2 = 2,
+    BAR3 = 3,
+    BAR4 = 4,
+    BAR5 = 5,
+}
+
+impl BAR {
+    fn next(&self) -> Option<BAR> {
+        match self {
+            BAR::BAR0 => Some(BAR::BAR1),
+            BAR::BAR1 => Some(BAR::BAR2),
+            BAR::BAR2 => Some(BAR::BAR3),
+            BAR::BAR3 => Some(BAR::BAR4),
+            BAR::BAR4 => Some(BAR::BAR5),
+            BAR::BAR5 => None,
+        }
+    }
+}
+
+
 impl PciDevice {
+    pub fn determine_pci_space(&self) -> PciConfigSpaceAccessMechanism {
+        // Start the initialization procedure
+        let bar0 = self.bar(BAR::BAR0);
+        // Determine the type from the base address register
+        let bar_type = (bar0 as u8) & 0x01;    
+
+        // If the base address is not memory mapped then exit
+        // ToDo: could probably use into/from
+        if bar_type == PciConfigSpaceAccessMechanism::IoPort as u8 {
+            PciConfigSpaceAccessMechanism::IoPort
+        } else {
+            PciConfigSpaceAccessMechanism::MemoryMapped
+        }
+    } 
+
+    fn bar(&self, bar_idx: BAR) -> u32 {
+        self.bars[bar_idx as usize]
+    }
+    
     /// Returns the base address of the memory region specified by the given `BAR` 
     /// (Base Address Register) for this PCI device. 
     ///
@@ -397,6 +448,42 @@ impl PciDevice {
                 .ok_or("determine_mem_base(): [32-bit] BAR physical address was invalid")?
         };  
         Ok(mem_base)
+    }
+
+    /// ToDo: merge the two base addr functions
+    /// Returns the base address of the memory region specified by the given `BAR` 
+    /// (Base Address Register) for this PCI device. 
+    ///
+    /// # Argument
+    /// * `bar_index` must be between `0` and `5` inclusively, as each PCI device 
+    ///   can only have 6 BARs at the most.  
+    ///
+    /// Note that if the given `BAR` actually indicates it is part of a 64-bit address,
+    /// it will be used together with the BAR right above it (`bar + 1`), e.g., `BAR1:BAR0`.
+    /// If it is a 32-bit address, then only the given `BAR` will be accessed.
+    ///
+    /// TODO: currently we assume the BAR represents a memory space (memory mapped I/O) 
+    ///       rather than I/O space like Port I/O. Obviously, this is not always the case.
+    ///       Instead, we should return an enum specifying which kind of memory space the calculated base address is.
+    pub fn determine_pci_base_addr(&self, bar_index: BAR) -> Result<PciBaseAddr, &'static str> {
+        let mut bar = self.bar(bar_index);
+
+        // Check bits [2:1] of the bar to determine address length (64-bit or 32-bit)
+        let mem_base = if bar.get_bits(1..3) == BAR_ADDRESS_IS_64_BIT { 
+            // Here: this BAR is the lower 32-bit part of a 64-bit address, 
+            // so we need to access the next highest BAR to get the address's upper 32 bits.
+            let next_bar = self.bar(bar_index.next().ok_or("next highest BAR index is out of range")?);
+            // Clear the bottom 4 bits because it's a 16-byte aligned address
+            PhysicalAddress::new(*bar.set_bits(0..4, 0) as usize | ((next_bar as usize) << 32))
+                .ok_or("determine_mem_base(): [64-bit] BAR physical address was invalid")?
+        } else {
+            // Here: this BAR is the lower 32-bit part of a 64-bit address, 
+            // so we need to access the next highest BAR to get the address's upper 32 bits.
+            // Also, clear the bottom 4 bits because it's a 16-byte aligned address.
+            PhysicalAddress::new(*bar.set_bits(0..4, 0) as usize)
+                .ok_or("determine_mem_base(): [32-bit] BAR physical address was invalid")?
+        };  
+        Ok(PciBaseAddr(mem_base))
     }
 
     /// Returns the size in bytes of the memory region specified by the given `BAR` 
@@ -506,6 +593,7 @@ impl DerefMut for PciDevice {
 
 /// Lists the 2 possible PCI configuration space access mechanisms
 /// that can be found from the LSB of the devices's BAR0
+#[derive(PartialEq, Eq)]
 pub enum PciConfigSpaceAccessMechanism {
     MemoryMapped = 0,
     IoPort = 1,

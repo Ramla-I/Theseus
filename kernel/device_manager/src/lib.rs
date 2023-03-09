@@ -150,7 +150,6 @@ pub fn init(key_producer: Queue<Event>, mouse_producer: Queue<Event>) -> Result<
                 
                 let ixgbe_nic = ixgbe_verified::IxgbeNic::init(
                     dev, 
-                    dev.location,
                     // VIRT_ENABLED, 
                     // RSS_ENABLED, 
                     // RX_DESCS,
