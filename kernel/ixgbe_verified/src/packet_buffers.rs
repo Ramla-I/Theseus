@@ -1,4 +1,4 @@
-use memory::{MappedPages, PhysicalAddress, create_contiguous_mapping, EntryFlags};
+use memory::{MappedPages, PhysicalAddress, create_contiguous_mapping};
 use core::ops::{Deref, DerefMut};
 use zerocopy::FromBytes;
 

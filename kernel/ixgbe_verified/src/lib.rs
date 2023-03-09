@@ -43,7 +43,8 @@ mod queue_registers;
 // pub mod virtual_function;
 mod mapped_pages_fragments;
 pub mod test_packets;
-pub mod queues;
+pub mod rx_queue;
+pub mod tx_queue;
 pub mod packet_buffers;
 pub mod hal;
 pub mod allocator;
@@ -53,7 +54,8 @@ use hal::regs::*;
 use lazy_static::__Deref;
 use queue_registers::*;
 use mapped_pages_fragments::MappedPagesFragments;
-use queues::{TxQueue, RxQueue};
+use rx_queue::{RxQueueE, RxQueueD};
+use tx_queue::{TxQueueE, TxQueueD};
 use allocator::*;
 use packet_buffers::*;
 
@@ -63,7 +65,7 @@ use alloc::{
     boxed::Box,
 };
 use irq_safety::MutexIrqSafe;
-use memory::{PhysicalAddress, MappedPages};
+use memory::MappedPages;
 use pci::{PciDevice, PciConfigSpaceAccessMechanism, PciLocation, BAR, PciBaseAddr};
 use owning_ref::BoxRefMut;
 use bit_field::BitField;
@@ -141,15 +143,19 @@ pub struct IxgbeNic {
     /// The number of rx queues enabled
     num_rx_queues: u8,
     /// Vector of the enabled rx queues
-    rx_queues: Vec<RxQueue>,
-    /// Registers for the disabled queues
-    rx_registers_disabled: Vec<RxQueueRegisters>,
+    rx_queues: Vec<RxQueueE>,
+    /// Vector of the disabled rx queues
+    rx_queues_disabled: Vec<RxQueueD>,
+    /// Registers for the queues >= 64, since they don't seem to work
+    rx_registers_unusable: Vec<RxQueueRegisters>,
     /// The number of tx queues enabled
     num_tx_queues: u8,
     /// Vector of the enabled tx queues
-    tx_queues: Vec<TxQueue>,
+    tx_queues: Vec<TxQueueE>,
+    /// Vector of the disabled tx queues
+    tx_queues_disabled: Vec<TxQueueD>,
     /// Registers for the disabled queues
-    tx_registers_disabled: Vec<TxQueueRegisters>,
+    tx_registers_unusable: Vec<TxQueueRegisters>,
 }
 
 // Functions that setup the NIC struct and handle the sending and receiving of packets.
@@ -219,11 +225,11 @@ impl IxgbeNic {
         let mac_addr_hardware = Self::read_mac_address_from_nic(&mut mapped_registers_mac);
 
         // create the rx descriptor queues
-        let rx_registers_disabled = rx_mapped_registers.split_off(IXGBE_NUM_RX_QUEUES_ENABLED as usize);
+        let rx_registers_unusable = rx_mapped_registers.split_off(IXGBE_NUM_RX_QUEUES_ENABLED as usize);
         let rx_queues = Self::rx_init(&mut mapped_registers1, &mut mapped_registers2, rx_mapped_registers, num_rx_descriptors)?;
         
          // create the tx descriptor queues
-        let tx_registers_disabled = tx_mapped_registers.split_off(IXGBE_NUM_TX_QUEUES_ENABLED as usize);
+        let tx_registers_unusable = tx_mapped_registers.split_off(IXGBE_NUM_TX_QUEUES_ENABLED as usize);
         let tx_queues = Self::tx_init(&mut mapped_registers2, &mut mapped_registers_mac, tx_mapped_registers, num_tx_descriptors)?;
         
         // // enable Receive Side Scaling if required
@@ -245,11 +251,13 @@ impl IxgbeNic {
             regs_mac: mapped_registers_mac,
             // l34_5_tuple_filters: [false; NUM_L34_5_TUPLE_FILTERS],
             num_rx_queues: IXGBE_NUM_RX_QUEUES_ENABLED,
-            rx_queues: rx_queues,
-            rx_registers_disabled,
+            rx_queues,
+            rx_queues_disabled: Vec::new(),
+            rx_registers_unusable,
             num_tx_queues: IXGBE_NUM_TX_QUEUES_ENABLED,
-            tx_queues: tx_queues,
-            tx_registers_disabled
+            tx_queues,
+            tx_queues_disabled: Vec::new(),
+            tx_registers_unusable
         };
 
         info!("Link is up with speed: {} Mb/s", ixgbe_nic.link_speed() as u32);
@@ -272,7 +280,7 @@ impl IxgbeNic {
 
     /// Returns the Rx queue located at this index. 
     /// This doesn't have to match the queue ID.
-    pub fn get_rx_queue(&mut self, idx: usize) -> Result<&mut RxQueue, &'static str> {
+    pub fn get_rx_queue(&mut self, idx: usize) -> Result<&mut RxQueueE, &'static str> {
         if idx >= self.rx_queues.len() {
             return Err("Queue index is out of range");
         }
@@ -282,7 +290,7 @@ impl IxgbeNic {
 
     /// Returns the Tx queue located at this index. 
     /// This doesn't have to match the queue ID.
-    pub fn get_tx_queue(&mut self, idx: usize) -> Result<&mut TxQueue, &'static str> {
+    pub fn get_tx_queue(&mut self, idx: usize) -> Result<&mut TxQueueE, &'static str> {
         if idx >= self.tx_queues.len() {
             return Err("Queue index is out of range");
         }
@@ -292,7 +300,7 @@ impl IxgbeNic {
 
     /// Returns the Tx queue located at this index. 
     /// This doesn't have to match the queue ID.
-    pub fn get_queue_pair(&mut self, rq_idx: usize, tq_idx: usize) -> Result<(&mut RxQueue, &mut TxQueue), &'static str> {
+    pub fn get_queue_pair(&mut self, rq_idx: usize, tq_idx: usize) -> Result<(&mut RxQueueE, &mut TxQueueE), &'static str> {
         if tq_idx >= self.tx_queues.len() || rq_idx >= self.rx_queues.len() {
             return Err("Queue index is out of range");
         }
@@ -563,7 +571,7 @@ impl IxgbeNic {
         regs: &mut IntelIxgbeRegisters2, 
         rx_regs: Vec<RxQueueRegisters>,
         num_rx_descs: NumDesc
-    ) -> Result<Vec<RxQueue>, &'static str> {
+    ) -> Result<Vec<RxQueueE>, &'static str> {
 
         Self::disable_rx_function(regs);
         // program RXPBSIZE according to DCB and virtualization modes (both off)
@@ -581,7 +589,7 @@ impl IxgbeNic {
         let mut rx_all_queues = Vec::new();
 
         for rxq_reg in rx_regs {      
-            let mut rxq = RxQueue::new(rxq_reg, num_rx_descs, None)?;
+            let mut rxq = RxQueueE::new(rxq_reg, num_rx_descs, None)?;
 
             // set the size of the packet buffers and the descriptor format used
             let mut val = rxq.regs.srrctl_read();
@@ -640,7 +648,7 @@ impl IxgbeNic {
         regs_mac: &mut IntelIxgbeMacRegisters, 
         tx_regs: Vec<TxQueueRegisters>,
         num_tx_descs: NumDesc
-    ) -> Result<Vec<TxQueue>, &'static str> {
+    ) -> Result<Vec<TxQueueE>, &'static str> {
         // disable transmission
         regs.dmatxctl_disable_tx();
 
@@ -668,7 +676,7 @@ impl IxgbeNic {
         regs.dmatxctl_enable_tx();
 
         for txq_reg in tx_regs {
-            let mut txq = TxQueue::new(txq_reg, num_tx_descs, None)?;
+            let mut txq = TxQueueE::new(txq_reg, num_tx_descs, None)?;
         
             // Set descriptor thresholds
             // If we enable this then we need to change the packet send function to stop polling
