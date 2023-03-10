@@ -451,10 +451,10 @@ pub struct IntelIxgbeRegisters3 {
     pub sdpqf:                          [Volatile<u32>;128],    // 0xE400 - 0xE5FF
     
     /// Five Tuple Queue Filter
-    ftqf:                               [Volatile<u32>;128],    // 0xE600 - 0xE7FF
+    pub ftqf:                               [Volatile<u32>;128],    // 0xE600 - 0xE7FF
     
     /// L3 L4 Tuples Immediate Interrupt Rx 
-    l34timir:                           [Volatile<u32>;128],    // 0xE800 - 0xE9FF
+    pub l34timir:                           [Volatile<u32>;128],    // 0xE800 - 0xE9FF
 
     _padding1:                          [u8; 256],              // 0xEA00 - 0xEAFF
 

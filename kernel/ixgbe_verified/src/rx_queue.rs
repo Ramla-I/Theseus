@@ -175,6 +175,23 @@ impl RxQueue<{RxState::Enabled}> {
             filter_num: self.filter_num
         }
     }
+
+    /// This function personally doesn't change anything about the queue except its state, since all steps to 
+    /// start L5 filter have to be done at the device level and not at the queue level.
+    pub(crate) fn l5_filter(self, filter_num: u8) -> RxQueue<{RxState::L5Filter}> {
+        RxQueue {
+            id: self.id,
+            regs: self.regs,
+            rx_descs: self.rx_descs,
+            num_rx_descs: self.num_rx_descs,
+            rx_cur: self.rx_cur,
+            rx_bufs_in_use: self.rx_bufs_in_use,
+            rx_buffer_size: self.rx_buffer_size,
+            rx_buffer_pool: self.rx_buffer_pool,
+            cpu_id: self.cpu_id,
+            filter_num: Some(filter_num)
+        }
+    }
 }
 
 impl Deref for RxQueue<{RxState::Enabled}> {
@@ -211,6 +228,24 @@ impl RxQueue<{RxState::Disabled}> {
         }
     }
 }
+
+impl RxQueue<{RxState::L5Filter}> {
+    pub fn enable(self) -> RxQueue<{RxState::Enabled}> {
+        RxQueue {
+            id: self.id,
+            regs: self.regs,
+            rx_descs: self.rx_descs,
+            num_rx_descs: self.num_rx_descs,
+            rx_cur: self.rx_cur,
+            rx_bufs_in_use: self.rx_bufs_in_use,
+            rx_buffer_size: self.rx_buffer_size,
+            rx_buffer_pool: self.rx_buffer_pool,
+            cpu_id: self.cpu_id,
+            filter_num: None
+        }
+    }
+}
+
 
 /// Retrieves a maximum of `batch_size` number of packets and stores them in `buffers`.
 /// Returns the total number of received packets.

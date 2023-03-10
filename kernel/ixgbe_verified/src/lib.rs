@@ -141,9 +141,9 @@ pub struct IxgbeNic {
     regs3: BoxRefMut<MappedPages, IntelIxgbeRegisters3>,
     /// Memory-mapped control registers
     regs_mac: BoxRefMut<MappedPages, IntelIxgbeMacRegisters>,
-    // /// Array to store which L3/L4 5-tuple filters have been used.
-    // /// There are 128 such filters available.
-    // l34_5_tuple_filters: [bool; 128],
+    /// Array to store which L3/L4 5-tuple filters have been used.
+    /// There are 128 such filters available.
+    l34_5_tuple_filters: [bool; 128],
     /// The number of rx queues enabled
     num_rx_queues: u8,
     /// Vector of the enabled rx queues
@@ -257,7 +257,7 @@ impl IxgbeNic {
             regs2: mapped_registers2,
             regs3: mapped_registers3,
             regs_mac: mapped_registers_mac,
-            // l34_5_tuple_filters: [false; NUM_L34_5_TUPLE_FILTERS],
+            l34_5_tuple_filters: [false; NUM_L34_5_TUPLE_FILTERS],
             num_rx_queues: IXGBE_NUM_RX_QUEUES_ENABLED,
             rx_queues,
             rx_queues_disabled: Vec::new(),
@@ -802,101 +802,141 @@ impl IxgbeNic {
         Ok(rss_queues)
     }
 
+    fn find_enabled_queue_with_id(&mut self, qid: QueueID) -> Option<RxQueueE> {
+        self.rx_queues.iter().position(|x| x.id == qid as u8)
+            .and_then(|idx| Some(self.rx_queues.remove(idx)))
+    }
 
+    /// Sets the L3/L4 5-tuple filter which can do an exact match of the packet's header with the filter and send to chosen rx queue (7.1.2.5).
+    /// There are up to 128 such filters. If more are needed, will have to enable Flow Director filters.
+    /// 
+    /// # Argument
+    /// * `source_ip`: ipv4 source address
+    /// * `dest_ip`: ipv4 destination address
+    /// * `source_port`: TCP/UDP/SCTP source port
+    /// * `dest_port`: TCP/UDP/SCTP destination port
+    /// * `protocol`: IP L4 protocol
+    /// * `priority`: priority relative to other filters, can be from 0 (lowest) to 7 (highest)
+    /// * `qid`: number of the queue to forward packet to
+    pub fn set_5_tuple_filter(
+        &mut self, 
+        source_ip: Option<[u8;4]>, 
+        dest_ip: Option<[u8;4]>, 
+        source_port: Option<u16>, 
+        dest_port: Option<u16>, 
+        protocol: Option<FilterProtocol>, 
+        priority: L5FilterPriority, 
+        qid: QueueID
+    ) -> Result<(), &'static str> {
+        let queue = self.find_enabled_queue_with_id(qid).ok_or("Requested queue is not an enabled state")?;
+        let l5_queue = self.set_5_tuple_filter_internal(source_ip, dest_ip, source_port, dest_port, protocol, priority, queue)?;
+        self.rx_queues_filters.push(l5_queue);
+        Ok(())
+    }
 
-    // /// Sets the L3/L4 5-tuple filter which can do an exact match of the packet's header with the filter and send to chosen rx queue (7.1.2.5).
-    // /// There are up to 128 such filters. If more are needed, will have to enable Flow Director filters.
-    // /// 
-    // /// # Argument
-    // /// * `source_ip`: ipv4 source address
-    // /// * `dest_ip`: ipv4 destination address
-    // /// * `source_port`: TCP/UDP/SCTP source port
-    // /// * `dest_port`: TCP/UDP/SCTP destination port
-    // /// * `protocol`: IP L4 protocol
-    // /// * `priority`: priority relative to other filters, can be from 0 (lowest) to 7 (highest)
-    // /// * `qid`: number of the queue to forward packet to
-    // pub fn set_5_tuple_filter(
-    //     &mut self, 
-    //     source_ip: Option<[u8;4]>, 
-    //     dest_ip: Option<[u8;4]>, 
-    //     source_port: Option<u16>, 
-    //     dest_port: Option<u16>, 
-    //     protocol: Option<FilterProtocol>, 
-    //     priority: u8, qid: u8
-    // ) -> Result<u8, &'static str> {
+    /// Sets the L3/L4 5-tuple filter which can do an exact match of the packet's header with the filter and send to chosen rx queue (7.1.2.5).
+    /// There are up to 128 such filters. If more are needed, will have to enable Flow Director filters.
+    /// 
+    /// # Argument
+    /// * `source_ip`: ipv4 source address
+    /// * `dest_ip`: ipv4 destination address
+    /// * `source_port`: TCP/UDP/SCTP source port
+    /// * `dest_port`: TCP/UDP/SCTP destination port
+    /// * `protocol`: IP L4 protocol
+    /// * `priority`: priority relative to other filters, can be from 0 (lowest) to 7 (highest)
+    /// * `queue`: Rx Queue to forward the packet to
+    pub fn set_5_tuple_filter_internal(
+        &mut self, 
+        source_ip: Option<[u8;4]>, 
+        dest_ip: Option<[u8;4]>, 
+        source_port: Option<u16>, 
+        dest_port: Option<u16>, 
+        protocol: Option<FilterProtocol>, 
+        priority: L5FilterPriority, 
+        queue: RxQueueE
+    ) -> Result<RxQueueL5, &'static str> {
 
-    //     if source_ip.is_none() && dest_ip.is_none() && source_port.is_none() && dest_port.is_none() && protocol.is_none() {
-    //         return Err("Must set one of the five filter options");
-    //     }
+        if source_ip.is_none() && dest_ip.is_none() && source_port.is_none() && dest_port.is_none() && protocol.is_none() {
+            return Err("Must set one of the five filter options");
+        }
 
-    //     if priority > 7 {
-    //         return Err("Protocol cannot be higher than 7");
-    //     }
+        let enabled_filters = &mut self.l34_5_tuple_filters;
 
-    //     let enabled_filters = &mut self.l34_5_tuple_filters;
+        // find a free filter
+        let filter_num = enabled_filters.iter().position(|&r| r == false).ok_or("Ixgbe: No filter available")?;
 
-    //     // find a free filter
-    //     let filter_num = enabled_filters.iter().position(|&r| r == false).ok_or("Ixgbe: No filter available")?;
+        // start off with the filter mask set for all the filters, and clear bits for filters that are enabled
+        // bits 29:25 are set to 1.
+        let mut filter_mask = 0x3E000000;
 
-    //     // start off with the filter mask set for all the filters, and clear bits for filters that are enabled
-    //     // bits 29:25 are set to 1.
-    //     let mut filter_mask = 0x3E000000;
+        // IP addresses are written to the registers in big endian form (LSB is first on wire)
+        // set the source ip address for the filter
+        if let Some (addr) = source_ip {
+            self.regs3.saqf[filter_num].write(((addr[3] as u32) << 24) | ((addr[2] as u32) << 16) | ((addr[1] as u32) << 8) | (addr[0] as u32));
+            filter_mask = filter_mask & !FTQF_SOURCE_ADDRESS_MASK;
+        };
 
-    //     // IP addresses are written to the registers in big endian form (LSB is first on wire)
-    //     // set the source ip address for the filter
-    //     if let Some (addr) = source_ip {
-    //         self.regs3.saqf[filter_num].write(((addr[3] as u32) << 24) | ((addr[2] as u32) << 16) | ((addr[1] as u32) << 8) | (addr[0] as u32));
-    //         filter_mask = filter_mask & !FTQF_SOURCE_ADDRESS_MASK;
-    //     };
+        // set the destination ip address for the filter
+        if let Some(addr) = dest_ip {
+            self.regs3.daqf[filter_num].write(((addr[3] as u32) << 24) | ((addr[2] as u32) << 16) | ((addr[1] as u32) << 8) | (addr[0] as u32));
+            filter_mask = filter_mask & !FTQF_DEST_ADDRESS_MASK;
+        };        
 
-    //     // set the destination ip address for the filter
-    //     if let Some(addr) = dest_ip {
-    //         self.regs3.daqf[filter_num].write(((addr[3] as u32) << 24) | ((addr[2] as u32) << 16) | ((addr[1] as u32) << 8) | (addr[0] as u32));
-    //         filter_mask = filter_mask & !FTQF_DEST_ADDRESS_MASK;
-    //     };        
+        // set the source port for the filter    
+        if let Some(port) = source_port {
+            self.regs3.sdpqf[filter_num].write((port as u32) << SPDQF_SOURCE_SHIFT);
+            filter_mask = filter_mask & !FTQF_SOURCE_PORT_MASK;
+        };   
 
-    //     // set the source port for the filter    
-    //     if let Some(port) = source_port {
-    //         self.regs3.sdpqf[filter_num].write((port as u32) << SPDQF_SOURCE_SHIFT);
-    //         filter_mask = filter_mask & !FTQF_SOURCE_PORT_MASK;
-    //     };   
+        // set the destination port for the filter    
+        if let Some(port) = dest_port {
+            let port_val = self.regs3.sdpqf[filter_num].read();
+            self.regs3.sdpqf[filter_num].write(port_val | (port as u32) << SPDQF_DEST_SHIFT);
+            filter_mask = filter_mask & !FTQF_DEST_PORT_MASK;
+        };
 
-    //     // set the destination port for the filter    
-    //     if let Some(port) = dest_port {
-    //         let port_val = self.regs3.sdpqf[filter_num].read();
-    //         self.regs3.sdpqf[filter_num].write(port_val | (port as u32) << SPDQF_DEST_SHIFT);
-    //         filter_mask = filter_mask & !FTQF_DEST_PORT_MASK;
-    //     };
+        // set the filter protocol
+        let mut filter_protocol = FilterProtocol::Other;
+        if let Some(protocol) = protocol {
+            filter_protocol = protocol;
+            filter_mask = filter_mask & !FTQF_PROTOCOL_MASK;
+        };
 
-    //     // set the filter protocol
-    //     let mut filter_protocol = FilterProtocol::Other;
-    //     if let Some(protocol) = protocol {
-    //         filter_protocol = protocol;
-    //         filter_mask = filter_mask & !FTQF_PROTOCOL_MASK;
-    //     };
+        // write the parameters of the filter
+        let filter_priority = (priority as u32 & FTQF_PRIORITY) << FTQF_PRIORITY_SHIFT;
+        self.regs3.ftqf[filter_num].write(filter_protocol as u32 | filter_priority | filter_mask | FTQF_Q_ENABLE);
 
-    //     // write the parameters of the filter
-    //     let filter_priority = (priority as u32 & FTQF_PRIORITY) << FTQF_PRIORITY_SHIFT;
-    //     self.regs3.ftqf[filter_num].write(filter_protocol as u32 | filter_priority | filter_mask | FTQF_Q_ENABLE);
+        //set the rx queue that the packets for this filter should be sent to
+        self.regs3.l34timir[filter_num].write(L34TIMIR_BYPASS_SIZE_CHECK | L34TIMIR_RESERVED | ((queue.id as u32) << L34TIMIR_RX_Q_SHIFT));
 
-    //     //set the rx queue that the packets for this filter should be sent to
-    //     self.regs3.l34timir[filter_num].write(L34TIMIR_BYPASS_SIZE_CHECK | L34TIMIR_RESERVED | ((qid as u32) << L34TIMIR_RX_Q_SHIFT));
+        //mark the filter as used
+        enabled_filters[filter_num] = true;
+        Ok(queue.l5_filter(filter_num as u8))
+    }
 
-    //     //mark the filter as used
-    //     enabled_filters[filter_num] = true;
-    //     Ok(filter_num as u8)
-    // }
+    /// Disables the the L3/L4 5-tuple filter for the given filter number
+    /// but keeps the values stored in the filter registers.
+    fn disable_5_tuple_filter(&mut self, qid: QueueID) -> Result<(), &'static str> {
+        let queue = self.rx_queues_filters.iter().position(|x| x.id == qid as u8)
+            .and_then(|idx| Some(self.rx_queues_filters.remove(idx)))
+            .ok_or("requested qid is not in the list of L5 queues")?;
+        let enabled_queue = self.disable_5_tuple_filter_internal(queue)?; 
+        self.rx_queues.push(enabled_queue);
+        Ok(())
+    }
 
-    // /// Disables the the L3/L4 5-tuple filter for the given filter number
-    // /// but keeps the values stored in the filter registers.
-    // fn disable_5_tuple_filter(&mut self, filter_num: u8) {
-    //     // disables filter by setting enable bit to 0
-    //     let val = self.regs3.ftqf[filter_num as usize].read();
-    //     self.regs3.ftqf[filter_num as usize].write(val | !FTQF_Q_ENABLE);
+    /// Disables the the L3/L4 5-tuple filter for the given filter number
+    /// but keeps the values stored in the filter registers.
+    fn disable_5_tuple_filter_internal(&mut self, queue: RxQueueL5) -> Result<RxQueueE, &'static str> {
+        let filter_num = queue.filter_num.ok_or("filter num not availble for an L5 queue, this is a logical error!")?;
+        // disables filter by setting enable bit to 0
+        let val = self.regs3.ftqf[filter_num as usize].read();
+        self.regs3.ftqf[filter_num as usize].write(val | !FTQF_Q_ENABLE);
 
-    //     // sets the record in the nic struct to false
-    //     self.l34_5_tuple_filters[filter_num as usize] = false;
-    // }
+        // sets the record in the nic struct to false
+        self.l34_5_tuple_filters[filter_num as usize] = false;
+        Ok(queue.enable())
+    }
 
 
     // /// Removes `num_queues` Rx queues from this "physical" NIC device and gives up ownership of them.
@@ -951,6 +991,20 @@ pub enum QueueID {
     Q40,Q41,Q42,Q43,Q44,Q45,Q46,Q47,Q48,Q49,
     Q50,Q51,Q52,Q53,Q54,Q55,Q56,Q57,Q58,Q59,
     Q60,Q61,Q62,Q63,Q64
+}
+
+/// The list of valid filter priority levels that can be used for the L5 filters. They range from (0,7).
+#[repr(u8)]
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum L5FilterPriority {
+    P0,
+    P1,
+    P2,
+    P3,
+    P4,
+    P5,
+    P6,
+    P7
 }
 
 // /// A helper function to poll the nic receive queues (only for testing purposes).
