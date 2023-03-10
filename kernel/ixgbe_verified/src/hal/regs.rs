@@ -459,7 +459,7 @@ pub struct IntelIxgbeRegisters3 {
     _padding1:                          [u8; 256],              // 0xEA00 - 0xEAFF
 
     /// Redirection Table
-    reta:                               [Volatile<u32>;32],     // 0xEB00 - 0xEB7F
+    pub reta:                               [Volatile<u32>;32],     // 0xEB00 - 0xEB7F
 
     /// RSS Random Key Register
     pub rssrk:                          [Volatile<u32>;10],     // 0xEB80 - 0xEBA7
@@ -470,7 +470,7 @@ pub struct IntelIxgbeRegisters3 {
     _padding3:                          [u8; 96],               // 0xEC20 - 0xEC7F
 
     /// Multiple Receive Queues Command Register
-    mrqc:                               Volatile<u32>,          // 0xEC80;
+    pub mrqc:                               Volatile<u32>,          // 0xEC80;
     _padding4:                          [u8; 5004],             // 0xEC84 - 0x1000F
 
     /// EEPROM/ Flash Control Register

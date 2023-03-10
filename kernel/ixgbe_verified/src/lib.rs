@@ -11,6 +11,7 @@
 #![allow(unaligned_references)] // temporary, just to suppress unsafe packed borrows 
 #![feature(abi_x86_interrupt)]
 #![feature(adt_const_params)]
+#![feature(array_zip)]
 
 #[macro_use] extern crate log;
 #[macro_use] extern crate lazy_static;
@@ -48,13 +49,14 @@ pub mod tx_queue;
 pub mod packet_buffers;
 pub mod hal;
 pub mod allocator;
+mod verified_functions;
 
 pub use hal::*;
 use hal::regs::*;
 use lazy_static::__Deref;
 use queue_registers::*;
 use mapped_pages_fragments::MappedPagesFragments;
-use rx_queue::{RxQueueE, RxQueueD};
+use rx_queue::{RxQueueE, RxQueueD, RxQueueL5, RxQueueRSS};
 use tx_queue::{TxQueueE, TxQueueD};
 use allocator::*;
 use packet_buffers::*;
@@ -69,6 +71,8 @@ use memory::MappedPages;
 use pci::{PciDevice, PciConfigSpaceAccessMechanism, PciLocation, BAR, PciBaseAddr};
 use owning_ref::BoxRefMut;
 use bit_field::BitField;
+use hpet::get_hpet;
+use rand::{SeedableRng, RngCore};
 
 /// Vendor ID for Intel
 pub const INTEL_VEND:                   u16 = 0x8086;  
@@ -146,6 +150,10 @@ pub struct IxgbeNic {
     rx_queues: Vec<RxQueueE>,
     /// Vector of the disabled rx queues
     rx_queues_disabled: Vec<RxQueueD>,
+    /// Vector of the rx queues being used in the L5 filters
+    rx_queues_filters: Vec<RxQueueL5>,
+    /// Vector of the rx queues being used for RSS
+    rx_queues_rss: Vec<RxQueueRSS>,
     /// Registers for the queues >= 64, since they don't seem to work
     rx_registers_unusable: Vec<RxQueueRegisters>,
     /// The number of tx queues enabled
@@ -253,6 +261,8 @@ impl IxgbeNic {
             num_rx_queues: IXGBE_NUM_RX_QUEUES_ENABLED,
             rx_queues,
             rx_queues_disabled: Vec::new(),
+            rx_queues_filters: Vec::new(),
+            rx_queues_rss: Vec::new(),
             rx_registers_unusable,
             num_tx_queues: IXGBE_NUM_TX_QUEUES_ENABLED,
             tx_queues,
@@ -694,41 +704,103 @@ impl IxgbeNic {
         Ok(tx_all_queues)
     }  
 
-    // /// Enable multiple receive queues with RSS.
-    // /// Part of queue initialization is done in the rx_init function.
-    // pub fn enable_rss(
-    //     regs2: &mut IntelIxgbeRegisters2, 
-    //     regs3: &mut IntelIxgbeRegisters3
-    // ) -> Result<(), &'static str> {
-    //     // enable RSS writeback in the header field of the receive descriptor
-    //     regs2.rxcsum_enable_rss_writeback();
+    /// 4.2.1.6
+    fn software_reset(&mut self) {
+        self.master_disable();
+
+        // write to Device Reset bit CTRL.RST
+
+        //wait 1 ms to check if this bit is cleared
         
-    //     // enable RSS and set fields that will be used by hash function
-    //     // right now we're using the udp port and ipv4 address.
-    //     regs3.mrqc.write(MRQC_MRQE_RSS | MRQC_UDPIPV4 ); 
+        // now initialize the NIC as you would do after power up, except the PCI space is th same so can keep all device regs
+    }
 
-    //     //set the random keys for the hash function
-    //     let seed = get_hpet().as_ref().ok_or("couldn't get HPET timer")?.get_counter();
-    //     let mut rng = SmallRng::seed_from_u64(seed);
-    //     for rssrk in regs3.rssrk.iter_mut() {
-    //         rssrk.write(rng.next_u32());
-    //     }
+    /// 5.2.5.3.2
+    fn master_disable(&mut self) {
+        // disable all rx queues (4.6.7.1.2)
 
-    //     // Initialize the RSS redirection table
-    //     // each reta register has 4 redirection entries
-    //     // since mapping to queues is random and based on a hash, we randomly assign 1 queue to each reta register
-    //     let mut qid = 0;
-    //     for reta in regs3.reta.iter_mut() {
-    //         //set 4 entries to the same queue number
-    //         let val = qid << RETA_ENTRY_0_OFFSET | qid << RETA_ENTRY_1_OFFSET | qid << RETA_ENTRY_2_OFFSET | qid << RETA_ENTRY_3_OFFSET;
-    //         reta.write(val);
+        // sets the PCIe Master Disable bit
 
-    //         // next 4 entries will be assigned to the next queue
-    //         qid = (qid + 1) % IXGBE_NUM_RX_QUEUES_ENABLED as u32;
-    //     }
+        // wait for PCIe MAster Disable bit to clear?
 
-    //     Ok(())
-    // }
+        // poll PCIe Master Enable Status bit until it's cleared
+
+        // If the driver times out at this point then check Transaction Pending bit and send another SW rest
+
+        // flush transmit data path
+
+        // now a sw reset is safe
+    }
+
+    pub fn enable_rss(&mut self, reta: [[QueueID; 4]; 32]) -> Result<(), &'static str> {
+        // software reset
+        self.software_reset();
+        // remove all queues that are in RETA to a separate vec
+        let queues_in_reta = verified_functions::extract_rss_queues(&reta, &mut self.rx_queues)?;
+        // call enable_rss
+        let rss_queues = Self::enable_rss_internal(&mut self.regs2, &mut self.regs3, reta, queues_in_reta)?;
+        // store RSS queues in the NIC
+        self.rx_queues_rss = rss_queues;
+
+        Ok(())
+    }
+
+    pub fn disable_rss(&mut self) {
+        // software reset       
+        self.software_reset();
+    }
+
+    /// Enable multiple receive queues with RSS.
+    /// Part of queue initialization is done in the rx_init function.
+    pub fn enable_rss_internal(
+        regs2: &mut IntelIxgbeRegisters2, 
+        regs3: &mut IntelIxgbeRegisters3,
+        redirection_table: [[QueueID; 4];32],
+        queues: Vec<RxQueueE>
+    ) -> Result<Vec<RxQueueRSS>, &'static str> {
+        // enable RSS writeback in the header field of the receive descriptor
+        regs2.rxcsum_enable_rss_writeback();
+        
+        // enable RSS and set fields that will be used by hash function
+        // right now we're using the udp port and ipv4 address.
+        regs3.mrqc.write(MRQC_MRQE_RSS | MRQC_UDPIPV4 ); 
+
+        //set the random keys for the hash function
+        let seed = get_hpet().as_ref().ok_or("couldn't get HPET timer")?.get_counter();
+        let mut rng = rand::rngs::SmallRng::seed_from_u64(seed);
+        for rssrk in regs3.rssrk.iter_mut() {
+            rssrk.write(rng.next_u32());
+        }
+
+        // Initialize the RSS redirection table
+        // each reta register has 4 redirection entries
+        // since mapping to queues is random and based on a hash, we randomly assign 1 queue to each reta register
+        // let mut qid = 0;
+        // for reta in regs3.reta.iter_mut() {
+        //     //set 4 entries to the same queue number
+        //     let val = qid << RETA_ENTRY_0_OFFSET | qid << RETA_ENTRY_1_OFFSET | qid << RETA_ENTRY_2_OFFSET | qid << RETA_ENTRY_3_OFFSET;
+        //     reta.write(val);
+
+        //     // next 4 entries will be assigned to the next queue
+        //     qid = (qid + 1) % IXGBE_NUM_RX_QUEUES_ENABLED as u32;
+        // }
+
+        for (idx, reta) in regs3.reta.iter_mut().enumerate() {
+            let queue_ids = &redirection_table[idx];
+            //set 4 entries to the same queue number
+            let val = (queue_ids[0] as u32) << RETA_ENTRY_0_OFFSET 
+                | (queue_ids[1] as u32) << RETA_ENTRY_1_OFFSET 
+                | (queue_ids[2] as u32) << RETA_ENTRY_2_OFFSET 
+                | (queue_ids[3] as u32) << RETA_ENTRY_3_OFFSET;
+            reta.write(val);
+        }
+
+        let mut rss_queues = Vec::with_capacity(queues.len());
+        for queue in queues {
+            rss_queues.push(queue.rss())
+        }
+        Ok(rss_queues)
+    }
 
 
 
@@ -826,10 +898,6 @@ impl IxgbeNic {
     //     self.l34_5_tuple_filters[filter_num as usize] = false;
     // }
 
-     // /// Reads status and clears interrupt
-    // fn clear_interrupt_status(&self) -> u32 {
-    //     self.regs1.eicr.read()
-    // }
 
     // /// Removes `num_queues` Rx queues from this "physical" NIC device and gives up ownership of them.
     // /// This function is used when creating a virtual NIC that will own the returned queues.
@@ -871,6 +939,20 @@ pub struct IxgbeStats{
     pub rx_packets: u32,
     pub tx_packets: u32,
 }
+
+/// The list of valid Queues that can be used in the 82599 (0,64]
+#[repr(u8)]
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum QueueID {
+    Q0,Q1,Q2,Q3,Q4,Q5,Q6,Q7,Q8,Q9,
+    Q10,Q11,Q12,Q13,Q14,Q15,Q16,Q17,Q18,Q19,
+    Q20,Q21,Q22,Q23,Q24,Q25,Q26,Q27,Q28,Q29,
+    Q30,Q31,Q32,Q33,Q34,Q35,Q36,Q37,Q38,Q39,
+    Q40,Q41,Q42,Q43,Q44,Q45,Q46,Q47,Q48,Q49,
+    Q50,Q51,Q52,Q53,Q54,Q55,Q56,Q57,Q58,Q59,
+    Q60,Q61,Q62,Q63,Q64
+}
+
 // /// A helper function to poll the nic receive queues (only for testing purposes).
 // pub fn rx_poll_mq(qid: usize, nic_id: PciLocation) -> Result<ReceivedFrame, &'static str> {
 //     let nic_ref = get_ixgbe_nic(nic_id)?;
@@ -888,20 +970,4 @@ pub struct IxgbeStats{
 
 //     nic.tx_queues[qid].send_on_queue(packet);
 //     Ok(())
-// }
-
-// /// A generic interrupt handler that can be used for packet reception interrupts for any queue on any ixgbe nic.
-// /// It returns the interrupt number for the rx queue 'qid'.
-// fn rx_interrupt_handler(qid: u8, nic_id: PciLocation) -> Option<u8> {
-//     match get_ixgbe_nic(nic_id) {
-//         Ok(ref ixgbe_nic_ref) => {
-//             let mut ixgbe_nic = ixgbe_nic_ref.lock();
-//             let _ = ixgbe_nic.rx_queues[qid as usize].poll_queue_and_store_received_packets();
-//             ixgbe_nic.interrupt_num.get(&qid).and_then(|int| Some(*int))
-//         }
-//         Err(e) => {
-//             error!("BUG: ixgbe_handler_{}(): {}", qid, e);
-//             None
-//         }
-//     }
 // }

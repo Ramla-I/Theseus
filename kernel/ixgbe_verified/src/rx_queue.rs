@@ -41,6 +41,7 @@ pub struct RxQueue<const S: RxState> {
     pub filter_num: Option<u8>
 }
 
+
 impl RxQueue<{RxState::Enabled}> {
     pub(crate) fn new(mut regs: RxQueueRegisters, num_desc: NumDesc, cpu_id: Option<u8>) -> Result<RxQueue<{RxState::Enabled}>, &'static str> {
         // create the descriptor ring
@@ -144,6 +145,23 @@ impl RxQueue<{RxState::Enabled}> {
     /// policy descisions: do we empty out all packets waiting to be transmitted?
     pub fn disable(self) -> RxQueue<{RxState::Disabled}> {
         panic!("Not fully implemented");
+        RxQueue {
+            id: self.id,
+            regs: self.regs,
+            rx_descs: self.rx_descs,
+            num_rx_descs: self.num_rx_descs,
+            rx_cur: self.rx_cur,
+            rx_bufs_in_use: self.rx_bufs_in_use,
+            rx_buffer_size: self.rx_buffer_size,
+            rx_buffer_pool: self.rx_buffer_pool,
+            cpu_id: self.cpu_id,
+            filter_num: self.filter_num
+        }
+    }
+
+    /// This function personally doesn't change anything about the queue except its state, since all steps to 
+    /// start RSS have to be done at the device level and not at the queue level.
+    pub(crate) fn rss(self) -> RxQueue<{RxState::RSS}> {
         RxQueue {
             id: self.id,
             regs: self.regs,
