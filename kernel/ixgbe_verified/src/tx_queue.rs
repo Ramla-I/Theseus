@@ -182,6 +182,99 @@ impl TxQueue<{TxState::Disabled}> {
     }
 }
 
+fn tx_batch(
+    tx_descs: &mut [AdvancedTxDescriptor], 
+    tx_bufs_in_use: &mut VecDeque<PacketBufferS>,
+    num_tx_descs: u16,
+    tx_clean_stored: &mut u16,
+    tx_cur_stored: &mut u16,
+    regs: &mut TxQueueRegisters,
+    batch_size: usize,  
+    buffers: &mut Vec<PacketBufferS>, 
+    used_buffers: &mut Vec<PacketBufferS>
+) -> Result<usize, &'static str> {
+    let mut pkts_sent = 0;
+    let mut tx_cur = *tx_cur_stored;
+
+    tx_clean(tx_descs, tx_bufs_in_use, tx_clean_stored, tx_cur_stored, num_tx_descs, used_buffers);
+    let tx_clean = *tx_clean_stored;
+    // debug!("tx_cur = {}, tx_clean ={}", tx_cur, tx_clean);
+
+    for _ in 0.. batch_size {
+        if let Some(packet) = buffers.pop() {
+            let tx_next = (tx_cur + 1) % num_tx_descs;
+
+            if tx_clean == tx_next {
+                // tx queue of device is full, push packet back onto the
+                // queue of to-be-sent packets
+                buffers.push(packet);
+                break;
+            }
+
+            tx_descs[tx_cur as usize].send(packet.phys_addr, packet.length);
+            tx_bufs_in_use.push_back(packet);
+
+            tx_cur = tx_next;
+            pkts_sent += 1;
+        } else {
+            break;
+        }
+    }
+
+
+    *tx_cur_stored = tx_cur;
+    regs.tdt.write(tx_cur as u32);
+
+    Ok(pkts_sent)
+}
+
+ /// Removes multiples of `TX_CLEAN_BATCH` packets from `queue`.    
+/// (code taken from https://github.com/ixy-languages/ixy.rs/blob/master/src/ixgbe.rs#L1016)
+fn tx_clean(    
+    tx_descs: &mut [AdvancedTxDescriptor], 
+    tx_bufs_in_use: &mut VecDeque<PacketBufferS>,
+    tx_clean_stored: &mut u16, 
+    tx_cur_stored: &mut u16, 
+    num_tx_descs: u16, 
+    used_buffers: &mut Vec<PacketBufferS>
+)  {
+    const TX_CLEAN_BATCH: usize = 32;
+
+    let mut tx_clean = *tx_clean_stored as usize;
+    let tx_cur = *tx_cur_stored;
+
+    loop {
+        let mut cleanable = tx_cur as i32 - tx_clean as i32;
+
+        if cleanable < 0 {
+            cleanable += num_tx_descs as i32;
+        }
+
+        if cleanable < TX_CLEAN_BATCH as i32 {
+            break;
+        }
+
+        let mut cleanup_to = tx_clean + TX_CLEAN_BATCH - 1;
+
+        if cleanup_to >= num_tx_descs as usize {
+            cleanup_to -= num_tx_descs as usize;
+        }
+
+        if tx_descs[cleanup_to].desc_done() {
+            if TX_CLEAN_BATCH >= tx_bufs_in_use.len() {
+                used_buffers.extend(tx_bufs_in_use.drain(..))
+            } else {
+                used_buffers.extend(tx_bufs_in_use.drain(..TX_CLEAN_BATCH))
+            };
+
+            tx_clean = (cleanup_to + 1) % num_tx_descs as usize;
+        } else {
+            break;
+        }
+    }
+
+    *tx_clean_stored = tx_clean as u16;
+}
 
 // implementation of pseudo functions that should only be used for testing
 impl TxQueue<{TxState::Enabled}> {

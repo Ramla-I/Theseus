@@ -1,7 +1,23 @@
+use prusti_contracts::*;
+
+cfg_if::cfg_if! {
+if #[cfg(prusti)] {
+
+use crate::spec::{memory_spec::*, volatile_spec::*};
+
+} else {
+
 use memory::PhysicalAddress;
 use volatile::Volatile;
 use zerocopy::FromBytes;
 use bit_field::BitField;
+
+}} 
+
+pub trait Descriptor {
+    /// set all fields to 0
+    fn clear(&mut self);
+}
 
 // Transmit descriptor bits
 /// Tx Command: End of Packet
@@ -37,10 +53,7 @@ pub const RX_STATUS_DD:                    u8 = 1 << 0;
 /// Rx Status: End of Packet
 pub const RX_STATUS_EOP:                   u8 = 1 << 1;
 
-pub trait Descriptor {
-    /// set all fields to 0
-    fn clear(&mut self);
-}
+
 
 /// Advanced Transmit Descriptor used by the `ixgbe` NIC driver.
 ///
@@ -52,7 +65,7 @@ pub trait Descriptor {
 /// Write Back contains information the hardware writes on receiving a packet.
 ///
 /// More information can be found in the 82599 datasheet.
-#[derive(FromBytes)]
+#[cfg_attr(not(prusti), derive(FromBytes))]
 #[repr(C)]
 pub struct AdvancedTxDescriptor {
     /// Starting physical address of the receive buffer for the packet.
@@ -74,6 +87,8 @@ pub struct AdvancedTxDescriptor {
 }
 
 impl AdvancedTxDescriptor {
+    #[inline(always)]
+    #[trusted]
     pub(crate) fn send(&mut self, transmit_buffer_addr: PhysicalAddress, transmit_buffer_length: u16) {
         self.packet_buffer_address.write(transmit_buffer_addr.value() as u64);
         self.data_len.write(transmit_buffer_length);
@@ -82,12 +97,16 @@ impl AdvancedTxDescriptor {
         self.dcmd.write(TX_CMD_DEXT | TX_CMD_RS | TX_CMD_IFCS | TX_CMD_EOP);
     }
 
+    #[inline(always)]
+    #[trusted]
     pub fn wait_for_packet_tx(&self) {
         while (self.paylen_popts_cc_idx_sta.read() as u8 & TX_STATUS_DD) == 0 {
             // error!("tx desc status: {:#X}", self.desc.read());
         } 
     }
 
+    #[inline(always)]
+    #[trusted]
     pub fn desc_done(&self) -> bool {
         (self.paylen_popts_cc_idx_sta.read() as u8 & TX_STATUS_DD) == TX_STATUS_DD
     }
@@ -111,7 +130,7 @@ impl Descriptor for AdvancedTxDescriptor {
 /// Read contains the addresses that the driver writes.
 /// Write Back contains information the hardware writes on receiving a packet.
 /// More information can be found in the 82599 datasheet.
-#[derive(FromBytes)]
+#[cfg_attr(not(prusti), derive(FromBytes))]
 #[repr(C)]
 pub struct AdvancedRxDescriptor {
     /// Starting physcal address of the receive buffer for the packet.
@@ -122,12 +141,6 @@ pub struct AdvancedRxDescriptor {
 }
 
 impl AdvancedRxDescriptor {
-    pub(crate) fn init (&mut self, packet_buffer_address: PhysicalAddress) {
-        self.packet_buffer_address.write(packet_buffer_address.value() as u64);
-        // set the header address to 0 because packet splitting is not supposed to be enabled in the 82599
-        self.header_buffer_address.write(0);
-    }
-
     #[inline(always)]
     pub(crate) fn set_packet_address(&mut self, packet_buffer_address: PhysicalAddress) {
         self.packet_buffer_address.write(packet_buffer_address.value() as u64);
@@ -139,16 +152,50 @@ impl AdvancedRxDescriptor {
     }
 
     #[inline(always)]
+    #[trusted]
     pub fn descriptor_done(&self) -> bool{
         (self.get_ext_status() & RX_STATUS_DD as u64) == RX_STATUS_DD as u64
     }
 
+    #[inline(always)]
+    #[trusted]
     pub fn end_of_packet(&self) -> bool {
         (self.get_ext_status() & RX_STATUS_EOP as u64) == RX_STATUS_EOP as u64        
     }
 
+    #[inline(always)]
+    #[trusted]
     pub fn length(&self) -> u64 {
         self.get_pkt_len() as u64
+    }
+
+    /// Write Back mode function for the Advanced Receive Descriptor.
+    /// Status information indicates whether a descriptor has been used 
+    /// and whether the buffer is the last one for a packet
+    #[inline(always)]
+    #[trusted]
+    pub fn get_ext_status(&self) -> u64{
+        self.header_buffer_address.read() & 0xFFFFF //.get_bits(0..19) 
+    }
+
+    /// Write Back mode function for the Advanced Receive Descriptor.
+    /// Returns the number of bytes posted to the packet buffer
+    #[inline(always)]
+    #[trusted]
+    pub fn get_pkt_len(&self) -> u64{
+        (self.header_buffer_address.read() & 0xFFFF) >> 32 //.get_bits(32..47) 
+    }
+}
+
+
+cfg_if::cfg_if! {
+if #[cfg(not(prusti))] {
+// functions that don't have to be verified
+impl AdvancedRxDescriptor {
+    pub(crate) fn init (&mut self, packet_buffer_address: PhysicalAddress) {
+        self.packet_buffer_address.write(packet_buffer_address.value() as u64);
+        // set the header address to 0 because packet splitting is not supposed to be enabled in the 82599
+        self.header_buffer_address.write(0);
     }
 
     /// Write Back mode function for the Advanced Receive Descriptor.
@@ -192,13 +239,6 @@ impl AdvancedRxDescriptor {
     pub fn get_fdf_id(&self) -> u64{
         self.packet_buffer_address.read().get_bits(32..63) 
     }
-
-    /// Write Back mode function for the Advanced Receive Descriptor.
-    /// Status information indicates whether a descriptor has been used 
-    /// and whether the buffer is the last one for a packet
-    pub fn get_ext_status(&self) -> u64{
-        self.header_buffer_address.read().get_bits(0..19) 
-    }
     
     /// Write Back mode function for the Advanced Receive Descriptor.
     /// Returns errors reported by hardware for different packet types
@@ -207,17 +247,12 @@ impl AdvancedRxDescriptor {
     }
     
     /// Write Back mode function for the Advanced Receive Descriptor.
-    /// Returns the number of bytes posted to the packet buffer
-    pub fn get_pkt_len(&self) -> u64{
-        self.header_buffer_address.read().get_bits(32..47) 
-    }
-    
-    /// Write Back mode function for the Advanced Receive Descriptor.
     /// If the vlan header is stripped from the packet, then the 16 bits of the VLAN tag are posted here
     pub fn get_vlan_tag(&self) -> u64{
         self.header_buffer_address.read().get_bits(48..63) 
     }    
 }
+}}
 
 impl Descriptor for AdvancedRxDescriptor {
     fn clear(&mut self) {

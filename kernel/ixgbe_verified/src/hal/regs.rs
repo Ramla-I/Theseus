@@ -17,9 +17,17 @@
 //! This simply indicates that the extra functions are currently not used in the driver, 
 //! and so we haven't implemented the necessary checks for safe access.
 
+cfg_if::cfg_if! {
+if #[cfg(prusti)] {
+
+use crate::spec::volatile_spec::*;
+
+} else {
+
 use volatile::{Volatile, ReadOnly, WriteOnly};
 use zerocopy::FromBytes;
 use bit_field::BitField;
+
 
 /// The layout in memory of the first set of general registers of the 82599 device.
 #[derive(FromBytes)]
@@ -599,40 +607,6 @@ const_assert_eq!(core::mem::size_of::<IntelIxgbeRegisters1>() + core::mem::size_
     core::mem::size_of::<IntelIxgbeMacRegisters>() + core::mem::size_of::<IntelIxgbeRxRegisters2>() +
     core::mem::size_of::<IntelIxgbeRegisters3>(), 0x20000);
 
-/// Set of registers associated with one transmit descriptor queue.
-#[derive(FromBytes)]
-#[repr(C)]
-pub(crate) struct RegistersTx {
-    /// Transmit Descriptor Base Address Low
-    pub tdbal:                          Volatile<u32>,        // 0x6000
-
-    /// Transmit Descriptor Base Address High
-    pub tdbah:                          Volatile<u32>,        // 0x6004
-    
-    /// Transmit Descriptor Length    
-    pub tdlen:                          Volatile<u32>,        // 0x6008
-
-    /// Tx DCA Control Register
-    dca_txctrl:                         Volatile<u32>,          // 0x600C
-
-    /// Transmit Descriptor Head
-    pub tdh:                            Volatile<u32>,          // 0x6010
-    _padding0:                          [u8; 4],                // 0x6014 - 0x6017
-
-    /// Transmit Descriptor Tail
-    pub tdt:                            Volatile<u32>,          // 0x6018
-    _padding1:                          [u8; 12],               // 0x601C - 0x6027
-
-    /// Transmit Descriptor Control
-    pub txdctl:                             Volatile<u32>,          // 0x6028
-    _padding2:                          [u8; 12],               // 0x602C - 0x6037
-
-    /// Transmit Descriptor Completion Write Back Address Low
-    tdwbal:                             Volatile<u32>,          // 0x6038
-
-    /// Transmit Descriptor Completion Write Back Address High
-    tdwbah:                             Volatile<u32>,          // 0x603C
-} // 64B
 
 const_assert_eq!(core::mem::size_of::<RegistersTx>(), 64);
 
@@ -647,37 +621,6 @@ impl RegistersTx {
         self.txdctl.write(val | TX_Q_ENABLE); 
     }
 }
-
-/// Set of registers associated with one receive descriptor queue.
-#[derive(FromBytes)]
-#[repr(C)]
-pub struct RegistersRx {
-    /// Receive Descriptor Base Address Low
-    pub rdbal:                          Volatile<u32>,        // 0x1000
-
-    /// Recive Descriptor Base Address High
-    pub rdbah:                          Volatile<u32>,        // 0x1004
-
-    /// Recive Descriptor Length
-    pub rdlen:                          Volatile<u32>,        // 0x1008
-
-    /// Rx DCA Control Register
-    dca_rxctrl:                         Volatile<u32>,          // 0x100C
-
-    /// Recive Descriptor Head
-    pub rdh:                            Volatile<u32>,          // 0x1010
-
-    /// Split Receive Control Registers
-    srrctl:                             Volatile<u32>,          // 0x1014 //specify descriptor type
-
-    /// Receive Descriptor Tail
-    pub rdt:                            Volatile<u32>,          // 0x1018
-    _padding1:                          [u8;12],                // 0x101C - 0x1027
-
-    /// Receive Descriptor Control
-    rxdctl:                             Volatile<u32>,          // 0x1028
-    _padding2:                          [u8;20],                // 0x102C - 0x103F                                            
-} // 64B
 
 const_assert_eq!(core::mem::size_of::<RegistersRx>(), 64);
 
@@ -926,3 +869,75 @@ pub const MSIX_DEST_ID_SHIFT:       u32 = 12;
 pub const MSIX_ADDRESS_BITS:        u32 = 0xFFFF_FFF0;
 /// Clear the vector control field to unmask the interrupt
 pub const MSIX_UNMASK_INT:          u32 = 0;
+
+}}
+
+
+/// Set of registers associated with one transmit descriptor queue.
+#[cfg_attr(not(prusti), derive(FromBytes))]
+#[repr(C)]
+pub(crate) struct RegistersTx {
+    /// Transmit Descriptor Base Address Low
+    pub tdbal:                          Volatile<u32>,        // 0x6000
+
+    /// Transmit Descriptor Base Address High
+    pub tdbah:                          Volatile<u32>,        // 0x6004
+    
+    /// Transmit Descriptor Length    
+    pub tdlen:                          Volatile<u32>,        // 0x6008
+
+    /// Tx DCA Control Register
+    dca_txctrl:                         Volatile<u32>,          // 0x600C
+
+    /// Transmit Descriptor Head
+    pub tdh:                            Volatile<u32>,          // 0x6010
+    _padding0:                          [u8; 4],                // 0x6014 - 0x6017
+
+    /// Transmit Descriptor Tail
+    pub tdt:                            Volatile<u32>,          // 0x6018
+    _padding1:                          [u8; 12],               // 0x601C - 0x6027
+
+    /// Transmit Descriptor Control
+    pub txdctl:                             Volatile<u32>,          // 0x6028
+    _padding2:                          [u8; 12],               // 0x602C - 0x6037
+
+    /// Transmit Descriptor Completion Write Back Address Low
+    tdwbal:                             Volatile<u32>,          // 0x6038
+
+    /// Transmit Descriptor Completion Write Back Address High
+    tdwbah:                             Volatile<u32>,          // 0x603C
+} // 64B
+
+
+
+/// Set of registers associated with one receive descriptor queue.
+#[cfg_attr(not(prusti), derive(FromBytes))]
+#[repr(C)]
+pub struct RegistersRx {
+    /// Receive Descriptor Base Address Low
+    pub rdbal:                          Volatile<u32>,        // 0x1000
+
+    /// Recive Descriptor Base Address High
+    pub rdbah:                          Volatile<u32>,        // 0x1004
+
+    /// Recive Descriptor Length
+    pub rdlen:                          Volatile<u32>,        // 0x1008
+
+    /// Rx DCA Control Register
+    dca_rxctrl:                         Volatile<u32>,          // 0x100C
+
+    /// Recive Descriptor Head
+    pub rdh:                            Volatile<u32>,          // 0x1010
+
+    /// Split Receive Control Registers
+    srrctl:                             Volatile<u32>,          // 0x1014 //specify descriptor type
+
+    /// Receive Descriptor Tail
+    pub rdt:                            Volatile<u32>,          // 0x1018
+    _padding1:                          [u8;12],                // 0x101C - 0x1027
+
+    /// Receive Descriptor Control
+    rxdctl:                             Volatile<u32>,          // 0x1028
+    _padding2:                          [u8;20],                // 0x102C - 0x103F                                            
+} // 64B
+

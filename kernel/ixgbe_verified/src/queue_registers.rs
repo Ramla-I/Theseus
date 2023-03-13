@@ -3,9 +3,19 @@
 //! They implement the `RxQueueRegisters` and `TxQueueRegisters` traits which allows 
 //! the registers to be accessed through virtual NICs
 
-use crate::mapped_pages_fragments::{MappedPagesFragments, Fragment};
 use super::hal::regs::{RegistersRx, RegistersTx};
 use core::ops::{Deref, DerefMut};
+
+cfg_if::cfg_if! {
+if #[cfg(prusti)] {
+
+use crate::spec::memory_spec::*;
+
+} else {
+
+use crate::mapped_pages_fragments::{MappedPagesFragments, Fragment};
+
+}}
 
 /// Struct that stores a pointer to registers for one ixgbe transmit queue
 /// as well as a shared reference to the backing `MappedPages` where these registers are located.
@@ -15,21 +25,6 @@ pub(crate) struct TxQueueRegisters {
     /// We prevent the drop handler from dropping the `regs` because the backing memory is not in the heap,
     /// but in the stored mapped pages. The memory will be deallocated when the `backing_pages` are dropped.
     regs: Fragment<RegistersTx>
-}
-
-impl TxQueueRegisters {
-    pub fn new(queue_id: usize, mp: &mut MappedPagesFragments) -> Result<TxQueueRegisters, &'static str> {
-        let fragment = mp.fragment(queue_id * core::mem::size_of::<RegistersTx>())?;
-
-        Ok(TxQueueRegisters {
-            id: queue_id,
-            regs: fragment
-        })
-    }
-
-    pub fn id(&self) -> usize {
-        self.id
-    }
 }
 
 impl Deref for TxQueueRegisters {
@@ -45,8 +40,6 @@ impl DerefMut for TxQueueRegisters {
     }
 }
 
-
-
 /// Struct that stores a pointer to registers for one ixgbe receive queue
 /// as well as a shared reference to the backing `MappedPages` where these registers are located.
 pub struct RxQueueRegisters {
@@ -55,6 +48,37 @@ pub struct RxQueueRegisters {
     /// We prevent the drop handler from dropping the `regs` because the backing memory is not in the heap,
     /// but in the stored mapped pages. The memory will be deallocated when the `backing_pages` are dropped.
     regs: Fragment<RegistersRx>
+}
+
+impl Deref for RxQueueRegisters {
+    type Target = Fragment<RegistersRx>;
+    fn deref(&self) -> &Fragment<RegistersRx> {
+        &self.regs
+    }
+}
+
+impl DerefMut for RxQueueRegisters {
+    fn deref_mut(&mut self) -> &mut Fragment<RegistersRx> {
+        &mut self.regs
+    }
+}
+
+cfg_if::cfg_if! {
+if #[cfg(not(prusti))] {
+
+impl TxQueueRegisters {
+    pub fn new(queue_id: usize, mp: &mut MappedPagesFragments) -> Result<TxQueueRegisters, &'static str> {
+        let fragment = mp.fragment(queue_id * core::mem::size_of::<RegistersTx>())?;
+
+        Ok(TxQueueRegisters {
+            id: queue_id,
+            regs: fragment
+        })
+    }
+
+    pub fn id(&self) -> usize {
+        self.id
+    }
 }
 
 impl RxQueueRegisters {
@@ -72,15 +96,4 @@ impl RxQueueRegisters {
     }
 }
 
-impl Deref for RxQueueRegisters {
-    type Target = Fragment<RegistersRx>;
-    fn deref(&self) -> &Fragment<RegistersRx> {
-        &self.regs
-    }
-}
-
-impl DerefMut for RxQueueRegisters {
-    fn deref_mut(&mut self) -> &mut Fragment<RegistersRx> {
-        &mut self.regs
-    }
-}
+}}

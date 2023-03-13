@@ -1,8 +1,17 @@
-use memory::{MappedPages, PhysicalAddress, create_contiguous_mapping};
+use prusti_contracts::*;
 use core::ops::{Deref, DerefMut};
-use zerocopy::FromBytes;
 
+cfg_if::cfg_if! {
+if #[cfg(prusti)] {
+
+use crate::spec::memory_spec::*;
+
+} else {
+
+use memory::{MappedPages, PhysicalAddress, create_contiguous_mapping};
+use zerocopy::FromBytes;
 use crate::{DEFAULT_RX_BUFFER_SIZE_2KB, allocator::NIC_MAPPING_FLAGS_CACHED};
+
 
 /// Size of ether type field in ethernet frame header
 pub const ETHER_TYPE_LEN_IN_BYTES:                      u16 = 2;
@@ -17,6 +26,15 @@ pub const MIN_PAYLOAD_LEN_IN_BYTES:                     u16 = 46;
 pub const MAX_STANDARD_PAYLOAD_LEN_IN_BYTES:            u16 = 1500;
 pub const MAX_STANDARD_ETHERNET_FRAME_LEN_IN_BYTES:     u16 = MAX_STANDARD_PAYLOAD_LEN_IN_BYTES + ETHERNET_HEADER_LEN_IN_BYTES + CRC_CHECKSUM_LEN_IN_BYTES;
 pub const MIN_ETHERNET_FRAME_LEN_IN_BYTES:              u16 = MIN_PAYLOAD_LEN_IN_BYTES + ETHERNET_HEADER_LEN_IN_BYTES + CRC_CHECKSUM_LEN_IN_BYTES;
+
+}}
+
+/// The different payload sizes supported by the NIC.
+#[derive(PartialEq, Eq)]
+pub enum MTU {
+    Standard    = 1500,
+    Jumbo       = 9000
+}
 
 pub type PacketBufferS = PacketBuffer<{MTU::Standard}>;
 pub type PacketBufferJ = PacketBuffer<{MTU::Jumbo}>;
@@ -34,6 +52,17 @@ pub struct PacketBuffer<const N: MTU> {
     pub(crate) length: u16,
     // pub buffer: *mut EthernetFrame //look into ouborous or pinned. should be able to store reference to MappedPages
 }
+
+
+impl core::cmp::PartialEq for PacketBufferS {
+    #[pure]
+    fn eq(&self, other: &Self) -> bool {
+        self.phys_addr.value() == other.phys_addr.value()
+    }
+}
+
+cfg_if::cfg_if! {
+if #[cfg(not(prusti))] {
 
 impl<const N: MTU> PacketBuffer<N> {
     /// Creates a new `PacketBuffer` of the standard 2 KiB size.
@@ -79,11 +108,13 @@ impl<const N: MTU> Deref for PacketBuffer<N> {
         &self.mp
     }
 }
+
 impl<const N: MTU> DerefMut for PacketBuffer<N> {
     fn deref_mut(&mut self) -> &mut MappedPages {
         &mut self.mp
     }
 }
+
 
 /// A struct that makes it easy to access different fields of an ethernet frame
 /// Note: Tried to use const generics for the payload, but it fails when trying to derive FromBytes, works otherwise.
@@ -96,9 +127,4 @@ pub struct EthernetFrame {
     crc:            [u8; CRC_CHECKSUM_LEN_IN_BYTES as usize]
 }
 
-/// The different payload sizes supported by the NIC.
-#[derive(PartialEq, Eq)]
-pub enum MTU {
-    Standard    = 1500,
-    Jumbo       = 9000
-}
+}}

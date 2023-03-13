@@ -1,6 +1,9 @@
 pub(crate) mod descriptors;
 pub(crate) mod regs;
 
+cfg_if::cfg_if! {
+if #[cfg(not(prusti))] {
+
 /*** Hardware Device Parameters of the Intel 82599 NIC (taken from the datasheet) ***/
 
 /// The maximum number of receive descriptors per queue.
@@ -81,3 +84,5 @@ pub enum NumDesc {
     Descs4k = 4096,
     Descs8k = 8192
 }
+
+}}

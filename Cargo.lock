@@ -1429,6 +1429,7 @@ dependencies = [
  "acpi",
  "apic",
  "bit_field 0.7.0",
+ "cfg-if 1.0.0",
  "hashbrown",
  "hpet",
  "interrupts",
@@ -1446,6 +1447,7 @@ dependencies = [
  "physical_nic",
  "pic",
  "pit_clock",
+ "prusti-contracts",
  "rand",
  "runqueue",
  "spin 0.9.0",
@@ -2495,6 +2497,21 @@ checksum = "dd96a1e8ed2596c337f8eae5f24924ec83f5ad5ab21ea8e455d3566c69fbcaf7"
 dependencies = [
  "unicode-ident",
 ]
+
+[[package]]
+name = "prusti-contracts"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a55ba828aceca3c0786a6dd252e1d219720d15f4c454b70fee282111469c940"
+dependencies = [
+ "prusti-contracts-proc-macros",
+]
+
+[[package]]
+name = "prusti-contracts-proc-macros"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b74f012498f2f2239b7c99cb07c6fd18271587163d1710a242f00b6af5d9043d"
 
 [[package]]
 name = "ps"

@@ -5,18 +5,36 @@
 //! When using virtualization, we disable RSS since we use 5-tuple filters to ensure packets are routed to the correct queues.
 //! We also disable interrupts when using virtualization, since we do not yet have support for allowing applications to register their own interrupt handlers.
 
-#![no_std]
+// #![no_std]
 // #![feature(untagged_unions)]
 #![allow(dead_code)] //  to suppress warnings for unused functions/methods
 #![allow(unaligned_references)] // temporary, just to suppress unsafe packed borrows 
 #![feature(abi_x86_interrupt)]
 #![feature(adt_const_params)]
 #![feature(array_zip)]
+#![feature(rustc_private)]
+
+#[macro_use] extern crate prusti_contracts;
+extern crate cfg_if;
+extern crate alloc;
+
+pub mod hal;
+mod spec;
+mod queue_registers;
+mod vec_wrapper;
+mod verified_functions;
+
+cfg_if::cfg_if! {
+if #[cfg(prusti)] {
+
+extern crate core;
+
+}
+else {
 
 #[macro_use] extern crate log;
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate static_assertions;
-extern crate alloc;
 extern crate spin;
 extern crate irq_safety;
 extern crate kernel_config;
@@ -40,16 +58,13 @@ extern crate virtual_nic;
 extern crate zerocopy;
 extern crate hashbrown;
 
-mod queue_registers;
-// pub mod virtual_function;
-mod mapped_pages_fragments;
+pub mod packet_buffers;
 pub mod test_packets;
 pub mod rx_queue;
 pub mod tx_queue;
-pub mod packet_buffers;
-pub mod hal;
 pub mod allocator;
-mod verified_functions;
+mod mapped_pages_fragments;
+
 
 pub use hal::*;
 use hal::regs::*;
@@ -732,11 +747,31 @@ impl IxgbeNic {
         // now a sw reset is safe
     }
 
+    pub(crate) fn extract_rss_queues(reta: &[[QueueID; 4]; 32], enabled_queues: &mut Vec<RxQueueE>) -> Result<Vec<RxQueueE>, &'static str> {
+        let mut used_queue_ids = Vec::new();
+        for reg in reta {
+            for i in 0..4 {
+                if !used_queue_ids.contains(&reg[i]) {
+                    used_queue_ids.push(reg[i]);
+                }
+            }
+        }
+    
+        let mut queues_for_rss = Vec::with_capacity(used_queue_ids.len());
+        for qid in used_queue_ids {
+            let index = enabled_queues.iter().position(|x| x.id == qid as u8)
+                .ok_or("Required Queue for RSS is not in the enabled list")?;
+            queues_for_rss.push(enabled_queues.remove(index));
+        }
+    
+        Ok(queues_for_rss)
+    }
+
     pub fn enable_rss(&mut self, reta: [[QueueID; 4]; 32]) -> Result<(), &'static str> {
         // software reset
         self.software_reset();
         // remove all queues that are in RETA to a separate vec
-        let queues_in_reta = verified_functions::extract_rss_queues(&reta, &mut self.rx_queues)?;
+        let queues_in_reta = Self::extract_rss_queues(&reta, &mut self.rx_queues)?;
         // call enable_rss
         let rss_queues = Self::enable_rss_internal(&mut self.regs2, &mut self.regs3, reta, queues_in_reta)?;
         // store RSS queues in the NIC
@@ -1025,3 +1060,6 @@ pub enum L5FilterPriority {
 //     nic.tx_queues[qid].send_on_queue(packet);
 //     Ok(())
 // }
+
+}
+}
