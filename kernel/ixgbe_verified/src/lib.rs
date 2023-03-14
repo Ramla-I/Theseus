@@ -6,15 +6,15 @@
 //! We also disable interrupts when using virtualization, since we do not yet have support for allowing applications to register their own interrupt handlers.
 
 // #![no_std]
-// #![feature(untagged_unions)]
 #![allow(dead_code)] //  to suppress warnings for unused functions/methods
 #![allow(unaligned_references)] // temporary, just to suppress unsafe packed borrows 
+#![allow(incomplete_features)] // to allow adt_const_params without a warning
 #![feature(abi_x86_interrupt)]
 #![feature(adt_const_params)]
 #![feature(array_zip)]
 #![feature(rustc_private)]
 
-#[macro_use] extern crate prusti_contracts;
+extern crate prusti_contracts;
 extern crate cfg_if;
 extern crate alloc;
 
@@ -33,7 +33,6 @@ extern crate core;
 else {
 
 #[macro_use] extern crate log;
-#[macro_use] extern crate lazy_static;
 #[macro_use] extern crate static_assertions;
 extern crate spin;
 extern crate irq_safety;
@@ -42,33 +41,22 @@ extern crate memory;
 extern crate pci; 
 extern crate pit_clock;
 extern crate bit_field;
-extern crate x86_64;
-extern crate apic;
-extern crate pic;
-extern crate acpi;
 extern crate volatile;
 extern crate mpmc;
 extern crate owning_ref;
 extern crate rand;
 extern crate hpet;
-extern crate runqueue;
-extern crate network_interface_card;
-extern crate physical_nic;
-extern crate virtual_nic;
 extern crate zerocopy;
-extern crate hashbrown;
+extern crate mapped_pages_fragments;
 
 pub mod packet_buffers;
 pub mod test_packets;
 pub mod rx_queue;
 pub mod tx_queue;
 pub mod allocator;
-mod mapped_pages_fragments;
-
 
 pub use hal::*;
 use hal::regs::*;
-use lazy_static::__Deref;
 use queue_registers::*;
 use mapped_pages_fragments::MappedPagesFragments;
 use rx_queue::{RxQueueE, RxQueueD, RxQueueL5, RxQueueRSS};
@@ -88,6 +76,7 @@ use owning_ref::BoxRefMut;
 use bit_field::BitField;
 use hpet::get_hpet;
 use rand::{SeedableRng, RngCore};
+use core::ops::{Deref};
 
 /// Vendor ID for Intel
 pub const INTEL_VEND:                   u16 = 0x8086;  

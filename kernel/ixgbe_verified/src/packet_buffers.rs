@@ -1,4 +1,3 @@
-use prusti_contracts::*;
 use core::ops::{Deref, DerefMut};
 
 cfg_if::cfg_if! {
@@ -53,14 +52,6 @@ pub struct PacketBuffer<const N: MTU> {
     // pub buffer: *mut EthernetFrame //look into ouborous or pinned. should be able to store reference to MappedPages
 }
 
-
-impl core::cmp::PartialEq for PacketBufferS {
-    #[pure]
-    fn eq(&self, other: &Self) -> bool {
-        self.phys_addr.value() == other.phys_addr.value()
-    }
-}
-
 cfg_if::cfg_if! {
 if #[cfg(not(prusti))] {
 
@@ -77,7 +68,7 @@ impl<const N: MTU> PacketBuffer<N> {
             length_in_bytes = MIN_ETHERNET_FRAME_LEN_IN_BYTES;
         }
 
-        let (mut mp, starting_phys_addr) = create_contiguous_mapping(
+        let (mp, starting_phys_addr) = create_contiguous_mapping(
             DEFAULT_RX_BUFFER_SIZE_2KB as usize,
             NIC_MAPPING_FLAGS_CACHED,
         )?;

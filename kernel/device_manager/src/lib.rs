@@ -177,7 +177,7 @@ pub fn init(key_producer: Queue<Event>, mouse_producer: Queue<Event>) -> Result<
     }
 
     // Once all the NICs have been initialized, we can store them and add them to the list of network interfaces.
-    let ixgbe_nics = ixgbe_verified::IXGBE_NICS.call_once(|| ixgbe_devs);
+    let _ixgbe_nics = ixgbe_verified::IXGBE_NICS.call_once(|| ixgbe_devs);
     // for ixgbe_nic_ref in ixgbe_nics.iter() {
         // let ixgbe_interface = EthernetNetworkInterface::new_ipv4_interface(
         //     ixgbe_nic_ref, 

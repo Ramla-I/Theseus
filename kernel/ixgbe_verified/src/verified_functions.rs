@@ -6,6 +6,7 @@ if #[cfg(prusti)] {
     use crate::packet_buffers::PacketBufferS;
 }}
 
+#[allow(unused_imports)]
 use crate::{
     spec::result_spec::*,
     vec_wrapper::VecWrapper, 
@@ -46,7 +47,7 @@ pub fn rx_batch(
     
     let mut rcvd_pkts = 0;
     let mut i = 0;
-    let buffers_len = buffers.len();
+    let _buffers_len = buffers.len();
 
     while i < batch_size {
         body_invariant!(num_rx_descs as usize == rx_descs.len());
@@ -56,7 +57,7 @@ pub fn rx_batch(
         body_invariant!((rx_cur == last_rx_cur) || rx_cur == (last_rx_cur + 1) % num_rx_descs);
         body_invariant!(*rx_cur_stored + rcvd_pkts == rx_cur_total);
         // body_invariant!((rx_cur == rx_cur_total) || (rx_cur_total % num_rx_descs == rx_cur));
-        body_invariant!(buffers.len() == buffers_len + rcvd_pkts as usize);
+        body_invariant!(buffers.len() == _buffers_len + rcvd_pkts as usize);
 
         let desc = index_mut(rx_descs, rx_cur as usize);
 
@@ -159,8 +160,8 @@ fn tx_batch(
 
     // debug!("tx_cur = {}, tx_clean ={}", tx_cur, tx_clean);
     
-    let buffers_len = buffers.len();
-    let buffers_in_use_len = tx_bufs_in_use.len();
+    let _buffers_len = buffers.len();
+    let _buffers_in_use_len = tx_bufs_in_use.len();
 
     let mut i = 0;
     while i < batch_size {
@@ -169,8 +170,8 @@ fn tx_batch(
         body_invariant!(pkts_sent as usize == i);
         body_invariant!(*tx_cur_stored + pkts_sent == tx_cur_total);
         // // body_invariant!((rx_cur == rx_cur_total) || (rx_cur_total % num_rx_descs == rx_cur));
-        body_invariant!(buffers.len() == buffers_len - pkts_sent as usize);
-        body_invariant!(tx_bufs_in_use.len() == buffers_in_use_len + pkts_sent as usize);
+        body_invariant!(buffers.len() == _buffers_len - pkts_sent as usize);
+        body_invariant!(tx_bufs_in_use.len() == _buffers_in_use_len + pkts_sent as usize);
         // body_invariant!(tx_cur == (*tx_cur_stored + pkts_sent) % num_tx_descs);
 
         if let Some(packet) = buffers.pop() {

@@ -13,7 +13,7 @@ use crate::spec::memory_spec::*;
 
 } else {
 
-use crate::mapped_pages_fragments::{MappedPagesFragments, Fragment};
+use mapped_pages_fragments::{MappedPagesFragments, Fragment};
 
 }}
 

@@ -110,7 +110,7 @@ dependencies = [
  "spin 0.9.0",
  "static_assertions",
  "volatile 0.2.7",
- "x86_64 0.14.9",
+ "x86_64",
  "zerocopy",
 ]
 
@@ -164,7 +164,7 @@ dependencies = [
  "port_io",
  "spin 0.9.0",
  "storage_device",
- "x86_64 0.14.9",
+ "x86_64",
 ]
 
 [[package]]
@@ -709,7 +709,7 @@ dependencies = [
  "scheduler",
  "spawn",
  "task",
- "x86_64 0.14.9",
+ "x86_64",
 ]
 
 [[package]]
@@ -853,7 +853,7 @@ dependencies = [
  "spin 0.9.0",
  "static_assertions",
  "volatile 0.2.7",
- "x86_64 0.14.9",
+ "x86_64",
  "zerocopy",
 ]
 
@@ -936,7 +936,7 @@ dependencies = [
  "spin 0.9.0",
  "tss",
  "vga_buffer",
- "x86_64 0.14.9",
+ "x86_64",
 ]
 
 [[package]]
@@ -959,7 +959,7 @@ dependencies = [
  "tss",
  "unwind",
  "vga_buffer",
- "x86_64 0.14.9",
+ "x86_64",
 ]
 
 [[package]]
@@ -1117,7 +1117,7 @@ dependencies = [
  "memory",
  "spin 0.9.0",
  "tss",
- "x86_64 0.14.9",
+ "x86_64",
 ]
 
 [[package]]
@@ -1314,7 +1314,7 @@ dependencies = [
  "spin 0.9.0",
  "tss",
  "vga_buffer",
- "x86_64 0.14.9",
+ "x86_64",
 ]
 
 [[package]]
@@ -1418,7 +1418,7 @@ dependencies = [
  "static_assertions",
  "virtual_nic",
  "volatile 0.2.7",
- "x86_64 0.14.9",
+ "x86_64",
  "zerocopy",
 ]
 
@@ -1426,35 +1426,25 @@ dependencies = [
 name = "ixgbe_verified"
 version = "0.1.0"
 dependencies = [
- "acpi",
- "apic",
  "bit_field 0.7.0",
  "cfg-if 1.0.0",
- "hashbrown",
  "hpet",
- "interrupts",
  "irq_safety",
  "kernel_config",
- "lazy_static",
  "log",
+ "mapped_pages_fragments",
  "memory",
  "mpmc",
- "network_interface_card",
- "nic_buffers",
- "nic_initialization",
  "owning_ref",
  "pci",
  "physical_nic",
- "pic",
  "pit_clock",
  "prusti-contracts",
  "rand",
- "runqueue",
  "spin 0.9.0",
  "static_assertions",
  "virtual_nic",
  "volatile 0.2.7",
- "x86_64 0.14.8",
  "zerocopy",
 ]
 
@@ -1479,7 +1469,7 @@ dependencies = [
  "mpmc",
  "ps2",
  "spin 0.9.0",
- "x86_64 0.14.9",
+ "x86_64",
 ]
 
 [[package]]
@@ -1633,7 +1623,7 @@ name = "locked_idt"
 version = "0.1.0"
 dependencies = [
  "irq_safety",
- "x86_64 0.14.9",
+ "x86_64",
 ]
 
 [[package]]
@@ -1704,6 +1694,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fdcec5e97041c7f0f1c5b7d93f12e57293c831c646f4cc7a5db59460c7ea8de6"
 
 [[package]]
+name = "mapped_pages_fragments"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "memory",
+ "zerocopy",
+]
+
+[[package]]
 name = "mapper_spillful"
 version = "0.1.0"
 dependencies = [
@@ -1772,7 +1771,7 @@ dependencies = [
  "page_allocator",
  "page_table_entry",
  "spin 0.9.0",
- "x86_64 0.14.9",
+ "x86_64",
  "xmas-elf",
  "zerocopy",
 ]
@@ -1820,7 +1819,7 @@ dependencies = [
  "log",
  "memory_structs",
  "multiboot2",
- "x86_64 0.14.9",
+ "x86_64",
 ]
 
 [[package]]
@@ -1952,7 +1951,7 @@ dependencies = [
  "mpmc",
  "ps2",
  "spin 0.9.0",
- "x86_64 0.14.9",
+ "x86_64",
 ]
 
 [[package]]
@@ -2403,7 +2402,7 @@ dependencies = [
  "log",
  "pit_clock_basic",
  "port_io",
- "x86_64 0.14.9",
+ "x86_64",
 ]
 
 [[package]]
@@ -2457,7 +2456,7 @@ dependencies = [
  "raw-cpuid",
  "spin 0.9.0",
  "task",
- "x86_64 0.14.9",
+ "x86_64",
 ]
 
 [[package]]
@@ -2701,7 +2700,7 @@ dependencies = [
  "port_io",
  "spin 0.9.0",
  "state_store",
- "x86_64 0.14.9",
+ "x86_64",
 ]
 
 [[package]]
@@ -2902,7 +2901,7 @@ dependencies = [
  "serial_port_basic",
  "spin 0.9.0",
  "static_assertions",
- "x86_64 0.14.9",
+ "x86_64",
 ]
 
 [[package]]
@@ -2968,7 +2967,7 @@ dependencies = [
  "spin 0.9.0",
  "task",
  "thread_local_macro",
- "x86_64 0.14.9",
+ "x86_64",
 ]
 
 [[package]]
@@ -3276,7 +3275,7 @@ dependencies = [
  "stack",
  "static_assertions",
  "tss",
- "x86_64 0.14.9",
+ "x86_64",
 ]
 
 [[package]]
@@ -3646,7 +3645,7 @@ dependencies = [
  "log",
  "memory",
  "pause",
- "x86_64 0.14.9",
+ "x86_64",
 ]
 
 [[package]]
@@ -3676,7 +3675,7 @@ dependencies = [
  "log",
  "memory",
  "spin 0.9.0",
- "x86_64 0.14.9",
+ "x86_64",
 ]
 
 [[package]]
@@ -4161,16 +4160,6 @@ dependencies = [
  "spawn",
  "spin 0.9.0",
  "window_inner",
-]
-
-[[package]]
-name = "x86_64"
-version = "0.14.8"
-dependencies = [
- "bit_field 0.10.1",
- "bitflags",
- "irq_safety",
- "volatile 0.4.4",
 ]
 
 [[package]]

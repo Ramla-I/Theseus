@@ -10,14 +10,15 @@ use crate::packet_buffers::PacketBufferS;
 
 }}
 
+#[allow(unused_imports)]
 use crate::spec::option_spec::*;
 use alloc::vec::Vec;
 
-pub struct VecWrapper<T: PartialEq>{
+pub struct VecWrapper<T>{
     pub(crate) v: Vec<T>
 }
 
-impl<T: PartialEq> VecWrapper<T> {
+impl<T> VecWrapper<T> {
 
     #[trusted]
     #[ensures(result.len() == 0)]
@@ -52,7 +53,6 @@ impl VecWrapper<PacketBufferS> {
     /// even though I implemented PartialEq for PacketBufferS and declared it as a pure fn
     #[trusted]
     #[requires(0 <= index && index < self.len())]
-    // #[after_expiry(self.len() == old(self.len()))]
     #[after_expiry(
         self.len() == old(self.len()) &&
         self.index(index).phys_addr.value() == before_expiry(result).phys_addr.value() &&

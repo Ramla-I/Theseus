@@ -1,3 +1,8 @@
+#![no_std]
+extern crate memory;
+extern crate alloc;
+extern crate zerocopy;
+#[macro_use]extern crate log;
 
 use memory::{VirtualAddress, MappedPages};
 use alloc::{
@@ -57,7 +62,7 @@ impl MappedPagesFragments {
         Ok(
             Fragment {
                 ptr: ManuallyDrop::new(pointer_to_type),
-                backing_mp: self.mp.clone()
+                _backing_mp: self.mp.clone()
             }
         )
     }
@@ -65,18 +70,18 @@ impl MappedPagesFragments {
 
 pub struct Fragment<T: FromBytes> {
     ptr: ManuallyDrop<Box<T>>,
-    backing_mp: Arc<MappedPages>
+    _backing_mp: Arc<MappedPages>
 }
 
 impl<T: FromBytes> Deref for Fragment<T> {
     type Target = T;
-    fn deref(&self) -> &T{
+    fn deref(&self) -> &T {
         &self.ptr
     }
 }
 
 impl<T: FromBytes> DerefMut for Fragment<T> {
-    fn deref_mut(&mut self) -> &mut T{
+    fn deref_mut(&mut self) -> &mut T { 
         &mut self.ptr
     }
 }
