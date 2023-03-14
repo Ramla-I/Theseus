@@ -5,7 +5,7 @@
 //! When using virtualization, we disable RSS since we use 5-tuple filters to ensure packets are routed to the correct queues.
 //! We also disable interrupts when using virtualization, since we do not yet have support for allowing applications to register their own interrupt handlers.
 
-// #![no_std]
+#![no_std]
 #![allow(dead_code)] //  to suppress warnings for unused functions/methods
 #![allow(unaligned_references)] // temporary, just to suppress unsafe packed borrows 
 #![allow(incomplete_features)] // to allow adt_const_params without a warning
@@ -20,7 +20,7 @@ extern crate alloc;
 pub mod hal;
 mod spec;
 mod queue_registers;
-mod vec_wrapper;
+pub mod vec_wrapper;
 mod verified_functions;
 
 cfg_if::cfg_if! {
@@ -61,6 +61,7 @@ use rx_queue::{RxQueueE, RxQueueD, RxQueueL5, RxQueueRSS};
 use tx_queue::{TxQueueE, TxQueueD};
 use allocator::*;
 use packet_buffers::*;
+use vec_wrapper::VecWrapper;
 
 use spin::Once;
 use alloc::{
@@ -328,9 +329,10 @@ impl IxgbeNic {
         self.tx_queues[qid].tx_batch(batch_size, buffers, used_buffers)
     }
 
-    pub fn rx_batch(&mut self, qid: usize, buffers: &mut Vec<PacketBufferS>, batch_size: usize, pool: &mut Vec<PacketBufferS>) -> Result<usize, &'static str> {
+    pub fn rx_batch(&mut self, qid: usize, buffers: &mut VecWrapper<PacketBufferS>, batch_size: usize, pool: &mut VecWrapper<PacketBufferS>) -> Result<u16, ()> {
         if qid >= self.rx_queues.len() {
-            return Err("Queue index is out of range");
+            error!("Queue index is out of range");
+            return Err(());
         }
 
         self.rx_queues[qid].rx_batch(buffers, batch_size, pool)

@@ -41,6 +41,7 @@ use alloc::string::String;
 use ixgbe_verified::{
     get_ixgbe_nics_list, IxgbeStats,
     allocator::init_rx_buf_pool,
+    vec_wrapper::VecWrapper
 };
 use packet_buffers::{PacketBufferS};
 use getopts::{Matches, Options};
@@ -172,7 +173,7 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
     
     // In the case of the pseudo tx function we go ahead and store a packet buffer for each descriptor,
     // since we aren't doing any buffer management during the benchmark
-    dev0.tx_populate(0, &mut pool);
+    // dev0.tx_populate(0, &mut pool);
 
     error!("Link speed: {} Mbps", dev0.link_speed() as usize);
     error!("Link speed: {} Mbps", dev1.link_speed() as usize);

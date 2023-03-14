@@ -27,6 +27,12 @@ impl<T> VecWrapper<T> {
     }
 
     #[trusted]
+    #[ensures(result.len() == 0)]
+    pub fn with_capacity(capacity: usize) -> Self {
+        VecWrapper{ v: Vec::with_capacity(capacity) }
+    }
+
+    #[trusted]
     #[pure]
     pub fn len(&self) -> usize {
         self.v.len()
