@@ -6,7 +6,7 @@ use crate::spec::memory_spec::*;
 
 } else {
 
-use crate::packet_buffers::PacketBufferS;
+use packet_buffers::PacketBufferS;
 
 }}
 

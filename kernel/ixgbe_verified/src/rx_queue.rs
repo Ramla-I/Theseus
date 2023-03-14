@@ -2,8 +2,9 @@ use memory::{MappedPages};
 use crate::{hal::descriptors::AdvancedRxDescriptor, packet_buffers::{MTU, PacketBufferS}, RxBufferSizeKiB, DEFAULT_RX_BUFFER_SIZE_2KB};
 use crate::queue_registers::RxQueueRegisters;
 use crate::NumDesc;
-use crate::packet_buffers::PacketBuffer;
 use crate::allocator::*;
+use crate::verified_functions;
+use packet_buffers::PacketBuffer;
 use owning_ref::BoxRefMut;
 use core::{ops::{DerefMut, Deref}};
 use alloc::{
@@ -60,7 +61,7 @@ impl RxQueue<{RxState::Enabled}> {
             let rx_buf = rx_buffer_pool.pop()
                 .ok_or("Couldn't obtain a ReceiveBuffer from the pool")?; 
             
-            rd.init(rx_buf.phys_addr); 
+            rd.init(rx_buf.phys_addr()); 
             rx_bufs_in_use.push(rx_buf); 
         }
 
@@ -95,6 +96,7 @@ impl RxQueue<{RxState::Enabled}> {
     /// Retrieves a maximum of `batch_size` number of packets and stores them in `buffers`.
     /// Returns the total number of received packets.
     pub fn rx_batch(&mut self, buffers: &mut Vec<PacketBufferS>, batch_size: usize, pool: &mut Vec<PacketBufferS>) -> Result<usize, &'static str> {
+        // verified_functions::rx_batch(rx_descs, rx_cur_stored, rx_bufs_in_use, regs, num_rx_descs, buffers, batch_size, pool)
         let mut rx_cur = self.rx_cur as usize;
         let mut last_rx_cur = self.rx_cur as usize;
 
@@ -118,7 +120,7 @@ impl RxQueue<{RxState::Enabled}> {
             // we need to obtain a new `ReceiveBuffer` and set it up such that the NIC will use it for future receivals.
             if let Some(new_receive_buf) = pool.pop() {
                 // actually tell the NIC about the new receive buffer, and that it's ready for use now
-                desc.set_packet_address(new_receive_buf.phys_addr);
+                desc.set_packet_address(new_receive_buf.phys_addr());
                 desc.reset_status();
                 
                 let mut current_rx_buf = core::mem::replace(&mut self.rx_bufs_in_use[rx_cur], new_receive_buf);
@@ -282,7 +284,7 @@ pub fn rx_batch(
         // we need to obtain a new `ReceiveBuffer` and set it up such that the NIC will use it for future receivals.
         if let Some(new_receive_buf) = pool.pop() {
             // actually tell the NIC about the new receive buffer, and that it's ready for use now
-            desc.set_packet_address(new_receive_buf.phys_addr);
+            desc.set_packet_address(new_receive_buf.phys_addr());
             desc.reset_status();
             
             let mut current_rx_buf = core::mem::replace(&mut rx_bufs_in_use[rx_cur], new_receive_buf);
@@ -334,7 +336,7 @@ impl RxQueue<{RxState::Enabled}> {
             }
 
             // actually tell the NIC about the new receive buffer, and that it's ready for use now
-            desc.set_packet_address(self.rx_bufs_in_use[rx_cur].phys_addr);
+            desc.set_packet_address(self.rx_bufs_in_use[rx_cur].phys_addr());
             desc.reset_status();
                 
             rcvd_pkts += 1;

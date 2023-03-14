@@ -1,11 +1,12 @@
 use memory::{EntryFlags, PhysicalAddress, allocate_pages_by_bytes, allocate_frames_by_bytes_at, get_kernel_mmi_ref, MappedPages, create_contiguous_mapping};
-use crate::{packet_buffers::{PacketBuffer, MTU, MAX_STANDARD_ETHERNET_FRAME_LEN_IN_BYTES}, hal::{NumDesc, descriptors::Descriptor}};
+use crate::hal::{NumDesc, descriptors::Descriptor};
 use alloc::{
     vec::Vec,
     boxed::Box,
 };
 use zerocopy::FromBytes;
 use owning_ref::BoxRefMut;
+use packet_buffers::{PacketBuffer, MTU, MAX_STANDARD_ETHERNET_FRAME_LEN_IN_BYTES};
 
 
 /// The mapping flags used for MMIO registers.

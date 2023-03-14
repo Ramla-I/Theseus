@@ -1,7 +1,7 @@
 use prusti_contracts::*;
 
 cfg_if::cfg_if! {
-if #[cfg(prusti)] {
+if #[cfg(prusti)] { // all memory related structs are verified via a spec since we are not verifying the memory crate.
 
 use crate::spec::{memory_spec::*, volatile_spec::*};
 
@@ -188,7 +188,7 @@ impl AdvancedRxDescriptor {
 }
 
 
-cfg_if::cfg_if! {
+cfg_if::cfg_if! { // functions that are not used during receiving a packet are not included in the verification code. Even if they were, we would just set them to be trusted 
 if #[cfg(not(prusti))] {
 // functions that don't have to be verified
 impl AdvancedRxDescriptor {

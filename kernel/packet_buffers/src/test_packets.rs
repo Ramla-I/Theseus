@@ -1,6 +1,6 @@
 //! A set of functions to create packets for testing the NIC transmission functionality.
 
-use crate::packet_buffers::{PacketBuffer, EthernetFrame, MTU, ETHERNET_HEADER_LEN_IN_BYTES, CRC_CHECKSUM_LEN_IN_BYTES};
+use crate::{PacketBuffer, EthernetFrame, MTU, ETHERNET_HEADER_LEN_IN_BYTES, CRC_CHECKSUM_LEN_IN_BYTES};
 
 /// Creates a `PacketBuffer` containing a dhcp packet.
 pub fn create_dhcp_test_packet() -> Result<PacketBuffer<{MTU::Standard}>, &'static str> {

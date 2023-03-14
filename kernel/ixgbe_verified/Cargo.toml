@@ -51,5 +51,8 @@ path = "../virtual_nic"
 [dependencies.mapped_pages_fragments]
 path = "../mapped_pages_fragments"
 
+[dependencies.packet_buffers]
+path = "../packet_buffers"
+
 [lib]
 crate-type = ["rlib"] # "lib" does the same thing I think

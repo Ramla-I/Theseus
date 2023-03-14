@@ -57,6 +57,13 @@ pub struct PacketBufferS {
     pub(crate) length: u16,
 }
 
+impl PacketBufferS {
+    #[pure]
+    pub fn phys_addr(&self) -> PhysicalAddress {
+        self.phys_addr
+    }
+}
+
 impl core::cmp::PartialEq for PacketBufferS {
     #[pure]
     fn eq(&self, other: &Self) -> bool {

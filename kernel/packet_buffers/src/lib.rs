@@ -1,15 +1,23 @@
+#![no_std]
+#![feature(adt_const_params)]
+#![allow(incomplete_features)]
+
+extern crate memory;
+extern crate zerocopy;
+
 use core::ops::{Deref, DerefMut};
-
-cfg_if::cfg_if! {
-if #[cfg(prusti)] {
-
-use crate::spec::memory_spec::*;
-
-} else {
-
-use memory::{MappedPages, PhysicalAddress, create_contiguous_mapping};
+use memory::{MappedPages, PhysicalAddress, create_contiguous_mapping, EntryFlags};
 use zerocopy::FromBytes;
-use crate::{DEFAULT_RX_BUFFER_SIZE_2KB, allocator::NIC_MAPPING_FLAGS_CACHED};
+
+/// All buffers are created with 2KiB so that the max ethernet frame can fit in one packet buffer
+pub const DEFAULT_RX_BUFFER_SIZE_IN_BYTES_2KB: usize   = 2 * 1024;
+
+/// The mapping flags used for descriptors and packet buffers
+const NIC_MAPPING_FLAGS_CACHED: EntryFlags = EntryFlags::from_bits_truncate(
+    EntryFlags::PRESENT.bits() |
+    EntryFlags::WRITABLE.bits() |
+    EntryFlags::NO_EXECUTE.bits()
+);
 
 
 /// Size of ether type field in ethernet frame header
@@ -26,7 +34,6 @@ pub const MAX_STANDARD_PAYLOAD_LEN_IN_BYTES:            u16 = 1500;
 pub const MAX_STANDARD_ETHERNET_FRAME_LEN_IN_BYTES:     u16 = MAX_STANDARD_PAYLOAD_LEN_IN_BYTES + ETHERNET_HEADER_LEN_IN_BYTES + CRC_CHECKSUM_LEN_IN_BYTES;
 pub const MIN_ETHERNET_FRAME_LEN_IN_BYTES:              u16 = MIN_PAYLOAD_LEN_IN_BYTES + ETHERNET_HEADER_LEN_IN_BYTES + CRC_CHECKSUM_LEN_IN_BYTES;
 
-}}
 
 /// The different payload sizes supported by the NIC.
 #[derive(PartialEq, Eq)]
@@ -48,12 +55,9 @@ pub type PacketBufferJ = PacketBuffer<{MTU::Jumbo}>;
 pub struct PacketBuffer<const N: MTU> {
     pub(crate) mp: MappedPages,
     pub(crate) phys_addr: PhysicalAddress,
-    pub(crate) length: u16,
+    pub length: u16,
     // pub buffer: *mut EthernetFrame //look into ouborous or pinned. should be able to store reference to MappedPages
 }
-
-cfg_if::cfg_if! {
-if #[cfg(not(prusti))] {
 
 impl<const N: MTU> PacketBuffer<N> {
     /// Creates a new `PacketBuffer` of the standard 2 KiB size.
@@ -69,7 +73,7 @@ impl<const N: MTU> PacketBuffer<N> {
         }
 
         let (mp, starting_phys_addr) = create_contiguous_mapping(
-            DEFAULT_RX_BUFFER_SIZE_2KB as usize,
+            DEFAULT_RX_BUFFER_SIZE_IN_BYTES_2KB,
             NIC_MAPPING_FLAGS_CACHED,
         )?;
         
@@ -83,8 +87,9 @@ impl<const N: MTU> PacketBuffer<N> {
         })
     }
 
-    pub fn len(&self) -> u16 {
-        self.length
+    #[inline(always)]
+    pub fn phys_addr(&self) -> PhysicalAddress {
+        self.phys_addr
     }
 
     /// Returns the size of the buffer without the bytes used for the ethernet header and checksum
@@ -115,7 +120,5 @@ pub struct EthernetFrame {
     pub src_addr:   [u8; MAC_ADDR_LEN_IN_BYTES as usize],
     pub length:     u16,
     pub payload:    [u8; MAX_STANDARD_PAYLOAD_LEN_IN_BYTES as usize],
-    crc:            [u8; CRC_CHECKSUM_LEN_IN_BYTES as usize]
+    _crc:            [u8; CRC_CHECKSUM_LEN_IN_BYTES as usize]
 }
-
-}}

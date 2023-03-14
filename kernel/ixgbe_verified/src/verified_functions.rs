@@ -3,7 +3,7 @@ cfg_if::cfg_if! {
 if #[cfg(prusti)] {
     use crate::spec::memory_spec::PacketBufferS;
 } else {
-    use crate::packet_buffers::PacketBufferS;
+    use packet_buffers::PacketBufferS;
 }}
 
 #[allow(unused_imports)]
@@ -77,7 +77,7 @@ pub fn rx_batch(
         // we need to obtain a new `ReceiveBuffer` and set it up such that the NIC will use it for future receivals.
         if let Some(new_receive_buf) = pool.pop() {
             // actually tell the NIC about the new receive buffer, and that it's ready for use now
-            desc.set_packet_address(new_receive_buf.phys_addr);
+            desc.set_packet_address(new_receive_buf.phys_addr());
             desc.reset_status();
             
             let mut current_rx_buf = replace(rx_bufs_in_use.index_mut(rx_cur as usize), new_receive_buf);
@@ -184,7 +184,7 @@ fn tx_batch(
                 break;
             }
 
-            index_mut(tx_descs, tx_cur as usize).send(packet.phys_addr, packet.length);
+            index_mut(tx_descs, tx_cur as usize).send(packet.phys_addr(), packet.length);
             tx_bufs_in_use.push(packet);
 
             tx_cur = tx_next;

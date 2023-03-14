@@ -2,7 +2,7 @@ pub(crate) mod descriptors;
 pub(crate) mod regs;
 
 cfg_if::cfg_if! {
-if #[cfg(not(prusti))] {
+if #[cfg(not(prusti))] { // These constants and enums are not used for any verification, so they're not included in the verified code for now
 
 /*** Hardware Device Parameters of the Intel 82599 NIC (taken from the datasheet) ***/
 

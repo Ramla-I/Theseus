@@ -1436,6 +1436,7 @@ dependencies = [
  "memory",
  "mpmc",
  "owning_ref",
+ "packet_buffers",
  "pci",
  "physical_nic",
  "pit_clock",
@@ -2253,6 +2254,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "packet_buffers"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "memory",
+ "zerocopy",
+]
+
+[[package]]
 name = "packet_forwarder"
 version = "0.1.0"
 dependencies = [
@@ -2263,6 +2273,7 @@ dependencies = [
  "libtest",
  "log",
  "network_interface_card",
+ "packet_buffers",
  "pmu_x86",
  "spawn",
  "terminal_print",

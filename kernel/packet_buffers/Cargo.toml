@@ -1,0 +1,19 @@
+[package]
+name = "packet_buffers"
+version = "0.1.0"
+description = "Packet Buffers that can be used to send and receive packets from a network driver"
+authors = ["Ramla <ijazramla@gmail.com>"]
+
+[dependencies]
+zerocopy = "0.5.0"
+
+
+[dependencies.log]
+default-features = false
+version = "0.4.8"
+
+[dependencies.memory]
+path = "../memory"
+
+[lib]
+crate-type = ["rlib"] # "lib" does the same thing I think

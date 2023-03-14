@@ -30,5 +30,8 @@ path = "../../kernel/libtest"
 [dependencies.pmu_x86]
 path = "../../kernel/pmu_x86"
 
+[dependencies.packet_buffers]
+path = "../../kernel/packet_buffers"
+
 [dependencies.irq_safety]
 git = "https://github.com/theseus-os/irq_safety"

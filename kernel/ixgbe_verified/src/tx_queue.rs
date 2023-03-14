@@ -1,5 +1,5 @@
 use memory::{MappedPages};
-use crate::{hal::descriptors::AdvancedTxDescriptor, packet_buffers::PacketBufferS};
+use crate::{hal::descriptors::AdvancedTxDescriptor};
 use crate::queue_registers::TxQueueRegisters;
 use crate::NumDesc;
 use crate::allocator::*;
@@ -8,6 +8,8 @@ use core::{ops::{DerefMut, Deref}};
 use alloc::{
     vec::Vec, collections::VecDeque,
 };
+use packet_buffers::PacketBufferS;
+
 
 pub type TxQueueE = TxQueue<{TxState::Enabled}>;
 pub type TxQueueD = TxQueue<{TxState::Disabled}>;
@@ -75,7 +77,7 @@ impl TxQueue<{TxState::Enabled}> {
                     break;
                 }
     
-                self.tx_descs[tx_cur as usize].send(packet.phys_addr, packet.length);
+                self.tx_descs[tx_cur as usize].send(packet.phys_addr(), packet.length);
                 self.tx_bufs_in_use.push_back(packet);
     
                 tx_cur = tx_next;
@@ -211,7 +213,7 @@ fn tx_batch(
                 break;
             }
 
-            tx_descs[tx_cur as usize].send(packet.phys_addr, packet.length);
+            tx_descs[tx_cur as usize].send(packet.phys_addr(), packet.length);
             tx_bufs_in_use.push_back(packet);
 
             tx_cur = tx_next;
@@ -286,7 +288,7 @@ impl TxQueue<{TxState::Enabled}> {
         for desc in self.tx_descs.iter_mut() {
             let mut packet = buffers.pop().unwrap();
             packet.length = 64;
-            desc.send(packet.phys_addr, packet.length);
+            desc.send(packet.phys_addr(), packet.length);
             self.tx_bufs_in_use.push_back(packet);
         }
 
@@ -312,7 +314,7 @@ impl TxQueue<{TxState::Enabled}> {
                 break;
             }
 
-            self.tx_descs[tx_cur as usize].send(self.tx_bufs_in_use[tx_cur as usize].phys_addr, self.tx_bufs_in_use[tx_cur as usize].length);
+            self.tx_descs[tx_cur as usize].send(self.tx_bufs_in_use[tx_cur as usize].phys_addr(), self.tx_bufs_in_use[tx_cur as usize].length);
 
             tx_cur = tx_next;
             pkts_sent += 1;

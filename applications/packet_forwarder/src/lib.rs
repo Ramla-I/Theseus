@@ -17,7 +17,12 @@
 //! e.g."sudo arp -i eno1 -s 192.168.0.20 0c:c4:7a:d2:ee:1a"
 
 #![no_std]
-#[macro_use] extern crate alloc;
+#![allow(unused_variables)]
+#![allow(unused_assignments)]
+#![allow(unused_mut)]
+
+
+extern crate alloc;
 #[macro_use] extern crate log;
 #[macro_use] extern crate terminal_print;
 extern crate network_interface_card;
@@ -28,21 +33,20 @@ extern crate hpet;
 extern crate libtest;
 extern crate pmu_x86;
 extern crate irq_safety;
+extern crate packet_buffers;
 
 
 use alloc::vec::Vec;
 use alloc::string::String;
 use ixgbe_verified::{
     get_ixgbe_nics_list, IxgbeStats,
-    packet_buffers::{PacketBufferS},
     allocator::init_rx_buf_pool,
-    test_packets::create_raw_packet,
-    hal::RxBufferSizeKiB
 };
+use packet_buffers::{PacketBufferS};
 use getopts::{Matches, Options};
 use hpet::get_hpet;
 
-const DEST_MAC_ADDR: [u8; 6] = [0xa0, 0x36, 0x9f, 0x1d, 0x94, 0x4c];
+// const DEST_MAC_ADDR: [u8; 6] = [0xa0, 0x36, 0x9f, 0x1d, 0x94, 0x4c];
 const DESC_RING_SIZE: usize = 512;
 
 pub fn main(args: Vec<String>) -> isize {
@@ -82,7 +86,7 @@ pub fn main(args: Vec<String>) -> isize {
     }
 }
 
-fn rmain(matches: &Matches, opts: &Options) -> Result<(), &'static str> {
+fn rmain(matches: &Matches, _opts: &Options) -> Result<(), &'static str> {
     let mut core = 0;
     let mut batch_size = 32;
     let mut packet_length_in_bytes = 64;
@@ -119,7 +123,7 @@ fn rmain(matches: &Matches, opts: &Options) -> Result<(), &'static str> {
 /// Args are (ixgbe devices, batch size, pmu_enabled, print stats)
 fn packet_forwarder(args: (usize, u16, bool, bool)) {
     let batch_size = args.0;
-    let packet_length_in_bytes = args.1;
+    let _packet_length_in_bytes = args.1;
     let collect_stats = args.2;
     let pmu = args.3;
 

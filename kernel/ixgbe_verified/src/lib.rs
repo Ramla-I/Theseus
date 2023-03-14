@@ -9,7 +9,6 @@
 #![allow(dead_code)] //  to suppress warnings for unused functions/methods
 #![allow(unaligned_references)] // temporary, just to suppress unsafe packed borrows 
 #![allow(incomplete_features)] // to allow adt_const_params without a warning
-#![feature(abi_x86_interrupt)]
 #![feature(adt_const_params)]
 #![feature(array_zip)]
 #![feature(rustc_private)]
@@ -48,9 +47,8 @@ extern crate rand;
 extern crate hpet;
 extern crate zerocopy;
 extern crate mapped_pages_fragments;
+extern crate packet_buffers;
 
-pub mod packet_buffers;
-pub mod test_packets;
 pub mod rx_queue;
 pub mod tx_queue;
 pub mod allocator;

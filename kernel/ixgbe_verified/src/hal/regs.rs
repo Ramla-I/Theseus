@@ -18,11 +18,11 @@
 //! and so we haven't implemented the necessary checks for safe access.
 
 cfg_if::cfg_if! {
-if #[cfg(prusti)] {
+if #[cfg(prusti)] { // We used a a spec for the volatile crate during verification
 
 use crate::spec::volatile_spec::*;
 
-} else {
+} else { // We don't include any registers in the verification code besides the Rx and Tx Queue registers, since they're used in the rx/tx functions
 
 use volatile::{Volatile, ReadOnly, WriteOnly};
 use zerocopy::FromBytes;
