@@ -263,8 +263,8 @@ bitflags! {
 // Ensure that we never expose reserved bits 0, [7:2], [31:11] as part of the `FilterCtrlFlags` interface.
 const_assert_eq!(FilterCtrlFlags::all().bits() & 0xFFFF_F8FD, 0);
 
-pub struct FCTRLSet(_);
-pub struct RXCTRLDisabled(_);
+pub struct FCTRLSet(bool);
+pub struct RXCTRLDisabled(bool);
 
 impl IntelIxgbeRegisters2 {
     // Any function that writes to rdrxcrtl must make sure these bits are set
@@ -301,7 +301,7 @@ impl IntelIxgbeRegisters2 {
     pub fn rxctrl_rx_disable(&mut self) -> RXCTRLDisabled {
         let val = self.rxctrl.read();
         self.rxctrl.write(val & !RECEIVE_ENABLE); 
-        RXCTRLDisabled(_)
+        RXCTRLDisabled(true)
     }
 
     pub fn fcrtl_clear(&mut self) {
@@ -344,7 +344,7 @@ impl IntelIxgbeRegisters2 {
     // Resolves DPDK Bug 21
     pub fn fctrl_write(&mut self, val: FilterCtrlFlags, rx_disabled: RXCTRLDisabled) -> FCTRLSet {
         self.fctrl.write(val.bits());
-        FCTRLSet(_)
+        FCTRLSet(true)
     }
 
     pub fn rttdcs_set_arbdis(&mut self) {

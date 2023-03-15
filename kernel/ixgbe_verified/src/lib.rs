@@ -5,7 +5,7 @@
 //! When using virtualization, we disable RSS since we use 5-tuple filters to ensure packets are routed to the correct queues.
 //! We also disable interrupts when using virtualization, since we do not yet have support for allowing applications to register their own interrupt handlers.
 
-// #![no_std]
+#![no_std]
 #![allow(dead_code)] //  to suppress warnings for unused functions/methods
 #![allow(unaligned_references)] // temporary, just to suppress unsafe packed borrows 
 #![allow(incomplete_features)] // to allow adt_const_params without a warning
