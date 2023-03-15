@@ -5,7 +5,7 @@
 //! When using virtualization, we disable RSS since we use 5-tuple filters to ensure packets are routed to the correct queues.
 //! We also disable interrupts when using virtualization, since we do not yet have support for allowing applications to register their own interrupt handlers.
 
-#![no_std]
+// #![no_std]
 #![allow(dead_code)] //  to suppress warnings for unused functions/methods
 #![allow(unaligned_references)] // temporary, just to suppress unsafe packed borrows 
 #![allow(incomplete_features)] // to allow adt_const_params without a warning
@@ -48,6 +48,8 @@ extern crate hpet;
 extern crate zerocopy;
 extern crate mapped_pages_fragments;
 extern crate packet_buffers;
+extern crate num_enum;
+#[macro_use] extern crate bitflags;
 
 pub mod rx_queue;
 pub mod tx_queue;
@@ -76,6 +78,7 @@ use bit_field::BitField;
 use hpet::get_hpet;
 use rand::{SeedableRng, RngCore};
 use core::ops::{Deref};
+use core::convert::{TryInto, TryFrom};
 
 /// Vendor ID for Intel
 pub const INTEL_VEND:                   u16 = 0x8086;  
@@ -456,15 +459,15 @@ impl IxgbeNic {
     /// Reads the actual MAC address burned into the NIC hardware.
     fn read_mac_address_from_nic(regs: &IntelIxgbeMacRegisters) -> [u8; 6] {
         let mac_32_low = regs.ral.read();
-        let mac_32_high = regs.rah.read();
+        let mac_16_high = regs.rah();
 
         let mut mac_addr = [0; 6]; 
         mac_addr[0] =  mac_32_low as u8;
         mac_addr[1] = (mac_32_low >> 8) as u8;
         mac_addr[2] = (mac_32_low >> 16) as u8;
         mac_addr[3] = (mac_32_low >> 24) as u8;
-        mac_addr[4] =  mac_32_high as u8;
-        mac_addr[5] = (mac_32_high >> 8) as u8;
+        mac_addr[4] =  mac_16_high as u8;
+        mac_addr[5] = (mac_16_high >> 8) as u8;
 
         debug!("Ixgbe: read hardware MAC address: {:02x?}", mac_addr);
         mac_addr
@@ -506,15 +509,10 @@ impl IxgbeNic {
 
         //read MAC address
         debug!("Ixgbe: MAC address low: {:#X}", regs_mac.ral.read());
-        debug!("Ixgbe: MAC address high: {:#X}", regs_mac.rah.read() & 0xFFFF);
+        debug!("Ixgbe: MAC address high: {:#X}", regs_mac.rah());
 
         //wait for dma initialization done (RDRXCTL.DMAIDONE)
-        // TODO: can move to a function
-        let mut val = regs2.rdrxctl_read();
-        let dmaidone_bit = 1 << 3;
-        while val & dmaidone_bit != dmaidone_bit {
-            val = regs2.rdrxctl_read();
-        }
+        while !regs2.rdrxctl_dma_init_done() {}
 
         // debug!("STATUS: {:#X}", regs1.status.read()); 
         // debug!("CTRL: {:#X}", regs1.ctrl.read());
@@ -523,11 +521,6 @@ impl IxgbeNic {
         // debug!("AUTOC2: {:#X}", regs2.autoc2.read()); 
 
         Ok(())
-    }
-
-    /// Returns value of (links, links2) registers
-    pub fn link_status(&self) -> (u32, u32) {
-        (self.regs2.links.read(), self.regs2.links2.read())
     }
 
     /// Returns link speed in Mb/s
@@ -591,27 +584,26 @@ impl IxgbeNic {
         // program RXPBSIZE according to DCB and virtualization modes (both off)
         // regs.rxpbsize_set_buffer_size(0, RXPBSIZE_128KB)?;
         for i in 1..8 {
-            regs.rxpbsize_set_buffer_size(i, 0)?;
+            regs.rxpbsize_reg1_7_set_buffer_size(
+                RxPBReg::try_from(i).map_err(|_| "incorrect register ID for RxPBSize")?,
+                RxPBSizeReg1_7::Size0KiB 
+            );
         }
         //CRC offloading
         regs.hlreg0_crc_strip();
         regs.rdrxctl_crc_strip();
         
         // Clear bits
-        regs.rdrxctl.write(regs.rdrxctl.read() & !RDRXCTL_RSCFRSTSIZE);
+        regs.rdrxctl_clear_rsc_frst_size_bits();
         
         let mut rx_all_queues = Vec::new();
 
         for rxq_reg in rx_regs {      
             let mut rxq = RxQueueE::new(rxq_reg, num_rx_descs, None)?;
 
-            // set the size of the packet buffers and the descriptor format used
-            let mut val = rxq.regs.srrctl_read();
-            // val.set_bits(0..4, DEFAULT_RX_BUFFER_SIZE_2KB as u32);
-            // val.set_bits(8..13, BSIZEHEADER_0B);
-            val.set_bits(25..27, DESCTYPE_ADV_1BUFFER);
-            val = val | DROP_ENABLE;
-            rxq.regs.srrctl_write(val)?;
+            // set the size of the packet buffers(leave default value) and the descriptor format used
+            rxq.regs.srrctl_write(DescType::AdvDesc1Buf);
+            rxq.regs.srrctl_drop_enable();
 
             // enable the rx queue
             rxq.regs.rxdctl_rxq_enable();
@@ -620,13 +612,12 @@ impl IxgbeNic {
             while rxq.regs.rxdctl_read() & RX_Q_ENABLE == 0 {}
         
             // set bit 12 to 0
-            let val = rxq.regs.dca_rxctrl_read();
-            rxq.regs.dca_rxctrl_write(val & !DCA_RXCTRL_CLEAR_BIT_12)?;
+            rxq.regs.dca_rxctrl_clear_bit_12();
 
             // Write the tail index.
             // Note that the 82599 datasheet (section 8.2.3.8.5) states that we should set the RDT (tail index) to the index *beyond* the last receive descriptor, 
             // but we set it to the last receive descriptor for the same reason as the e1000 driver
-            rxq.regs.rdt.write(num_rx_descs as u32 - 1);
+            rxq.regs.rdt_write(num_rx_descs as u16 - 1);
             
             rx_all_queues.push(rxq);
         }
@@ -644,7 +635,7 @@ impl IxgbeNic {
     fn enable_rx_function(regs1: &mut IntelIxgbeRegisters1,regs: &mut IntelIxgbeRegisters2) -> Result<(), &'static str> {
         // set rx parameters of which type of packets are accepted by the nic
         // right now we allow the nic to receive all types of packets, even incorrectly formed ones
-        regs.fctrl_write(STORE_BAD_PACKETS | MULTICAST_PROMISCUOUS_ENABLE | UNICAST_PROMISCUOUS_ENABLE | BROADCAST_ACCEPT_MODE)?; 
+        regs.fctrl_write(FilterCtrlFlags::STORE_BAD_PACKETS | FilterCtrlFlags::MULTICAST_PROMISCUOUS_ENABLE | FilterCtrlFlags::UNICAST_PROMISCUOUS_ENABLE | FilterCtrlFlags::BROADCAST_ACCEPT_MODE); 
 
         regs1.ctrl_ext_no_snoop_disable();
 
@@ -675,11 +666,17 @@ impl IxgbeNic {
 
 
         // program DTXMXSZRQ and TXPBSIZE according to DCB and virtualization modes (both off)
-        regs_mac.txpbsize_write(0, TXPBSIZE_160KB)?;
+        regs_mac.txpbsize_write(
+            TxPBReg::R0, 
+            TxPBSize::Size160KiB
+        );
         for i in 1..8 {
-            regs_mac.txpbsize_write(i, 0)?;
+            regs_mac.txpbsize_write(
+                TxPBReg::try_from(i).map_err(|_| "incorrect reg idx for TXPBSIZE")?, 
+                TxPBSize::Size0KiB
+            );
         }
-        regs_mac.dtxmxszrq_write(DTXMXSZRQ_MAX_BYTES)?; 
+        regs_mac.dtxmxszrq_allow_max_byte_requests(); 
 
         // Clear RTTFCS.ARBDIS
         regs.rttdcs_clear_arbdis();
@@ -693,9 +690,16 @@ impl IxgbeNic {
             let mut txq = TxQueueE::new(txq_reg, num_tx_descs, None)?;
         
             // Set descriptor thresholds
-            // If we enable this then we need to change the packet send function to stop polling
-            // for a descriptor done on every packet sent
-            txq.regs.txdctl.write(TXDCTL_PTHRESH | TXDCTL_HTHRESH | TXDCTL_WTHRESH); 
+            // If we enable this then we need to change the packet send function to stop polling for a descriptor done on every packet sent
+            
+            // Tx descriptor pre-fetch threshold (value taken from DPDK)
+            let pthresh = U7::B5 | U7::B2; // b100100 = 36
+            // Tx descriptor host threshold (value taken from DPDK)
+            let hthresh = U7::B3; // b1000 = 8  
+            // Tx descriptor write-back threshold (value taken from DPDK)
+            let wthresh = U7::B2; // b100 = 4 
+            
+            txq.regs.txdctl_write(pthresh, hthresh, wthresh); 
 
             //enable tx queue
             txq.regs.txdctl_txq_enable(); 
@@ -756,13 +760,14 @@ impl IxgbeNic {
         Ok(queues_for_rss)
     }
 
-    pub fn enable_rss(&mut self, reta: [[QueueID; 4]; 32]) -> Result<(), &'static str> {
+    // check 8.2.3.7.12: I think only 16 queues can be used for RSS
+    pub fn enable_rss(&mut self, rss_field_flags: RSSFieldFlags, reta: [[QueueID; 4]; 32]) -> Result<(), &'static str> {
         // software reset
         self.software_reset();
         // remove all queues that are in RETA to a separate vec
         let queues_in_reta = Self::extract_rss_queues(&reta, &mut self.rx_queues)?;
         // call enable_rss
-        let rss_queues = Self::enable_rss_internal(&mut self.regs2, &mut self.regs3, reta, queues_in_reta)?;
+        let rss_queues = Self::enable_rss_internal(&mut self.regs2, &mut self.regs3, reta, rss_field_flags, queues_in_reta)?;
         // store RSS queues in the NIC
         self.rx_queues_rss = rss_queues;
 
@@ -780,6 +785,7 @@ impl IxgbeNic {
         regs2: &mut IntelIxgbeRegisters2, 
         regs3: &mut IntelIxgbeRegisters3,
         redirection_table: [[QueueID; 4];32],
+        rss_field_flags: RSSFieldFlags,
         queues: Vec<RxQueueE>
     ) -> Result<Vec<RxQueueRSS>, &'static str> {
         // enable RSS writeback in the header field of the receive descriptor
@@ -787,7 +793,7 @@ impl IxgbeNic {
         
         // enable RSS and set fields that will be used by hash function
         // right now we're using the udp port and ipv4 address.
-        regs3.mrqc.write(MRQC_MRQE_RSS | MRQC_UDPIPV4 ); 
+        regs3.mrqc_enable_rss(rss_field_flags); 
 
         //set the random keys for the hash function
         let seed = get_hpet().as_ref().ok_or("couldn't get HPET timer")?.get_counter();
@@ -809,14 +815,10 @@ impl IxgbeNic {
         //     qid = (qid + 1) % IXGBE_NUM_RX_QUEUES_ENABLED as u32;
         // }
 
-        for (idx, reta) in regs3.reta.iter_mut().enumerate() {
+        for idx in 0..32 { // TODO: iterate over the enum
             let queue_ids = &redirection_table[idx];
-            //set 4 entries to the same queue number
-            let val = (queue_ids[0] as u32) << RETA_ENTRY_0_OFFSET 
-                | (queue_ids[1] as u32) << RETA_ENTRY_1_OFFSET 
-                | (queue_ids[2] as u32) << RETA_ENTRY_2_OFFSET 
-                | (queue_ids[3] as u32) << RETA_ENTRY_3_OFFSET;
-            reta.write(val);
+            let reta_reg = RedirectionTableReg::try_from(idx).map_err(|_| "invalid RETA register index")?;
+            regs3.reta_write(reta_reg, queue_ids);
         }
 
         let mut rss_queues = Vec::with_capacity(queues.len());
@@ -848,12 +850,12 @@ impl IxgbeNic {
         dest_ip: Option<[u8;4]>, 
         source_port: Option<u16>, 
         dest_port: Option<u16>, 
-        protocol: Option<FilterProtocol>, 
+        protocol: Option<L5FilterProtocol>, 
         priority: L5FilterPriority, 
         qid: QueueID
     ) -> Result<(), &'static str> {
         let queue = self.find_enabled_queue_with_id(qid).ok_or("Requested queue is not an enabled state")?;
-        let l5_queue = self.set_5_tuple_filter_internal(source_ip, dest_ip, source_port, dest_port, protocol, priority, queue)?;
+        let l5_queue = self.set_5_tuple_filter_internal(source_ip, dest_ip, source_port, dest_port, protocol, priority, queue, qid)?;
         self.rx_queues_filters.push(l5_queue);
         Ok(())
     }
@@ -875,9 +877,10 @@ impl IxgbeNic {
         dest_ip: Option<[u8;4]>, 
         source_port: Option<u16>, 
         dest_port: Option<u16>, 
-        protocol: Option<FilterProtocol>, 
+        protocol: Option<L5FilterProtocol>, 
         priority: L5FilterPriority, 
-        queue: RxQueueE
+        queue: RxQueueE,
+        qid: QueueID
     ) -> Result<RxQueueL5, &'static str> {
 
         if source_ip.is_none() && dest_ip.is_none() && source_port.is_none() && dest_port.is_none() && protocol.is_none() {
@@ -887,55 +890,60 @@ impl IxgbeNic {
         let enabled_filters = &mut self.l34_5_tuple_filters;
 
         // find a free filter
-        let filter_num = enabled_filters.iter().position(|&r| r == false).ok_or("Ixgbe: No filter available")?;
+        let filter_num = L5FilterID::try_from(enabled_filters.iter().position(|&r| r == false).ok_or("Ixgbe: No filter available")?)
+            .map_err(|_| "Invalid filter ID")?;
 
         // start off with the filter mask set for all the filters, and clear bits for filters that are enabled
         // bits 29:25 are set to 1.
-        let mut filter_mask = 0x3E000000;
+        let mut filter_mask = L5FilterMaskFlags::zero();
 
         // IP addresses are written to the registers in big endian form (LSB is first on wire)
         // set the source ip address for the filter
         if let Some (addr) = source_ip {
-            self.regs3.saqf[filter_num].write(((addr[3] as u32) << 24) | ((addr[2] as u32) << 16) | ((addr[1] as u32) << 8) | (addr[0] as u32));
-            filter_mask = filter_mask & !FTQF_SOURCE_ADDRESS_MASK;
-        };
+            self.regs3.saqf[filter_num as usize].write(((addr[3] as u32) << 24) | ((addr[2] as u32) << 16) | ((addr[1] as u32) << 8) | (addr[0] as u32));
+        } else {
+            filter_mask = filter_mask | L5FilterMaskFlags::SOURCE_ADDRESS;
+        }
 
         // set the destination ip address for the filter
         if let Some(addr) = dest_ip {
-            self.regs3.daqf[filter_num].write(((addr[3] as u32) << 24) | ((addr[2] as u32) << 16) | ((addr[1] as u32) << 8) | (addr[0] as u32));
-            filter_mask = filter_mask & !FTQF_DEST_ADDRESS_MASK;
-        };        
+            self.regs3.daqf[filter_num as usize].write(((addr[3] as u32) << 24) | ((addr[2] as u32) << 16) | ((addr[1] as u32) << 8) | (addr[0] as u32));
+        } else {
+            filter_mask = filter_mask | L5FilterMaskFlags::DESTINATION_ADDRESS;
+        }        
 
         // set the source port for the filter    
         if let Some(port) = source_port {
-            self.regs3.sdpqf[filter_num].write((port as u32) << SPDQF_SOURCE_SHIFT);
-            filter_mask = filter_mask & !FTQF_SOURCE_PORT_MASK;
-        };   
+            self.regs3.sdpqf[filter_num as usize].write((port as u32) << SPDQF_SOURCE_SHIFT);
+        } else {
+            filter_mask = filter_mask | L5FilterMaskFlags::SOURCE_PORT;
+        }   
 
         // set the destination port for the filter    
         if let Some(port) = dest_port {
-            let port_val = self.regs3.sdpqf[filter_num].read();
-            self.regs3.sdpqf[filter_num].write(port_val | (port as u32) << SPDQF_DEST_SHIFT);
-            filter_mask = filter_mask & !FTQF_DEST_PORT_MASK;
-        };
+            let port_val = self.regs3.sdpqf[filter_num as usize].read();
+            self.regs3.sdpqf[filter_num as usize].write(port_val | (port as u32) << SPDQF_DEST_SHIFT);
+        } else {
+            filter_mask = filter_mask | L5FilterMaskFlags::DESTINATION_PORT;
+        }
 
         // set the filter protocol
-        let mut filter_protocol = FilterProtocol::Other;
-        if let Some(protocol) = protocol {
-            filter_protocol = protocol;
-            filter_mask = filter_mask & !FTQF_PROTOCOL_MASK;
-        };
+        let mut filter_protocol = L5FilterProtocol::Other;
+        if let Some(p) = protocol {
+            filter_protocol = p;
+        } else {
+            filter_mask = filter_mask | L5FilterMaskFlags::PROTOCOL;
+        }
 
         // write the parameters of the filter
-        let filter_priority = (priority as u32 & FTQF_PRIORITY) << FTQF_PRIORITY_SHIFT;
-        self.regs3.ftqf[filter_num].write(filter_protocol as u32 | filter_priority | filter_mask | FTQF_Q_ENABLE);
+        self.regs3.ftqf_set_filter_and_enable(filter_num, priority, filter_protocol, filter_mask);
 
         //set the rx queue that the packets for this filter should be sent to
-        self.regs3.l34timir[filter_num].write(L34TIMIR_BYPASS_SIZE_CHECK | L34TIMIR_RESERVED | ((queue.id as u32) << L34TIMIR_RX_Q_SHIFT));
+        self.regs3.l34timir_write(filter_num, qid);
 
         //mark the filter as used
-        enabled_filters[filter_num] = true;
-        Ok(queue.l5_filter(filter_num as u8))
+        enabled_filters[filter_num as usize] = true;
+        Ok(queue.l5_filter(filter_num))
     }
 
     /// Disables the the L3/L4 5-tuple filter for the given filter number
@@ -944,18 +952,18 @@ impl IxgbeNic {
         let queue = self.rx_queues_filters.iter().position(|x| x.id == qid as u8)
             .and_then(|idx| Some(self.rx_queues_filters.remove(idx)))
             .ok_or("requested qid is not in the list of L5 queues")?;
-        let enabled_queue = self.disable_5_tuple_filter_internal(queue)?; 
+        let enabled_queue = self.disable_5_tuple_filter_internal(queue, qid)?; 
         self.rx_queues.push(enabled_queue);
         Ok(())
     }
 
     /// Disables the the L3/L4 5-tuple filter for the given filter number
     /// but keeps the values stored in the filter registers.
-    fn disable_5_tuple_filter_internal(&mut self, queue: RxQueueL5) -> Result<RxQueueE, &'static str> {
+    fn disable_5_tuple_filter_internal(&mut self, queue: RxQueueL5, qid: QueueID) -> Result<RxQueueE, &'static str> {
         let filter_num = queue.filter_num.ok_or("filter num not availble for an L5 queue, this is a logical error!")?;
+
         // disables filter by setting enable bit to 0
-        let val = self.regs3.ftqf[filter_num as usize].read();
-        self.regs3.ftqf[filter_num as usize].write(val | !FTQF_Q_ENABLE);
+        self.regs3.ftqf_disable_filter(filter_num);
 
         // sets the record in the nic struct to false
         self.l34_5_tuple_filters[filter_num as usize] = false;
@@ -995,40 +1003,12 @@ impl IxgbeNic {
 }
 
 
-
 #[derive(Default, Debug)]
 pub struct IxgbeStats{
     pub rx_bytes: u64,
     pub tx_bytes: u64,
     pub rx_packets: u32,
     pub tx_packets: u32,
-}
-
-/// The list of valid Queues that can be used in the 82599 (0,64]
-#[repr(u8)]
-#[derive(PartialEq, Eq, Clone, Copy)]
-pub enum QueueID {
-    Q0,Q1,Q2,Q3,Q4,Q5,Q6,Q7,Q8,Q9,
-    Q10,Q11,Q12,Q13,Q14,Q15,Q16,Q17,Q18,Q19,
-    Q20,Q21,Q22,Q23,Q24,Q25,Q26,Q27,Q28,Q29,
-    Q30,Q31,Q32,Q33,Q34,Q35,Q36,Q37,Q38,Q39,
-    Q40,Q41,Q42,Q43,Q44,Q45,Q46,Q47,Q48,Q49,
-    Q50,Q51,Q52,Q53,Q54,Q55,Q56,Q57,Q58,Q59,
-    Q60,Q61,Q62,Q63,Q64
-}
-
-/// The list of valid filter priority levels that can be used for the L5 filters. They range from (0,7).
-#[repr(u8)]
-#[derive(PartialEq, Eq, Clone, Copy)]
-pub enum L5FilterPriority {
-    P0,
-    P1,
-    P2,
-    P3,
-    P4,
-    P5,
-    P6,
-    P7
 }
 
 // /// A helper function to poll the nic receive queues (only for testing purposes).

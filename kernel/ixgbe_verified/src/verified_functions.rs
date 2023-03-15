@@ -101,7 +101,7 @@ pub fn rx_batch(
         // *rx_cur_stored = rx_cur as u16;
     if rcvd_pkts != 0 {
         *rx_cur_stored = rx_cur_total % num_rx_descs;
-        regs.rdt.write(last_rx_cur as u32); 
+        regs.rdt_write(last_rx_cur); 
     }
 
 
@@ -200,7 +200,7 @@ fn tx_batch(
 
     // *tx_cur_stored = tx_cur;
     *tx_cur_stored = tx_cur_total % num_tx_descs;
-    regs.tdt.write(tx_cur as u32);
+    regs.tdt_write(tx_cur);
 
     Ok((pkts_sent, pkts_removed))
 }

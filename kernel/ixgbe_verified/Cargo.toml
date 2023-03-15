@@ -14,6 +14,7 @@ static_assertions = "1.1.0"
 mpmc = "0.1.6"
 prusti-contracts = "^0.1"
 cfg-if = "1.0.0"
+bitflags = "1.0.4"
 
 [dependencies.log]
 default-features = false
@@ -53,6 +54,10 @@ path = "../mapped_pages_fragments"
 
 [dependencies.packet_buffers]
 path = "../packet_buffers"
+
+[dependencies.num_enum]
+version = "0.5.2"
+default-features = false
 
 [lib]
 crate-type = ["rlib"] # "lib" does the same thing I think

@@ -47,11 +47,11 @@ impl TxQueue<{TxState::Enabled}> {
         regs.tdbah.write((paddr.value() >> 32) as u32); 
 
         // write the length (in total bytes) of the tx descs array
-        regs.tdlen.write((num_tx_descs * core::mem::size_of::<AdvancedTxDescriptor>()) as u32);               
+        regs.tdlen_write(num_desc);               
         
         // write the head index and the tail index (both 0 initially because there are no tx requests yet)
-        regs.tdh.write(0);
-        regs.tdt.write(0);
+        regs.tdh_write(0);
+        regs.tdt_write(0);
 
         Ok(TxQueue { id: regs.id() as u8, regs, tx_descs, num_tx_descs: num_tx_descs as u16, tx_cur: 0, tx_bufs_in_use: VecDeque::with_capacity(num_tx_descs), tx_clean: 0, cpu_id })
     }
@@ -89,7 +89,7 @@ impl TxQueue<{TxState::Enabled}> {
 
 
         self.tx_cur = tx_cur;
-        self.regs.tdt.write(tx_cur as u32);
+        self.regs.tdt_write(tx_cur);
 
         Ok(pkts_sent)
     }
@@ -225,7 +225,7 @@ fn tx_batch(
 
 
     *tx_cur_stored = tx_cur;
-    regs.tdt.write(tx_cur as u32);
+    regs.tdt_write(tx_cur);
 
     Ok(pkts_sent)
 }
@@ -321,7 +321,7 @@ impl TxQueue<{TxState::Enabled}> {
         }
 
         self.tx_cur = tx_cur;
-        self.regs.tdt.write(tx_cur as u32);
+        self.regs.tdt_write(tx_cur);
 
         pkts_sent
     }

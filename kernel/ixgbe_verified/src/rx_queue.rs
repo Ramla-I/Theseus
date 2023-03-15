@@ -1,5 +1,5 @@
 use memory::{MappedPages};
-use crate::{hal::descriptors::AdvancedRxDescriptor, packet_buffers::{MTU, PacketBufferS}, RxBufferSizeKiB, DEFAULT_RX_BUFFER_SIZE_2KB};
+use crate::{hal::descriptors::AdvancedRxDescriptor, packet_buffers::{MTU, PacketBufferS}, RxBufferSizeKiB, DEFAULT_RX_BUFFER_SIZE_2KB, L5FilterID};
 use crate::vec_wrapper::VecWrapper;
 use crate::queue_registers::RxQueueRegisters;
 use crate::NumDesc;
@@ -37,7 +37,7 @@ pub struct RxQueue<const S: RxState> {
     /// This in itself doesn't guarantee anything, but we use this value when setting the cpu id for interrupts and DCA.
     pub cpu_id: Option<u8>,
     /// The filter id for the physical NIC filter that is set for this queue
-    pub filter_num: Option<u8>
+    pub filter_num: Option<L5FilterID>
 }
 
 
@@ -72,11 +72,11 @@ impl RxQueue<{RxState::Enabled}> {
         regs.rdbah.write(rx_desc_phys_addr_higher);
 
         // write the length (in total bytes) of the rx descs array
-        regs.rdlen.write((num_rx_descs * core::mem::size_of::<AdvancedRxDescriptor>()) as u32); // should be 128 byte aligned, minimum 8 descriptors
+        regs.rdlen_write(num_desc); // should be 128 byte aligned, minimum 8 descriptors
         
         // Write the head index (the first receive descriptor)
-        regs.rdh.write(0);
-        regs.rdt.write(0);   
+        regs.rdh_write(0);
+        regs.rdt_write(0);   
 
         Ok(RxQueue { 
             id: regs.id() as u8, 
@@ -187,7 +187,7 @@ impl RxQueue<{RxState::Enabled}> {
 
     /// This function personally doesn't change anything about the queue except its state, since all steps to 
     /// start L5 filter have to be done at the device level and not at the queue level.
-    pub(crate) fn l5_filter(self, filter_num: u8) -> RxQueue<{RxState::L5Filter}> {
+    pub(crate) fn l5_filter(self, filter_num: L5FilterID) -> RxQueue<{RxState::L5Filter}> {
         RxQueue {
             id: self.id,
             regs: self.regs,
@@ -353,7 +353,7 @@ impl RxQueue<{RxState::Enabled}> {
 
         if last_rx_cur != rx_cur {
             self.rx_cur = rx_cur as u16;
-            self.regs.rdt.write(last_rx_cur as u32); 
+            self.regs.rdt_write(last_rx_cur as u16); 
         }
 
         rcvd_pkts

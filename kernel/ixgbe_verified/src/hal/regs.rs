@@ -17,6 +17,8 @@
 //! This simply indicates that the extra functions are currently not used in the driver, 
 //! and so we haven't implemented the necessary checks for safe access.
 
+use prusti_contracts::trusted;
+
 cfg_if::cfg_if! {
 if #[cfg(prusti)] { // We used a a spec for the volatile crate during verification
 
@@ -27,7 +29,11 @@ use crate::spec::volatile_spec::*;
 use volatile::{Volatile, ReadOnly, WriteOnly};
 use zerocopy::FromBytes;
 use bit_field::BitField;
-
+use num_enum::TryFromPrimitive;
+use crate::hal::{
+    descriptors::{AdvancedRxDescriptor, AdvancedTxDescriptor},
+    *
+};
 
 /// The layout in memory of the first set of general registers of the 82599 device.
 #[derive(FromBytes)]
@@ -50,7 +56,7 @@ pub struct IntelIxgbeRegisters1 {
     _padding3:                          [u8; 2004],             // 0x2C - 0x7FF
 
     /// Extended Interrupt Cause Register
-    pub eicr:                           Volatile<u32>,          // 0x800
+    eicr:                           Volatile<u32>,          // 0x800
     _padding4:                          [u8; 4],                // 0x804 - 0x807
 
     /// Extended Interrupt Cause Set Register
@@ -103,51 +109,13 @@ impl IntelIxgbeRegisters1 {
         self.ctrl_ext.write(self.ctrl_ext.read() | CTRL_EXT_NO_SNOOP_DIS);
     }
 
-    pub fn ivar_read(&mut self, reg_idx: usize) -> u32 {
-        self.ivar[reg_idx].read()
-    }
-
-    pub fn ivar_write(&mut self, reg_idx: usize, val: u32) -> Result<(), &'static str> {
-        let write_mask = 0xBFBF_BFBF;
-        const NUM_IVAR_REGS: usize = 64;
-
-        if (val & !write_mask != 0) || (reg_idx >= NUM_IVAR_REGS) {
-            Err("failed to write to ivar reg")
-        } else {
-            self.ivar[reg_idx].write(val);
-            Ok(())
-        }
-    }
-
     pub fn gpie_enable_immediate_int_and_multiple_msix(&mut self) {
         let val = self.gpie.read();
         self.gpie.write(val | GPIE_EIMEN | GPIE_MULTIPLE_MSIX | GPIE_PBA_SUPPORT); 
     }
 
-    pub fn eims_write(&mut self, val: u32) -> Result<(), &'static str> {
-        let write_mask = 0x7FFF_FFFF;
-        if val & !write_mask != 0 {
-            Err("invalid write to EIMS")
-        } else {
-            self.eims.write(val);
-            Ok(())
-        }
-    }
-
     pub fn eiac_enable_rtxq_autoclear(&mut self) {
         self.eiac.write(EIAC_RTXQ_AUTO_CLEAR);
-    }
-
-    pub fn eitr_set_interval(&mut self, reg_idx: usize, val: u32) -> Result<(), &'static str> {
-        const NUM_EITR_REGS: usize = 24;
-        let itr_interval_mask = 0x1FF; // only uses 9 bits
-
-        if (val & !itr_interval_mask != 0) || (reg_idx >= NUM_EITR_REGS) {
-            Err("failed to write to eitr reg")
-        } else {
-            self.eitr[reg_idx].write(val << EITR_ITR_INTERVAL_SHIFT);
-            Ok(())
-        }
     }
 }
 
@@ -169,7 +137,7 @@ pub struct IntelIxgbeRegisters2 {
     _padding1:                          [u8; 3840],             // 0x2000 - 0x2EFF
     
     /// Receive DMA Control Register
-    pub rdrxctl:                            Volatile<u32>,          // 0x2F00;
+    rdrxctl:                            Volatile<u32>,          // 0x2F00;
     _padding2:                          [u8; 252],              // 0x2F04 - 0x2FFF
 
     /// Receive Control Register
@@ -201,24 +169,24 @@ pub struct IntelIxgbeRegisters2 {
     _padding9:                          [u8; 880],              // 0x3D04 - 0x4073
 
     /// Good Packets Received Count
-    pub gprc:                           Volatile<u32>,          // 0x4074
+    pub gprc:                           ReadOnly<u32>,          // 0x4074
     _padding10:                         [u8; 8],                // 0x4078 - 0x407F
 
     /// Good Packets Transmitted Count
-    pub gptc:                           Volatile<u32>,          // 0x4080
+    pub gptc:                           ReadOnly<u32>,          // 0x4080
     _padding11:                         [u8; 4],                // 0x4084 - 0x4087 
 
     /// Good Octets Received Count Low
-    pub gorcl:                          Volatile<u32>,          // 0x4088
+    pub gorcl:                          ReadOnly<u32>,          // 0x4088
 
     /// Good Octets Received Count High
-    pub gorch:                          Volatile<u32>,          // 0x408C
+    pub gorch:                          ReadOnly<u32>,          // 0x408C
     
     /// Good Octets Transmitted Count Low
-    pub gotcl:                          Volatile<u32>,          // 0x4090
+    pub gotcl:                          ReadOnly<u32>,          // 0x4090
 
     /// Good Octets Transmitted Count High
-    pub gotch:                          Volatile<u32>,          // 0x4094
+    pub gotch:                          ReadOnly<u32>,          // 0x4094
     _padding12:                         [u8; 424],              // 0x4098 - 0x423F
 
     /// MAC Core Control 0 Register 
@@ -226,17 +194,17 @@ pub struct IntelIxgbeRegisters2 {
     _padding13:                         [u8; 92],               // 0x4244 - 0x429F
 
     /// Auto-Negotiation Control Register
-    pub autoc:                          Volatile<u32>,          // 0x42A0;
+    autoc:                              Volatile<u32>,          // 0x42A0;
 
     /// Link Status Register
-    pub links:                          Volatile<u32>,          // 0x42A4;
+    pub links:                          ReadOnly<u32>,          // 0x42A4;
 
     /// Auto-Negotiation Control 2 Register    
     autoc2:                             Volatile<u32>,          // 0x42A8;
     _padding14:                         [u8; 120],              // 0x42AC - 0x4323
 
     /// Link Status Register 2
-    pub links2:                         Volatile<u32>,          // 0x4324
+    links2:                             ReadOnly<u32>,          // 0x4324
     _padding15:                         [u8; 1496],             // 0x4328 - 0x48FF
 
     /// DCB Transmit Descriptor Plane Control and Status
@@ -269,6 +237,39 @@ pub struct IntelIxgbeRegisters2 {
 
 const_assert_eq!(core::mem::size_of::<IntelIxgbeRegisters2>(), 4 * 4096);
 
+pub enum RxPBSizeReg0 {
+    /// For DCB and VT disabled, set RXPBSIZE.SIZE to 512KB
+    Size512KiB = 0x200,
+}
+
+pub enum RxPBSizeReg1_7 {
+    Size0KiB = 0,
+}
+
+#[derive(Debug, TryFromPrimitive)]
+#[repr(u32)]
+pub enum RxPBReg {
+    R1 = 1,
+    R2 = 2,
+    R3 = 3,
+    R4 = 4,
+    R5 = 5,
+    R6 = 6,
+    R7 = 7,
+}
+
+bitflags! {
+    pub struct FilterCtrlFlags: u32 {
+        const STORE_BAD_PACKETS                 = 1 << 1;
+        const MULTICAST_PROMISCUOUS_ENABLE      = 1 << 8;
+        const UNICAST_PROMISCUOUS_ENABLE        = 1 << 9;
+        const BROADCAST_ACCEPT_MODE             = 1 << 10;
+    }
+}
+
+// Ensure that we never expose reserved bits 0, [7:2], [31:11] as part of the `FilterCtrlFlags` interface.
+const_assert_eq!(FilterCtrlFlags::all().bits() & 0xFFFF_F8FD, 0);
+
 impl IntelIxgbeRegisters2 {
     pub fn rdrxctl_read(&self) -> u32 {
         self.rdrxctl.read()
@@ -277,6 +278,15 @@ impl IntelIxgbeRegisters2 {
     pub fn rdrxctl_crc_strip(&mut self) {
         let init_val = 0x0600_8800;
         self.rdrxctl.write(init_val | RDRXCTL_CRC_STRIP);
+    }
+
+    pub fn rdrxctl_clear_rsc_frst_size_bits(&mut self) {
+        self.rdrxctl.write(self.rdrxctl.read() & !RDRXCTL_RSCFRSTSIZE);
+    }
+
+    pub fn rdrxctl_dma_init_done(&self) -> bool {
+        const DMAIDONE_BIT: u32 = 1 << 3;
+        self.rdrxctl.read() & DMAIDONE_BIT == DMAIDONE_BIT
     }
 
     pub fn rxctrl_rx_enable(&mut self) {
@@ -309,14 +319,13 @@ impl IntelIxgbeRegisters2 {
         self.fccfg.write(0);
     }
 
-    pub fn rxpbsize_set_buffer_size(&mut self, reg_idx: usize, size: u32) -> Result<(), &'static str> {
-        let size_mask = 0x3FF; // 10 bits
-        if size & !size_mask != 0 {
-            Err("invalid write to rxpbsize")
-        } else {
-            self.rxpbsize[reg_idx].write(size << 10);
-            Ok(())
-        }
+    // separate function because it can never be set to 0
+    pub fn rxpbsize_reg0_set_buffer_size(&mut self, size: RxPBSizeReg0) {
+        self.rxpbsize[0].write((size as u32) << 10);
+    }
+
+    pub fn rxpbsize_reg1_7_set_buffer_size(&mut self, reg_idx: RxPBReg, size: RxPBSizeReg1_7) {
+        self.rxpbsize[reg_idx as usize].write((size as u32) << 10);
     }
 
     pub fn hlreg0_crc_strip(&mut self) {
@@ -335,26 +344,12 @@ impl IntelIxgbeRegisters2 {
         self.autoc2.read()
     }
 
-    //TODO: can prob make this a more streamlined function
-    pub fn autoc2_write(&mut self, val: u32) -> Result<(), &'static str> {
-        let write_mask = 0x5007_0000;
-        if val & !write_mask != 0 {
-            Err("invalid write to AUTOC2")
-        } else {
-            self.autoc2.write(val);
-            Ok(())
-        }
-    }
-
-    // TODO: check rxctrl.rxen set to 0
-    pub fn fctrl_write(&mut self, val: u32) -> Result<(), &'static str> {
-        let write_mask = 0x0000_0702;
-        if val & !write_mask != 0 {
-            Err("invalid write to FCTRL")
-        } else {
-            self.fctrl.write(val);
-            Ok(())
-        }
+    // DPDK Bug 21
+    pub fn fctrl_write(&mut self, val: FilterCtrlFlags) {
+        // if self.rxctrl.read().get_bit(0) {
+        //     return Err("RCTRL.RXEN should be set to 0 before updating FCTRL");
+        // }
+        self.fctrl.write(val.bits());
     }
 
     pub fn rttdcs_set_arbdis(&mut self) {
@@ -401,7 +396,7 @@ pub struct IntelIxgbeMacRegisters {
     pub ral:                            ReadOnly<u32>,          // 0xA200;
     
     /// Receive Address High
-    pub rah:                            ReadOnly<u32>,          // 0xA204;
+    rah:                                ReadOnly<u32>,          // 0xA204;
     _padding3:                          [u8; 10744],            // 0xA208 - 0xCBFF
 
     /// Transmit Packet Buffer Size
@@ -411,27 +406,37 @@ pub struct IntelIxgbeMacRegisters {
 
 const_assert_eq!(core::mem::size_of::<IntelIxgbeMacRegisters>(), 5 * 4096);
 
+pub enum TxPBSize {
+    Size0KiB = 0,
+    /// For DCB and VT disabled, set TXPBSIZE.SIZE to 160KB
+    Size160KiB = 0xA0,
+}
+
+#[derive(Debug, TryFromPrimitive)]
+#[repr(u32)]
+pub enum TxPBReg {
+    R0 = 0,
+    R1 = 1,
+    R2 = 2,
+    R3 = 3,
+    R4 = 4,
+    R5 = 5,
+    R6 = 6,
+    R7 = 7,
+}
+
 impl IntelIxgbeMacRegisters {
-    pub fn dtxmxszrq_write(&mut self, val: u32) -> Result<(), &'static str> {
-        let write_mask = 0x0000_0FFF;
-        if val & !write_mask != 0 {
-            Err("invalid write to DTXMXSZRQ")
-        } else {
-            self.dtxmxszrq.write(val);
-            Ok(())
-        }
+    pub fn rah(&self) -> u16 {
+        self.rah.read() as u16
     }
 
-    pub fn txpbsize_write(&mut self, reg_idx: usize, val: u32) -> Result<(), &'static str> {
-        const NUM_TXPBSIZE_REGS: usize = 8;
-        let write_mask = 0x000F_FC00; 
+    pub fn dtxmxszrq_allow_max_byte_requests(&mut self) {
+        const DTXMXSZRQ_MAX_BYTES: u32 = 0xFFF;
+        self.dtxmxszrq.write(DTXMXSZRQ_MAX_BYTES);
+    }
 
-        if (val & !write_mask != 0) || (reg_idx >= NUM_TXPBSIZE_REGS) {
-            Err("failed to write to TXPBSIZE reg")
-        } else {
-            self.txpbsize[reg_idx].write(val);
-            Ok(())
-        }
+    pub fn txpbsize_write(&mut self, reg_idx: TxPBReg, val: TxPBSize) {
+        self.txpbsize[reg_idx as usize].write((val as u32) << 10);
     }
 }
 
@@ -459,15 +464,15 @@ pub struct IntelIxgbeRegisters3 {
     pub sdpqf:                          [Volatile<u32>;128],    // 0xE400 - 0xE5FF
     
     /// Five Tuple Queue Filter
-    pub ftqf:                               [Volatile<u32>;128],    // 0xE600 - 0xE7FF
+    ftqf:                               [Volatile<u32>;128],    // 0xE600 - 0xE7FF
     
     /// L3 L4 Tuples Immediate Interrupt Rx 
-    pub l34timir:                           [Volatile<u32>;128],    // 0xE800 - 0xE9FF
+    l34timir:                           [Volatile<u32>;128],    // 0xE800 - 0xE9FF
 
     _padding1:                          [u8; 256],              // 0xEA00 - 0xEAFF
 
     /// Redirection Table
-    pub reta:                               [Volatile<u32>;32],     // 0xEB00 - 0xEB7F
+    reta:                               [Volatile<u32>;32],     // 0xEB00 - 0xEB7F
 
     /// RSS Random Key Register
     pub rssrk:                          [Volatile<u32>;10],     // 0xEB80 - 0xEBA7
@@ -478,7 +483,7 @@ pub struct IntelIxgbeRegisters3 {
     _padding3:                          [u8; 96],               // 0xEC20 - 0xEC7F
 
     /// Multiple Receive Queues Command Register
-    pub mrqc:                               Volatile<u32>,          // 0xEC80;
+    mrqc:                           Volatile<u32>,          // 0xEC80;
     _padding4:                          [u8; 5004],             // 0xEC84 - 0x1000F
 
     /// EEPROM/ Flash Control Register
@@ -507,97 +512,46 @@ pub struct IntelIxgbeRegisters3 {
 
 const_assert_eq!(core::mem::size_of::<IntelIxgbeRegisters3>(), 18 * 4096);
 
+
+
 impl IntelIxgbeRegisters3 {
-    pub fn ftqf_write(&mut self, reg_idx: usize, val: u32) -> Result<(), &'static str> {
-        const NUM_FTQF_REGS: usize = 128;
-        let write_mask = 0xFFFF_FF1F;
-        if (val & !write_mask != 0) || (reg_idx >= NUM_FTQF_REGS) {
-            Err("failed to write to FTQF reg")
-        } else {
-            self.ftqf[reg_idx].write(val);
-            Ok(())
-        }
+    const FTQF_Q_ENABLE: u32 = 1 << 31;
+
+    pub fn ftqf_set_filter_and_enable(&mut self, filter_num: L5FilterID, priority: L5FilterPriority, protocol: L5FilterProtocol, mask_flags: L5FilterMaskFlags) {
+        self.ftqf[filter_num as usize].write(protocol as u32 | (priority as u32) << 2 | mask_flags.bits() | Self::FTQF_Q_ENABLE);
     }
 
-    pub fn ftqf_disable_filter(&mut self, reg_idx: usize) {
-        let val = self.ftqf[reg_idx].read();
-        self.ftqf[reg_idx].write(val & !FTQF_Q_ENABLE);
+    pub fn ftqf_disable_filter(&mut self, filter_num: L5FilterID) {
+        let val = self.ftqf[filter_num as usize].read();
+        self.ftqf[filter_num as usize].write(val & !Self::FTQF_Q_ENABLE);
     }   
 
-    pub fn l34timir_write(&mut self, reg_idx: usize, val: u32) -> Result<(), &'static str> {
-        const NUM_L34TIMIR_REGS: usize = 128;
-        let write_mask = 0x0FF0_1000;
-        let reserved_val = 0x40 << 13;
-        if (val & !write_mask != 0) || (reg_idx >= NUM_L34TIMIR_REGS) {
-            Err("failed to write to L34TIMIR reg")
-        } else {
-            self.l34timir[reg_idx].write(val | reserved_val);
-            Ok(())
-        }
+    pub fn l34timir_write(&mut self, filter_num: L5FilterID, queue_id: QueueID) {
+        const L34TIMIR_BYPASS_SIZE_CHECK:   u32 = 1 << 12;
+        const L34TIMIR_RESERVED:            u32 = 0x40 << 13;
+        const L34TIMIR_RX_Q_SHIFT:          u32 = 21;
+
+        self.l34timir[filter_num as usize].write(L34TIMIR_BYPASS_SIZE_CHECK | L34TIMIR_RESERVED | ((queue_id as u32) << L34TIMIR_RX_Q_SHIFT));
     }
 
-    pub fn reta_write(&mut self, reg_idx: usize, val: u32) -> Result<(), &'static str> {
-        const NUM_RETA_REGS: usize = 32;
-        let write_mask = 0x0F0F_0F0F;
-        if (val & !write_mask != 0) || (reg_idx >= NUM_RETA_REGS) {
-            Err("failed to write to RETA reg")
-        } else {
-            self.reta[reg_idx].write(val);
-            Ok(())
-        }
+    pub fn reta_write(&mut self, reg_idx: RedirectionTableReg, qid: &[QueueID; 4]) {
+        const RETA_ENTRY_0_OFFSET:          u32 = 0;
+        const RETA_ENTRY_1_OFFSET:          u32 = 8;
+        const RETA_ENTRY_2_OFFSET:          u32 = 16;
+        const RETA_ENTRY_3_OFFSET:          u32 = 24;
+        
+        self.reta[reg_idx as usize].write((qid[0] as u32) << RETA_ENTRY_0_OFFSET | (qid[1] as u32) << RETA_ENTRY_1_OFFSET | (qid[2] as u32) << RETA_ENTRY_2_OFFSET | (qid[3] as u32) << RETA_ENTRY_3_OFFSET);
     }
 
-    pub fn mrqc_write(&mut self, val: u32) -> Result<(), &'static str> {
-        let write_mask = 0xFFFF_000F;
-        if val & !write_mask != 0 {
-            Err("failed to write to MRQC reg")
-        } else {
-            self.mrqc.write(val);
-            Ok(())
-        }
+    /// Currently we only enable basic RSS mode (no virtualization or DCB)
+    pub fn mrqc_enable_rss(&mut self, rss_fields: RSSFieldFlags) {
+        const MRQC_MRQE_RSS: u32 = 1; // set bits 0..3 in MRQC
+
+        self.mrqc.write(MRQC_MRQE_RSS | rss_fields.bits())
     }
 
     pub fn eec_auto_read(&self) -> bool {
         self.eec.read().get_bit(EEC_AUTO_RD as u8)
-    }
-
-    // TODO: make semaphore code intralingual
-    pub fn swsm_read(&self) -> u32 {
-        self.swsm.read()
-    }
-
-    pub fn swsm_smbi_write(&mut self, set: bool) {
-        let mut val = self.swsm.read();
-        self.swsm.write(*val.set_bit(0, set))
-    }
-
-    pub fn swsm_swesmbi_write(&mut self, set: bool) {
-        let mut val = self.swsm.read();
-        self.swsm.write(*val.set_bit(1, set))
-    }
-
-    pub fn sw_fw_sync_write(&mut self, val: u32) -> Result<(), &'static str> {
-        let write_mask = 0x000_03FF;
-        if val & !write_mask != 0 {
-            Err("failed to write to SW_FW_SYNC reg")
-        } else {
-            self.sw_fw_sync.write(val);
-            Ok(())
-        }
-    }
-
-    pub fn sw_fw_sync_read(&self) -> u32 {
-        self.sw_fw_sync.read()
-    }
-
-    pub fn dca_ctrl_write(&mut self, val: u32) -> Result<(), &'static str> {
-        let write_mask = 0x000_001F;
-        if val & !write_mask != 0 {
-            Err("failed to write to DCA_CTRL reg")
-        } else {
-            self.dca_ctrl.write(val);
-            Ok(())
-        }
     }
 }
 
@@ -607,62 +561,6 @@ const_assert_eq!(core::mem::size_of::<IntelIxgbeRegisters1>() + core::mem::size_
     core::mem::size_of::<IntelIxgbeMacRegisters>() + core::mem::size_of::<IntelIxgbeRxRegisters2>() +
     core::mem::size_of::<IntelIxgbeRegisters3>(), 0x20000);
 
-
-const_assert_eq!(core::mem::size_of::<RegistersTx>(), 64);
-
-// TODO: can probably hvave access functions for remaining regsiters
-impl RegistersTx {
-    pub fn txdctl_read(&self) -> u32 {
-        self.txdctl.read()
-    }
-
-    pub fn txdctl_txq_enable(&mut self) {
-        let val = self.txdctl.read();
-        self.txdctl.write(val | TX_Q_ENABLE); 
-    }
-}
-
-const_assert_eq!(core::mem::size_of::<RegistersRx>(), 64);
-
-impl RegistersRx {
-    pub fn dca_rxctrl_read(&self) -> u32 {
-        self.dca_rxctrl.read()
-    }
-
-    pub fn dca_rxctrl_write(&mut self, val: u32) -> Result<(), &'static str> {
-        let write_mask = 0xFF00_A2E0;
-        if val & !write_mask != 0 {
-            Err("failed to write to DCA_RXCTRL reg")
-        } else {
-            self.dca_rxctrl.write(val);
-            Ok(())
-        }
-    }
-    
-    pub fn srrctl_read(&self) -> u32 {
-        self.srrctl.read()
-    }
-
-    //TODO: can implement more checks
-    pub fn srrctl_write(&mut self, val: u32) -> Result<(), &'static str> {
-        let write_mask = 0x1FC0_3F1F;
-        if val & !write_mask != 0 {
-            Err("failed to write to SRRCTL reg")
-        } else {
-            self.srrctl.write(val);
-            Ok(())
-        }
-    }
-
-    pub fn rxdctl_read(&self) -> u32 {
-        self.rxdctl.read()
-    }
-
-    pub fn rxdctl_rxq_enable(&mut self) {
-        let val = self.rxdctl.read();
-        self.rxdctl.write(val | RX_Q_ENABLE); 
-    }
-}
 
 /// Offset where the RDT register starts for the first 64 rx queues
 pub const RDT_1:                        usize = 0x1018;
@@ -725,41 +623,30 @@ pub const RDRXCTL_RSCFRSTSIZE:          u32 = 0x1F << 17;
 pub const RTTDCS_ARBDIS:                u32 = 1 << 6;
 
 /// For DCB and VT disabled, set TXPBSIZE.SIZE to 160KB
-pub const TXPBSIZE_160KB:                u32 = 0xA0 << 10;
-/// For DCB and VT disabled, set RXPBSIZE.SIZE to 512KB
-pub const RXPBSIZE_512KB:                u32 = 512; //0x200;
-pub const RXPBSIZE_128KB:                u32 = 128;// 0x00020000; // from ixy.rs
+// pub const TXPBSIZE_160KB:                u32 = 0xA0 << 10;
+// /// For DCB and VT disabled, set RXPBSIZE.SIZE to 512KB
+// pub const RXPBSIZE_512KB:                u32 = 512; //0x200;
+// pub const RXPBSIZE_128KB:                u32 = 128;// 0x00020000; // from ixy.rs
 
 // RCTL commands
-pub const BSIZEPACKET_8K:               u32 = 8;
-pub const BSIZEHEADER_256B:             u32 = 4;
-pub const BSIZEHEADER_0B:               u32 = 0;
-pub const DESCTYPE_LEG:                 u32 = 0;
-pub const DESCTYPE_ADV_1BUFFER:         u32 = 1;
-pub const DESCTYPE_ADV_HS:              u32 = 2;
+// pub const BSIZEPACKET_8K:               u32 = 8;
+// pub const BSIZEHEADER_256B:             u32 = 4;
+// pub const BSIZEHEADER_0B:               u32 = 0;
+// pub const DESCTYPE_LEG:                 u32 = 0;
+// pub const DESCTYPE_ADV_1BUFFER:         u32 = 1;
+// pub const DESCTYPE_ADV_HS:              u32 = 2;
 pub const RX_Q_ENABLE:                  u32 = 1 << 25;
-pub const STORE_BAD_PACKETS:            u32 = 1 << 1;
-pub const MULTICAST_PROMISCUOUS_ENABLE: u32 = 1 << 8;
-pub const UNICAST_PROMISCUOUS_ENABLE:   u32 = 1 << 9;
-pub const BROADCAST_ACCEPT_MODE:        u32 = 1 << 10;
+// pub const STORE_BAD_PACKETS:            u32 = 1 << 1;
+// pub const MULTICAST_PROMISCUOUS_ENABLE: u32 = 1 << 8;
+// pub const UNICAST_PROMISCUOUS_ENABLE:   u32 = 1 << 9;
+// pub const BROADCAST_ACCEPT_MODE:        u32 = 1 << 10;
 pub const RECEIVE_ENABLE:               u32 = 1;
-pub const DROP_ENABLE:                  u32 = 1 << 28;
+
 pub const DCA_RXCTRL_CLEAR_BIT_12:      u32 = 1 << 12;
 pub const CTRL_EXT_NO_SNOOP_DIS:        u32 = 1 << 16;
 
 // RSS commands
 pub const RXCSUM_PCSD:                  u32 = 1 << 13; 
-pub const MRQC_MRQE_RSS:                u32 = 1; // set bits 0..3 in MRQC
-pub const MRQC_TCPIPV4:                 u32 = 1 << 16; 
-pub const MRQC_IPV4:                    u32 = 1 << 17; 
-pub const MRQC_IPV6:                    u32 = 1 << 20;
-pub const MRQC_TCPIPV6:                 u32 = 1 << 21;  
-pub const MRQC_UDPIPV4:                 u32 = 1 << 22; 
-pub const MRQC_UDPIPV6:                 u32 = 1 << 23;  
-pub const RETA_ENTRY_0_OFFSET:          u32 = 0;
-pub const RETA_ENTRY_1_OFFSET:          u32 = 8;
-pub const RETA_ENTRY_2_OFFSET:          u32 = 16;
-pub const RETA_ENTRY_3_OFFSET:          u32 = 24;
 
 // DCA commands
 pub const RX_DESC_DCA_ENABLE:           u32 = 1 << 5;
@@ -788,35 +675,19 @@ pub const FTQF_SOURCE_PORT_MASK:        u32 = 1 << 27;
 pub const FTQF_DEST_PORT_MASK:          u32 = 1 << 28;
 pub const FTQF_PROTOCOL_MASK:           u32 = 1 << 29;
 pub const FTQF_POOL_MASK:               u32 = 1 << 30;
-pub const FTQF_Q_ENABLE:                u32 = 1 << 31;
-pub const L34TIMIR_BYPASS_SIZE_CHECK:   u32 = 1 << 12;
-pub const L34TIMIR_RESERVED:            u32 = 0x40 << 13;
 pub const L34TIMIR_LLI_ENABLE:          u32 = 1 << 20;
-pub const L34TIMIR_RX_Q_SHIFT:          u32 = 21;
 
- 
-// Buffer Sizes
-pub const RCTL_BSIZE_256:               u32 = 3 << 16;
-pub const RCTL_BSIZE_512:               u32 = 2 << 16;
-pub const RCTL_BSIZE_1024:              u32 = 1 << 16;
-pub const RCTL_BSIZE_2048:              u32 = 0 << 16;
-pub const RCTL_BSIZE_4096:              u32 = (3 << 16) | (1 << 25);
-pub const RCTL_BSIZE_8192:              u32 = (2 << 16) | (1 << 25);
-pub const RCTL_BSIZE_16384:             u32 = (1 << 16) | (1 << 25);
-  
- 
 /// Enable a transmit queue
 pub const TX_Q_ENABLE:                  u32 = 1 << 25;
 /// Transmit Enable
 pub const TE:                           u32  = 1;           
-pub const DTXMXSZRQ_MAX_BYTES:          u32 = 0xFFF;
 
-/// Tx descriptor pre-fetch threshold (value taken from DPDK)
-pub const TXDCTL_PTHRESH:               u32 = 36; 
-/// Tx descriptor host threshold (value taken from DPDK)
-pub const TXDCTL_HTHRESH:               u32 = 8 << 8; 
-/// Tx descriptor write-back threshold (value taken from DPDK)
-pub const TXDCTL_WTHRESH:               u32 = 4 << 16; 
+// /// Tx descriptor pre-fetch threshold (value taken from DPDK)
+// pub const TXDCTL_PTHRESH:               u32 = 36; 
+// /// Tx descriptor host threshold (value taken from DPDK)
+// pub const TXDCTL_HTHRESH:               u32 = 8 << 8; 
+// /// Tx descriptor write-back threshold (value taken from DPDK)
+// pub const TXDCTL_WTHRESH:               u32 = 4 << 16; 
 
 // Interrupt Register Commands 
 pub const DISABLE_INTERRUPTS:           u32 = 0x7FFFFFFF; 
@@ -870,6 +741,72 @@ pub const MSIX_ADDRESS_BITS:        u32 = 0xFFFF_FFF0;
 /// Clear the vector control field to unmask the interrupt
 pub const MSIX_UNMASK_INT:          u32 = 0;
 
+const_assert_eq!(core::mem::size_of::<RegistersTx>(), 64);
+
+
+impl RegistersTx {
+    pub fn txdctl_read(&self) -> u32 {
+        self.txdctl.read()
+    }
+
+    pub fn txdctl_txq_enable(&mut self) {
+        let val = self.txdctl.read();
+        self.txdctl.write(val | TX_Q_ENABLE); 
+    }
+
+    pub fn txdctl_write(&mut self, pthresh: U7, hthresh: U7, wthresh: U7) {
+        self.txdctl.write((pthresh.bits() as u32) | (hthresh.bits() as u32) << 8 | (wthresh.bits() as u32) << 16);
+    }
+
+    /// Assume we used the advanced tx descriptors, otherwise create an enum for descriptor types
+    pub fn tdlen_write(&mut self, num_descs: NumDesc) {
+        self.tdlen.write((num_descs as u32) * core::mem::size_of::<AdvancedTxDescriptor>() as u32)
+    }
+
+    // gate access so that the upper 16 bits are always set to 0
+    pub fn tdh_write(&mut self, val: u16) {
+        self.tdh.write(val as u32);
+    }
+}
+
+const_assert_eq!(core::mem::size_of::<RegistersRx>(), 64);
+
+impl RegistersRx {
+    /// Assume we used the advanced rx descriptors, otherwise create an enum for descriptor types
+    pub fn rdlen_write(&mut self, num_descs: NumDesc) {
+        self.rdlen.write((num_descs as u32) * core::mem::size_of::<AdvancedRxDescriptor>() as u32)
+    }
+
+    // gate access so that the upper 16 bits are always set to 0
+    pub fn rdh_write(&mut self, val: u16) {
+        self.rdh.write(val as u32);
+    }
+
+    pub fn dca_rxctrl_clear_bit_12(&mut self) {
+        let val = self.dca_rxctrl.read();
+        self.dca_rxctrl.write(val & !DCA_RXCTRL_CLEAR_BIT_12);
+    }
+    
+    pub fn srrctl_write(&mut self, desc_type: DescType) {
+        self.srrctl.write((desc_type as u32) << 25);
+    }
+
+    pub fn srrctl_drop_enable(&mut self) {
+        const DROP_ENABLE: u32 = 1 << 28;
+        
+        let val = self.srrctl.read() | DROP_ENABLE;
+        self.srrctl.write(val);
+    }
+
+    pub fn rxdctl_read(&self) -> u32 {
+        self.rxdctl.read()
+    }
+
+    pub fn rxdctl_rxq_enable(&mut self) {
+        let val = self.rxdctl.read();
+        self.rxdctl.write(val | RX_Q_ENABLE); 
+    }
+}
 }}
 
 
@@ -884,21 +821,21 @@ pub(crate) struct RegistersTx {
     pub tdbah:                          Volatile<u32>,        // 0x6004
     
     /// Transmit Descriptor Length    
-    pub tdlen:                          Volatile<u32>,        // 0x6008
+    tdlen:                              Volatile<u32>,        // 0x6008
 
     /// Tx DCA Control Register
     dca_txctrl:                         Volatile<u32>,          // 0x600C
 
     /// Transmit Descriptor Head
-    pub tdh:                            Volatile<u32>,          // 0x6010
+    tdh:                                Volatile<u32>,          // 0x6010
     _padding0:                          [u8; 4],                // 0x6014 - 0x6017
 
     /// Transmit Descriptor Tail
-    pub tdt:                            Volatile<u32>,          // 0x6018
+    tdt:                            Volatile<u32>,          // 0x6018
     _padding1:                          [u8; 12],               // 0x601C - 0x6027
 
     /// Transmit Descriptor Control
-    pub txdctl:                             Volatile<u32>,          // 0x6028
+    txdctl:                             Volatile<u32>,          // 0x6028
     _padding2:                          [u8; 12],               // 0x602C - 0x6037
 
     /// Transmit Descriptor Completion Write Back Address Low
@@ -908,7 +845,13 @@ pub(crate) struct RegistersTx {
     tdwbah:                             Volatile<u32>,          // 0x603C
 } // 64B
 
-
+impl RegistersTx {
+    // gate access so that the upper 16 bits are always set to 0
+    #[inline(always)]
+    pub fn tdt_write(&mut self, val: u16) {
+        self.tdt.write(val as u32);
+    }
+}
 
 /// Set of registers associated with one receive descriptor queue.
 #[cfg_attr(not(prusti), derive(FromBytes))]
@@ -921,19 +864,19 @@ pub struct RegistersRx {
     pub rdbah:                          Volatile<u32>,        // 0x1004
 
     /// Recive Descriptor Length
-    pub rdlen:                          Volatile<u32>,        // 0x1008
+    rdlen:                              Volatile<u32>,        // 0x1008
 
     /// Rx DCA Control Register
     dca_rxctrl:                         Volatile<u32>,          // 0x100C
 
     /// Recive Descriptor Head
-    pub rdh:                            Volatile<u32>,          // 0x1010
+    rdh:                                Volatile<u32>,          // 0x1010
 
     /// Split Receive Control Registers
     srrctl:                             Volatile<u32>,          // 0x1014 //specify descriptor type
 
     /// Receive Descriptor Tail
-    pub rdt:                            Volatile<u32>,          // 0x1018
+    rdt:                                Volatile<u32>,          // 0x1018
     _padding1:                          [u8;12],                // 0x101C - 0x1027
 
     /// Receive Descriptor Control
@@ -941,3 +884,10 @@ pub struct RegistersRx {
     _padding2:                          [u8;20],                // 0x102C - 0x103F                                            
 } // 64B
 
+impl RegistersRx {
+    // gate access so that the upper 16 bits are always set to 0
+    #[inline(always)]
+    pub fn rdt_write(&mut self, val: u16) {
+        self.rdt.write(val as u32);
+    }
+}
