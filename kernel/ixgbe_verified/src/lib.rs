@@ -590,8 +590,7 @@ impl IxgbeNic {
             );
         }
         //CRC offloading
-        regs.hlreg0_crc_strip();
-        regs.rdrxctl_crc_strip();
+        regs.crc_strip();
         
         // Clear bits
         regs.rdrxctl_clear_rsc_frst_size_bits();
@@ -633,14 +632,15 @@ impl IxgbeNic {
 
     /// enable receive functionality
     fn enable_rx_function(regs1: &mut IntelIxgbeRegisters1,regs: &mut IntelIxgbeRegisters2) -> Result<(), &'static str> {
+        let rxctrl_disabled = regs.rxctrl_rx_disable();
         // set rx parameters of which type of packets are accepted by the nic
         // right now we allow the nic to receive all types of packets, even incorrectly formed ones
-        regs.fctrl_write(FilterCtrlFlags::STORE_BAD_PACKETS | FilterCtrlFlags::MULTICAST_PROMISCUOUS_ENABLE | FilterCtrlFlags::UNICAST_PROMISCUOUS_ENABLE | FilterCtrlFlags::BROADCAST_ACCEPT_MODE); 
+        let fctrl_set = regs.fctrl_write(FilterCtrlFlags::STORE_BAD_PACKETS | FilterCtrlFlags::MULTICAST_PROMISCUOUS_ENABLE | FilterCtrlFlags::UNICAST_PROMISCUOUS_ENABLE | FilterCtrlFlags::BROADCAST_ACCEPT_MODE, rxctrl_disabled); 
 
         regs1.ctrl_ext_no_snoop_disable();
 
         // enable receive functionality
-        regs.rxctrl_rx_enable(); 
+        regs.rxctrl_rx_enable(fctrl_set); 
 
         Ok(())
     }
@@ -687,7 +687,7 @@ impl IxgbeNic {
         regs.dmatxctl_enable_tx();
 
         for txq_reg in tx_regs {
-            let mut txq = TxQueueE::new(txq_reg, num_tx_descs, None)?;
+            let (mut txq, tdh_set) = TxQueueE::new(txq_reg, num_tx_descs, None)?;
         
             // Set descriptor thresholds
             // If we enable this then we need to change the packet send function to stop polling for a descriptor done on every packet sent
@@ -695,14 +695,15 @@ impl IxgbeNic {
             // Tx descriptor pre-fetch threshold (value taken from DPDK)
             let pthresh = U7::B5 | U7::B2; // b100100 = 36
             // Tx descriptor host threshold (value taken from DPDK)
-            let hthresh = U7::B3; // b1000 = 8  
+            let hthresh = HThresh::B3; // b1000 = 8  
             // Tx descriptor write-back threshold (value taken from DPDK)
             let wthresh = U7::B2; // b100 = 4 
             
-            txq.regs.txdctl_write(pthresh, hthresh, wthresh); 
+            txq.regs.txdctl_write_wthresh(wthresh); 
+            txq.regs.txdctl_write_pthresh_hthresh(pthresh, hthresh); 
 
             //enable tx queue
-            txq.regs.txdctl_txq_enable(); 
+            txq.regs.txdctl_txq_enable(tdh_set); 
 
             //make sure queue is enabled
             while txq.regs.txdctl_read() & TX_Q_ENABLE == 0 {} 

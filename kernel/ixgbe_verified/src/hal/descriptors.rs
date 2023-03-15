@@ -94,7 +94,7 @@ impl AdvancedTxDescriptor {
         self.data_len.write(transmit_buffer_length);
         self.dtyp_mac_rsv.write(TX_DTYP_ADV);
         self.paylen_popts_cc_idx_sta.write((transmit_buffer_length as u32) << TX_PAYLEN_SHIFT);
-        self.dcmd.write(TX_CMD_DEXT | TX_CMD_RS | TX_CMD_IFCS | TX_CMD_EOP);
+        self.dcmd.write(TX_CMD_DEXT | TX_CMD_RS | TX_CMD_IFCS | TX_CMD_EOP); // ToDo:: REmove RS field because we've set the thresholds
     }
 
     #[inline(always)]

@@ -9,7 +9,7 @@ use alloc::{
     vec::Vec, collections::VecDeque,
 };
 use packet_buffers::PacketBufferS;
-
+use hal::regs::TDHSet;
 
 pub type TxQueueE = TxQueue<{TxState::Enabled}>;
 pub type TxQueueD = TxQueue<{TxState::Disabled}>;
@@ -38,7 +38,7 @@ pub struct TxQueue<const S: TxState> {
 }
 
 impl TxQueue<{TxState::Enabled}> {
-    pub(crate) fn new(mut regs: TxQueueRegisters, num_desc: NumDesc, cpu_id: Option<u8>) -> Result<TxQueue<{TxState::Enabled}>, &'static str> {
+    pub(crate) fn new(mut regs: TxQueueRegisters, num_desc: NumDesc, cpu_id: Option<u8>) -> Result<(TxQueue<{TxState::Enabled}>, TDHSet), &'static str> {
         let (tx_descs, paddr) = create_desc_ring(num_desc)?;
         let num_tx_descs = tx_descs.len();
 
@@ -47,13 +47,13 @@ impl TxQueue<{TxState::Enabled}> {
         regs.tdbah.write((paddr.value() >> 32) as u32); 
 
         // write the length (in total bytes) of the tx descs array
-        regs.tdlen_write(num_desc);               
+        let tdlen_set = regs.tdlen_write(num_desc);               
         
         // write the head index and the tail index (both 0 initially because there are no tx requests yet)
-        regs.tdh_write(0);
+        let tdh_set = regs.tdh_write(0, tdlen_set);
         regs.tdt_write(0);
 
-        Ok(TxQueue { id: regs.id() as u8, regs, tx_descs, num_tx_descs: num_tx_descs as u16, tx_cur: 0, tx_bufs_in_use: VecDeque::with_capacity(num_tx_descs), tx_clean: 0, cpu_id })
+        Ok((TxQueue { id: regs.id() as u8, regs, tx_descs, num_tx_descs: num_tx_descs as u16, tx_cur: 0, tx_bufs_in_use: VecDeque::with_capacity(num_tx_descs), tx_clean: 0, cpu_id }, tdh_set))
     }
 
     /// Sends a maximum of `batch_size` number of packets from the stored `buffers`.

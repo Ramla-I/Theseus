@@ -204,6 +204,23 @@ impl U7{
     }
 }
 
+bitflags! {
+    /// A number that can take any value ranging in 7 bits except 0
+    pub struct HThresh: u8 {
+        const B6      = 1 << 6;
+        const B5      = 1 << 5;
+        const B4      = 1 << 4;
+        const B3      = 1 << 3;
+        const B2      = 1 << 2;
+        const B1      = 1 << 1;
+        const B0      = 1 << 0;
+    }
+}
+
+// Ensure that we never expose bit 7 as part of the `U7` interface.
+const_assert_eq!(HThresh::all().bits() & 0x80, 0);
+
+
 pub enum DescType {
     Legacy = 0,
     AdvDesc1Buf = 1,

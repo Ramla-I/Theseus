@@ -110,15 +110,6 @@ impl IntelIxgbeRegisters1 {
     pub fn ctrl_ext_no_snoop_disable(&mut self) {
         self.ctrl_ext.write(self.ctrl_ext.read() | CTRL_EXT_NO_SNOOP_DIS);
     }
-
-    pub fn gpie_enable_immediate_int_and_multiple_msix(&mut self) {
-        let val = self.gpie.read();
-        self.gpie.write(val | GPIE_EIMEN | GPIE_MULTIPLE_MSIX | GPIE_PBA_SUPPORT); 
-    }
-
-    pub fn eiac_enable_rtxq_autoclear(&mut self) {
-        self.eiac.write(EIAC_RTXQ_AUTO_CLEAR);
-    }
 }
 
 /// The layout in memory of the first set of receive queue registers of the 82599 device.
@@ -272,18 +263,24 @@ bitflags! {
 // Ensure that we never expose reserved bits 0, [7:2], [31:11] as part of the `FilterCtrlFlags` interface.
 const_assert_eq!(FilterCtrlFlags::all().bits() & 0xFFFF_F8FD, 0);
 
+pub struct FCTRLSet(_);
+pub struct RXCTRLDisabled(_);
+
 impl IntelIxgbeRegisters2 {
     // Any function that writes to rdrxcrtl must make sure these bits are set
-    // prevents DPDK Bug 22
     const RDRXCTL_BASE_VAL: u32 = (1 << 26) | (1 << 25);
 
     pub fn rdrxctl_read(&self) -> u32 {
         self.rdrxctl.read()
     }
 
-    pub fn rdrxctl_crc_strip(&mut self) {
+    // According to the datasheet, these two registers must match
+    // prevents DPDK Bug 22
+    pub fn crc_strip(&mut self) {
         let val = self.rdrxctl.read();
         self.rdrxctl.write(val | Self::RDRXCTL_BASE_VAL | RDRXCTL_CRC_STRIP);
+
+        self.hlreg0.write(self.hlreg0.read() | HLREG0_CRC_STRIP);
     }
 
     pub fn rdrxctl_clear_rsc_frst_size_bits(&mut self) {
@@ -295,14 +292,16 @@ impl IntelIxgbeRegisters2 {
         self.rdrxctl.read() & DMAIDONE_BIT == DMAIDONE_BIT
     }
 
-    pub fn rxctrl_rx_enable(&mut self) {
+   
+    pub fn rxctrl_rx_enable(&mut self, fctrl_set: FCTRLSet) {
         let val = self.rxctrl.read();
         self.rxctrl.write(val | RECEIVE_ENABLE); 
     }
 
-    pub fn rxctrl_rx_disable(&mut self) {
+    pub fn rxctrl_rx_disable(&mut self) -> RXCTRLDisabled {
         let val = self.rxctrl.read();
         self.rxctrl.write(val & !RECEIVE_ENABLE); 
+        RXCTRLDisabled(_)
     }
 
     pub fn fcrtl_clear(&mut self) {
@@ -334,10 +333,6 @@ impl IntelIxgbeRegisters2 {
         self.rxpbsize[reg_idx as usize].write((size as u32) << 10);
     }
 
-    pub fn hlreg0_crc_strip(&mut self) {
-        self.hlreg0.write(self.hlreg0.read() | HLREG0_CRC_STRIP);
-    }
-
     pub fn hlreg0_crc_en(&mut self) {
         self.hlreg0.write(self.hlreg0.read() | HLREG0_TXCRCEN);
     }
@@ -346,16 +341,10 @@ impl IntelIxgbeRegisters2 {
         self.hlreg0.write(self.hlreg0.read() | HLREG0_TXPADEN);
     }
 
-    pub fn autoc2_read(&self) -> u32 {
-        self.autoc2.read()
-    }
-
-    // DPDK Bug 21
-    pub fn fctrl_write(&mut self, val: FilterCtrlFlags) {
-        // if self.rxctrl.read().get_bit(0) {
-        //     return Err("RCTRL.RXEN should be set to 0 before updating FCTRL");
-        // }
+    // Resolves DPDK Bug 21
+    pub fn fctrl_write(&mut self, val: FilterCtrlFlags, rx_disabled: RXCTRLDisabled) -> FCTRLSet {
         self.fctrl.write(val.bits());
+        FCTRLSet(_)
     }
 
     pub fn rttdcs_set_arbdis(&mut self) {
@@ -501,7 +490,10 @@ pub struct IntelIxgbeRegisters3 {
 
     /// Software Semaphore Register
     swsm:                               Volatile<u32>,          // 0x10140
-    _padding6:                          [u8; 28],               // 0x10144 - 0x1015F
+    _padding6a:                         [u8; 4],               // 0x10144 - 0x10147
+
+    fwsm:                               Volatile<u32>,          // 0x10148
+    _padding6b:                         [u8; 20],               // 0x10144 - 0x1015F
 
     /// Software Firmware Synchronization
     sw_fw_sync:                         Volatile<u32>,          // 0x10160 
@@ -518,9 +510,23 @@ pub struct IntelIxgbeRegisters3 {
 
 const_assert_eq!(core::mem::size_of::<IntelIxgbeRegisters3>(), 18 * 4096);
 
-
+pub struct FWValid(bool);
 
 impl IntelIxgbeRegisters3 {
+    pub fn fwsm_fw_valid(&self) -> Option<FWValid> {
+        if self.fwsm.read().get_bit(15) {
+            Some(FWValid(true))
+        } else {
+            None
+        }
+    }
+
+    // Returns bit 3:1 if the firmware mode is valid
+    // Prevents DPDK bug 26
+    pub fn fswm_fw_mode(&self, valid: FWValid) -> u32 {
+        (self.fwsm.read() >> 1) & 0x7
+    }
+
     const FTQF_Q_ENABLE: u32 = 1 << 31;
 
     pub fn ftqf_set_filter_and_enable(&mut self, filter_num: L5FilterID, priority: L5FilterPriority, protocol: L5FilterProtocol, mask_flags: L5FilterMaskFlags) {
@@ -749,29 +755,44 @@ pub const MSIX_UNMASK_INT:          u32 = 0;
 
 const_assert_eq!(core::mem::size_of::<RegistersTx>(), 64);
 
+pub struct TDHSet(bool);
+pub struct TDLENSet(bool);
 
 impl RegistersTx {
+
     pub fn txdctl_read(&self) -> u32 {
         self.txdctl.read()
     }
 
-    pub fn txdctl_txq_enable(&mut self) {
+    // the queue can only be enabled after the TDH register is set
+    pub fn txdctl_txq_enable(&mut self, tdh_set: TDHSet) {
         let val = self.txdctl.read();
         self.txdctl.write(val | TX_Q_ENABLE); 
     }
 
-    pub fn txdctl_write(&mut self, pthresh: U7, hthresh: U7, wthresh: U7) {
-        self.txdctl.write((pthresh.bits() as u32) | (hthresh.bits() as u32) << 8 | (wthresh.bits() as u32) << 16);
+    pub fn txdctl_write_wthresh(&mut self, wthresh: U7) {
+        let val = self.txdctl.read() & !0x7F_0000;
+        self.txdctl.write(val | (wthresh.bits() as u32) << 16);
+    }
+
+    // Upholds the invariant that hthresh > 0 when pthresh is set
+    pub fn txdctl_write_pthresh_hthresh(&mut self, pthresh: U7, hthresh: HThresh) {
+        let val = self.txdctl.read() & !0x7F7F;
+        self.txdctl.write(val | (pthresh.bits() as u32) | (hthresh.bits() as u32) << 8);
     }
 
     /// Assume we used the advanced tx descriptors, otherwise create an enum for descriptor types
-    pub fn tdlen_write(&mut self, num_descs: NumDesc) {
-        self.tdlen.write((num_descs as u32) * core::mem::size_of::<AdvancedTxDescriptor>() as u32)
+    pub fn tdlen_write(&mut self, num_descs: NumDesc) -> TDLENSet{
+        self.tdlen.write((num_descs as u32) * core::mem::size_of::<AdvancedTxDescriptor>() as u32);
+        TDLENSet(true)
     }
 
     // gate access so that the upper 16 bits are always set to 0
-    pub fn tdh_write(&mut self, val: u16) {
+    // Prevents DPDK bug 25
+    // The two linear types enforce the order of operations tdlen -> tdh -> txq enable
+    pub fn tdh_write(&mut self, val: u16, tdlen_written: TDLENSet) -> TDHSet {
         self.tdh.write(val as u32);
+        TDHSet(true)
     }
 }
 
