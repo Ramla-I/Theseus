@@ -101,6 +101,8 @@ impl IntelIxgbeRegisters1 {
         self.ctrl.write(val | CTRL_RST | CTRL_LRST);
     }
 
+    // Prevents DPDK bug 23
+    // We can make this more generic in the future by creating a U31 that allows any bit in a u32 to be set except for the MSB
     pub fn eimc_disable_interrupts(&mut self) {
         self.eimc.write(DISABLE_INTERRUPTS);
     }
@@ -271,13 +273,17 @@ bitflags! {
 const_assert_eq!(FilterCtrlFlags::all().bits() & 0xFFFF_F8FD, 0);
 
 impl IntelIxgbeRegisters2 {
+    // Any function that writes to rdrxcrtl must make sure these bits are set
+    // prevents DPDK Bug 22
+    const RDRXCTL_BASE_VAL: u32 = (1 << 26) | (1 << 25);
+
     pub fn rdrxctl_read(&self) -> u32 {
         self.rdrxctl.read()
     }
 
     pub fn rdrxctl_crc_strip(&mut self) {
-        let init_val = 0x0600_8800;
-        self.rdrxctl.write(init_val | RDRXCTL_CRC_STRIP);
+        let val = self.rdrxctl.read();
+        self.rdrxctl.write(val | Self::RDRXCTL_BASE_VAL | RDRXCTL_CRC_STRIP);
     }
 
     pub fn rdrxctl_clear_rsc_frst_size_bits(&mut self) {
