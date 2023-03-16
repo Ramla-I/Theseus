@@ -136,7 +136,7 @@ fn replace(dest: &mut PacketBufferS, src: PacketBufferS) -> PacketBufferS{
     let tx_bufs_length_old = old(tx_bufs_in_use.len()) - pkts_removed;
     old(buffers.index(buffers.len() - i)).phys_addr.value() == tx_bufs_in_use.index(tx_bufs_length_old + i).phys_addr.value()
 }))]
-fn tx_batch(
+pub(crate) fn tx_batch(
     tx_descs: &mut [AdvancedTxDescriptor], 
     tx_bufs_in_use: &mut VecWrapper<PacketBufferS>,
     num_tx_descs: u16,

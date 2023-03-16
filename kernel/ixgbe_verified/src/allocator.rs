@@ -5,7 +5,7 @@ use alloc::{
 };
 use zerocopy::FromBytes;
 use owning_ref::BoxRefMut;
-use packet_buffers::{PacketBuffer, MTU, MAX_STANDARD_ETHERNET_FRAME_LEN_IN_BYTES};
+use packet_buffers::{PacketBuffer, MTU, MAX_STANDARD_ETHERNET_FRAME_LEN_IN_BYTES, MIN_ETHERNET_FRAME_LEN_IN_BYTES};
 
 
 /// The mapping flags used for MMIO registers.
@@ -56,7 +56,7 @@ pub fn init_rx_buf_pool(num_buffers: usize) -> Result<VecWrapper<PacketBuffer<{M
     // let buffer_size_in_bytes = DEFAULT_RX_BUFFER_SIZE_2KB as u16 * 1024;
     let mut buffer_pool = VecWrapper::with_capacity(num_buffers);
     for _i in 0..num_buffers {
-        let rx_buf = PacketBuffer::<{MTU::Standard}>::new(MAX_STANDARD_ETHERNET_FRAME_LEN_IN_BYTES)?;
+        let rx_buf = PacketBuffer::<{MTU::Standard}>::new(MIN_ETHERNET_FRAME_LEN_IN_BYTES)?;
         buffer_pool.push(rx_buf);
     }
     Ok(buffer_pool)

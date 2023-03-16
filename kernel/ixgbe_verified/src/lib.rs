@@ -324,7 +324,7 @@ impl IxgbeNic {
         Ok((&mut self.rx_queues[rq_idx], &mut self.tx_queues[tq_idx]))
     }
 
-    pub fn tx_batch(&mut self, qid: usize, batch_size: usize,  buffers: &mut Vec<PacketBufferS>, used_buffers: &mut Vec<PacketBufferS>) -> Result<usize, &'static str> {
+    pub fn tx_batch(&mut self, qid: usize, batch_size: usize,  buffers: &mut VecWrapper<PacketBufferS>, used_buffers: &mut VecWrapper<PacketBufferS>) -> Result<(u16, usize), &'static str> {
         if qid >= self.tx_queues.len() {
             return Err("Queue index is out of range");
         }

@@ -15,7 +15,7 @@ use crate::spec::option_spec::*;
 use alloc::vec::Vec;
 
 pub struct VecWrapper<T>{
-    pub(crate) v: Vec<T>
+    pub v: Vec<T>
 }
 
 impl<T> VecWrapper<T> {
