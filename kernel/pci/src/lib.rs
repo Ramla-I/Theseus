@@ -367,6 +367,14 @@ impl Deref for PciBaseAddr {
     }
 }
 
+pub struct PciMemSize(u32);
+impl Deref for PciMemSize {
+    type Target = u32;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 #[derive(Clone, Copy)]
 pub enum BAR {
     BAR0 = 0,
@@ -514,6 +522,27 @@ impl PciDevice {
         mem_size
     }
 
+    /// Returns the size in bytes of the memory region specified by the given `BAR` 
+    /// (Base Address Register) for this PCI device.
+    pub fn determine_pci_mem_size(&self, bar_index: BAR) -> u32 {
+        // Here's what we do: 
+        // (1) Write all `1`s to the specified BAR
+        // (2) Read that BAR value again
+        // (3) Mask the info bits (bits [3:0]) of the BAR value read in Step 2
+        // (4) Bitwise "not" (negate) that value, then add 1.
+        //     The resulting value is the size of that BAR's memory region.
+        // (5) Restore the original value to that BAR
+        let bar_offset = PCI_BAR0 + (bar_index as u16 * 0x4);
+        let original_value = self.bars[bar_index as usize];
+
+        self.pci_write(bar_offset, 0xFFFF_FFFF);          // Step 1
+        let mut mem_size = self.pci_read_32(bar_offset);  // Step 2
+        mem_size.set_bits(0..4, 0);                       // Step 3
+        mem_size = !(mem_size);                           // Step 4
+        mem_size += 1;                                    // Step 4
+        self.pci_write(bar_offset, original_value);       // Step 5
+        mem_size
+    }
     /// Enable MSI interrupts for a PCI device.
     /// We assume the device only supports one MSI vector 
     /// and set the interrupt number and core id for that vector.

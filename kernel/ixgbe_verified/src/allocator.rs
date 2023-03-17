@@ -1,4 +1,5 @@
 use memory::{EntryFlags, PhysicalAddress, allocate_pages_by_bytes, allocate_frames_by_bytes_at, get_kernel_mmi_ref, MappedPages, create_contiguous_mapping};
+use pci::{PciBaseAddr, PciMemSize};
 use crate::{hal::{NumDesc, descriptors::Descriptor}, vec_wrapper::VecWrapper};
 use alloc::{
     boxed::Box,
@@ -6,7 +7,7 @@ use alloc::{
 use zerocopy::FromBytes;
 use owning_ref::BoxRefMut;
 use packet_buffers::{PacketBuffer, MTU, MAX_STANDARD_ETHERNET_FRAME_LEN_IN_BYTES, MIN_ETHERNET_FRAME_LEN_IN_BYTES};
-
+use core::ops::Deref;
 
 /// The mapping flags used for MMIO registers.
 /// They include the NO_CACHE flag.
@@ -24,6 +25,10 @@ pub const NIC_MAPPING_FLAGS_CACHED: EntryFlags = EntryFlags::from_bits_truncate(
     EntryFlags::NO_EXECUTE.bits()
 );
 
+
+pub fn allocate_device_register_memory(base_addr: &PciBaseAddr, mem_size_in_bytes: &PciMemSize, mapping_flags: EntryFlags) -> Result<MappedPages, &'static str> {
+    allocate_memory(*base_addr.deref(), *mem_size_in_bytes.deref() as usize, mapping_flags)
+}
 
 /// Helper function to allocate memory at required address
 /// 

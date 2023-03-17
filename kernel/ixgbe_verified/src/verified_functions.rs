@@ -28,6 +28,11 @@ use crate::{
     let old_buffer_len = old(buffers.len());
     buffers.index(old_buffer_len + i).phys_addr.value() == old(rx_bufs_in_use.index(rx_cur as usize)).phys_addr.value()
 }))]
+#[after_expiry(result.is_ok() ==> forall (|i: usize| 0<= i && i < peek_result(&result) as usize ==> {
+    let rx_cur = (old(*rx_cur_stored) + i as u16) % num_rx_descs;
+    let old_buffer_len = old(pool.len());
+    pool.index(old_buffer_len - i).phys_addr.value() == rx_bufs_in_use.index(rx_cur as usize).phys_addr.value()
+}))]
 pub fn rx_batch(
     rx_descs: &mut [AdvancedRxDescriptor], 
     rx_cur_stored: &mut u16, 
@@ -145,7 +150,8 @@ pub(crate) fn tx_batch(
     regs: &mut TxQueueRegisters,
     batch_size: usize,  
     buffers: &mut VecWrapper<PacketBufferS>, 
-    used_buffers: &mut VecWrapper<PacketBufferS>
+    used_buffers: &mut VecWrapper<PacketBufferS>,
+    rs_bit: u8
 ) -> Result<(u16, usize), &'static str> {
     let pkts_removed = tx_clean(tx_descs, tx_bufs_in_use, tx_clean_stored, tx_cur_stored, num_tx_descs, used_buffers);
     
@@ -184,7 +190,7 @@ pub(crate) fn tx_batch(
                 break;
             }
 
-            index_mut(tx_descs, tx_cur as usize).send(packet.phys_addr(), packet.length);
+            index_mut(tx_descs, tx_cur as usize).send(packet.phys_addr(), packet.length, rs_bit);
             tx_bufs_in_use.push(packet);
 
             tx_cur = tx_next;

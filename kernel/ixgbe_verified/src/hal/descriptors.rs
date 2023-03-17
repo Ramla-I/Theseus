@@ -89,12 +89,12 @@ pub struct AdvancedTxDescriptor {
 impl AdvancedTxDescriptor {
     #[inline(always)]
     #[trusted]
-    pub(crate) fn send(&mut self, transmit_buffer_addr: PhysicalAddress, transmit_buffer_length: u16) {
+    pub(crate) fn send(&mut self, transmit_buffer_addr: PhysicalAddress, transmit_buffer_length: u16, rs_bit: u8) {
         self.packet_buffer_address.write(transmit_buffer_addr.value() as u64);
         self.data_len.write(transmit_buffer_length);
         self.dtyp_mac_rsv.write(TX_DTYP_ADV);
         self.paylen_popts_cc_idx_sta.write((transmit_buffer_length as u32) << TX_PAYLEN_SHIFT);
-        self.dcmd.write(TX_CMD_DEXT | TX_CMD_RS | TX_CMD_IFCS | TX_CMD_EOP); // ToDo:: REmove RS field because we've set the thresholds
+        self.dcmd.write(TX_CMD_DEXT | TX_CMD_IFCS | TX_CMD_EOP | rs_bit); // ToDo:: REmove RS field because we've set the thresholds
     }
 
     #[inline(always)]

@@ -758,6 +758,25 @@ const_assert_eq!(core::mem::size_of::<RegistersTx>(), 64);
 pub struct TDHSet(bool);
 pub struct TDLENSet(bool);
 
+// Tells what the value of the RS bit should be in the 8-bit DCMD field of the transmit descriptor.
+// The inner vlaue will be ORed with the remaining flags for the DCMD field
+pub struct ReportStatusBit(u8);
+
+impl ReportStatusBit {
+    fn one() -> ReportStatusBit {
+        ReportStatusBit(1 << 3)
+    }
+
+    fn zero() -> ReportStatusBit {
+        ReportStatusBit(0 << 3)
+    }
+
+    pub fn value(&self) -> u8 {
+        self.0
+    }
+}
+
+
 impl RegistersTx {
 
     pub fn txdctl_read(&self) -> u32 {
@@ -770,9 +789,15 @@ impl RegistersTx {
         self.txdctl.write(val | TX_Q_ENABLE); 
     }
 
-    pub fn txdctl_write_wthresh(&mut self, wthresh: U7) {
+    pub fn txdctl_write_wthresh(&mut self, wthresh: U7) -> ReportStatusBit {
         let val = self.txdctl.read() & !0x7F_0000;
         self.txdctl.write(val | (wthresh.bits() as u32) << 16);
+
+        if wthresh.bits() > 0 {
+            ReportStatusBit::zero()
+        } else { // if wthresh is set to zero then we should set the RS bit in the descriptor
+            ReportStatusBit::one()
+        }
     }
 
     // Upholds the invariant that hthresh > 0 when pthresh is set

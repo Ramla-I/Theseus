@@ -5,13 +5,14 @@
 //! When using virtualization, we disable RSS since we use 5-tuple filters to ensure packets are routed to the correct queues.
 //! We also disable interrupts when using virtualization, since we do not yet have support for allowing applications to register their own interrupt handlers.
 
-#![no_std]
+// #![no_std]
 #![allow(dead_code)] //  to suppress warnings for unused functions/methods
 #![allow(unaligned_references)] // temporary, just to suppress unsafe packed borrows 
 #![allow(incomplete_features)] // to allow adt_const_params without a warning
 #![feature(adt_const_params)]
 #![feature(array_zip)]
 #![feature(rustc_private)]
+
 
 extern crate prusti_contracts;
 extern crate cfg_if;
@@ -72,7 +73,7 @@ use alloc::{
 };
 use irq_safety::MutexIrqSafe;
 use memory::MappedPages;
-use pci::{PciDevice, PciConfigSpaceAccessMechanism, PciLocation, BAR, PciBaseAddr};
+use pci::{PciDevice, PciConfigSpaceAccessMechanism, PciLocation, BAR, PciBaseAddr, PciMemSize};
 use owning_ref::BoxRefMut;
 use bit_field::BitField;
 use hpet::get_hpet;
@@ -216,6 +217,7 @@ impl IxgbeNic {
 
         // 16-byte aligned memory mapped base address
         let mem_base =  ixgbe_pci_dev.determine_pci_base_addr(BAR::BAR0)?;
+        let mem_size = ixgbe_pci_dev.determine_pci_mem_size(BAR::BAR0);
 
         // set the bus mastering bit for this PciDevice, which allows it to use DMA
         ixgbe_pci_dev.pci_set_command_bus_master_bit();
@@ -364,6 +366,65 @@ impl IxgbeNic {
         // }
 
         self.tx_queues[qid].tx_batch_pseudo(batch_size)
+    }
+
+    /// Returns the memory-mapped control registers of the nic and the rx/tx queue registers.
+    fn mapped_reg2(
+        mem_base: &PciBaseAddr,
+        mem_size_in_bytes: &PciMemSize
+    ) -> Result<(
+        BoxRefMut<MappedPages, IntelIxgbeRegisters1>, 
+        BoxRefMut<MappedPages, IntelIxgbeRegisters2>, 
+        BoxRefMut<MappedPages, IntelIxgbeRegisters3>, 
+        BoxRefMut<MappedPages, IntelIxgbeMacRegisters>, 
+        Vec<RxQueueRegisters>, 
+        Vec<TxQueueRegisters>
+    ), &'static str> {
+
+        let mapped_pages = allocator::allocate_device_register_memory(mem_base, mem_size_in_bytes, NIC_MAPPING_FLAGS_NO_CACHE)?;
+
+        // We've divided the memory-mapped registers into multiple regions.
+        // The size of each region is found from the data sheet, but it always lies on a page boundary.
+        const GENERAL_REGISTERS_1_SIZE:   usize = 4096 / 4096;
+        const RX_REGISTERS_SIZE:          usize = 4096 / 4096;
+        const GENERAL_REGISTERS_2_SIZE:   usize = 4 * 4096 / 4096;
+        const TX_REGISTERS_SIZE:          usize = 2 * 4096 / 4096;
+        const MAC_REGISTERS_SIZE:         usize = 5 * 4096 / 4096;
+        const GENERAL_REGISTERS_3_SIZE:   usize = 18 * 4096 / 4096;
+
+        // Allocate memory for the registers, making sure each successive memory region begins where the previous region ended.
+        let mut offset_page = *mapped_pages.deref().start() + GENERAL_REGISTERS_1_SIZE;
+        let (nic_regs1_mapped_page, mapped_pages) = mapped_pages.split(offset_page).unwrap();
+
+        let mut offset_page = *mapped_pages.deref().start() + RX_REGISTERS_SIZE;
+        let (nic_rx_regs1_mapped_page, mapped_pages) = mapped_pages.split(offset_page).unwrap();
+
+        let mut offset_page = *mapped_pages.deref().start() + GENERAL_REGISTERS_2_SIZE;
+        let (nic_regs2_mapped_page, mapped_pages) = mapped_pages.split(offset_page).unwrap();
+
+        let mut offset_page = *mapped_pages.deref().start() + TX_REGISTERS_SIZE;
+        let (nic_tx_regs_mapped_page, mapped_pages) = mapped_pages.split(offset_page).unwrap();
+
+        let mut offset_page = *mapped_pages.deref().start() + MAC_REGISTERS_SIZE;
+        let (nic_mac_regs_mapped_page, mapped_pages) = mapped_pages.split(offset_page).unwrap();
+
+        let mut offset_page = *mapped_pages.deref().start() + RX_REGISTERS_SIZE;
+        let (nic_rx_regs2_mapped_page, nic_regs3_mapped_page) = mapped_pages.split(offset_page).unwrap();  
+
+        // Map the memory as the register struct and tie the lifetime of the struct with its backing mapped pages
+        let regs1 = BoxRefMut::new(Box::new(nic_regs1_mapped_page)).try_map_mut(|mp| mp.as_type_mut::<IntelIxgbeRegisters1>(0))?;
+        let regs2 = BoxRefMut::new(Box::new(nic_regs2_mapped_page)).try_map_mut(|mp| mp.as_type_mut::<IntelIxgbeRegisters2>(0))?;
+        let regs3 = BoxRefMut::new(Box::new(nic_regs3_mapped_page)).try_map_mut(|mp| mp.as_type_mut::<IntelIxgbeRegisters3>(0))?;
+        let mac_regs = BoxRefMut::new(Box::new(nic_mac_regs_mapped_page)).try_map_mut(|mp| mp.as_type_mut::<IntelIxgbeMacRegisters>(0))?;
+        
+        // Divide the pages of the Rx queue registers into multiple 64B regions
+        let mut regs_rx = Self::mapped_regs_from_rx_memory(MappedPagesFragments::new(nic_rx_regs1_mapped_page))?;
+        regs_rx.append(&mut Self::mapped_regs_from_rx_memory(MappedPagesFragments::new(nic_rx_regs2_mapped_page))?);
+        
+        // Divide the pages of the Tx queue registers into multiple 64B regions
+        let regs_tx = Self::mapped_regs_from_tx_memory(MappedPagesFragments::new(nic_tx_regs_mapped_page))?;
+            
+        Ok((regs1, regs2, regs3, mac_regs, regs_rx, regs_tx))
     }
 
     /// Returns the memory-mapped control registers of the nic and the rx/tx queue registers.
@@ -686,9 +747,8 @@ impl IxgbeNic {
         // enable transmit operation, only have to do this for the first queue
         regs.dmatxctl_enable_tx();
 
-        for txq_reg in tx_regs {
-            let (mut txq, tdh_set) = TxQueueE::new(txq_reg, num_tx_descs, None)?;
-        
+        for mut txq_reg in tx_regs {
+            
             // Set descriptor thresholds
             // If we enable this then we need to change the packet send function to stop polling for a descriptor done on every packet sent
             
@@ -699,12 +759,14 @@ impl IxgbeNic {
             // Tx descriptor write-back threshold (value taken from DPDK)
             let wthresh = U7::B2; // b100 = 4 
             
-            txq.regs.txdctl_write_wthresh(wthresh); 
-            txq.regs.txdctl_write_pthresh_hthresh(pthresh, hthresh); 
+            let rs_bit = txq_reg.txdctl_write_wthresh(wthresh); 
+            txq_reg.txdctl_write_pthresh_hthresh(pthresh, hthresh); 
+            
+            let (mut txq, tdh_set) = TxQueueE::new(txq_reg, num_tx_descs, None, rs_bit)?;
 
             //enable tx queue
             txq.regs.txdctl_txq_enable(tdh_set); 
-
+            
             //make sure queue is enabled
             while txq.regs.txdctl_read() & TX_Q_ENABLE == 0 {} 
 
