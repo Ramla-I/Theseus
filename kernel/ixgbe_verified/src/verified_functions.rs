@@ -1,5 +1,3 @@
-use core::{f32::consts::E, iter::Filter};
-
 use alloc::vec::Vec;
 use prusti_contracts::*;
 cfg_if::cfg_if! {
@@ -11,6 +9,7 @@ if #[cfg(prusti)] {
 
 #[allow(unused_imports)]
 use crate::{
+    {FilterParameters, FilterError},
     spec::{result_spec::*, option_spec::*},
     vec_wrapper::VecWrapper, 
     hal::descriptors::*,
@@ -375,28 +374,6 @@ fn tx_clean(
 //     }
 // }
 
-#[derive(PartialEq, Eq, Clone, Copy)]
-pub struct FilterParameters {
-    source_ip: Option<[u8; 4]>,
-    dest_ip: Option<[u8; 4]>,
-    source_port: Option<u16>,
-    dest_port: Option<u16>,
-    protocol: Option<L5FilterProtocol>,
-    priority: L5FilterPriority,
-    qid: QueueID
-}
-
-impl FilterParameters {
-    #[pure]
-    fn parameters_equal(&self, other: &Self) -> bool {
-        self.source_ip == other.source_ip &&
-        self.dest_ip == other.dest_ip &&
-        self.source_port == other.source_port &&
-        self.dest_port == other.dest_port &&
-        self.protocol == other.protocol &&
-        self.priority == other.priority
-    }
-}
 
 // #[ensures(result.is_ok() ==> {
 //     let idx = peek_result(&result); 
@@ -417,7 +394,7 @@ impl FilterParameters {
         FilterError::IdenticalFilter(idx) => filters[idx].is_some() && peek_option(&filters[idx]).parameters_equal(&new_filter),
     } && forall(|i: usize|( 0 <= i && i < 128 ==> filters[i] == old(filters[i])))
 })]
-pub fn add_filter(filters: &mut [Option<FilterParameters>; 128], new_filter: FilterParameters) -> Result<usize, FilterError> {
+pub fn check_and_add_filter(filters: &mut [Option<FilterParameters>; 128], new_filter: FilterParameters) -> Result<usize, FilterError> {
     let mut i = 0;
     let mut unused_filter = None ;
 
@@ -445,8 +422,3 @@ pub fn add_filter(filters: &mut [Option<FilterParameters>; 128], new_filter: Fil
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Copy)]
-pub enum FilterError {
-    NoneAvailable,
-    IdenticalFilter(usize)
-}

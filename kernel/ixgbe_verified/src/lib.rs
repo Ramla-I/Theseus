@@ -14,7 +14,7 @@
 #![feature(rustc_private)]
 
 
-extern crate prusti_contracts;
+#[macro_use] extern crate prusti_contracts;
 extern crate cfg_if;
 extern crate alloc;
 
@@ -23,6 +23,8 @@ mod spec;
 mod queue_registers;
 pub mod vec_wrapper;
 mod verified_functions;
+
+pub use hal::*;
 
 cfg_if::cfg_if! {
 if #[cfg(prusti)] {
@@ -56,7 +58,6 @@ pub mod rx_queue;
 pub mod tx_queue;
 pub mod allocator;
 
-pub use hal::*;
 use hal::regs::*;
 use queue_registers::*;
 use mapped_pages_fragments::MappedPagesFragments;
@@ -150,7 +151,7 @@ pub struct IxgbeNic {
     regs_mac: BoxRefMut<MappedPages, IntelIxgbeMacRegisters>,
     /// Array to store which L3/L4 5-tuple filters have been used.
     /// There are 128 such filters available.
-    l34_5_tuple_filters: [bool; 128],
+    l34_5_tuple_filters: [Option<FilterParameters>; 128],
     /// The current RETA for RSS.
     /// We always enable RSS, but if no RETA is provided all routing is forwarded to queue 0.
     /// This is the default behavior, even when RSS isn't enabled.
@@ -269,7 +270,7 @@ impl IxgbeNic {
             regs2: mapped_registers2,
             regs3: mapped_registers3,
             regs_mac: mapped_registers_mac,
-            l34_5_tuple_filters: [false; NUM_L34_5_TUPLE_FILTERS],
+            l34_5_tuple_filters: [None; NUM_L34_5_TUPLE_FILTERS],
             reta,
             num_rx_queues: IXGBE_NUM_RX_QUEUES_ENABLED,
             rx_queues,
@@ -1003,4 +1004,33 @@ pub struct IxgbeStats{
 // }
 
 }
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub struct FilterParameters {
+    pub source_ip: Option<[u8; 4]>,
+    pub dest_ip: Option<[u8; 4]>,
+    pub source_port: Option<u16>,
+    pub dest_port: Option<u16>,
+    pub protocol: Option<L5FilterProtocol>,
+    pub priority: L5FilterPriority,
+    pub qid: QueueID
+}
+
+impl FilterParameters {
+    #[pure]
+    pub fn parameters_equal(&self, other: &Self) -> bool {
+        self.source_ip == other.source_ip &&
+        self.dest_ip == other.dest_ip &&
+        self.source_port == other.source_port &&
+        self.dest_port == other.dest_port &&
+        self.protocol == other.protocol &&
+        self.priority == other.priority
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum FilterError {
+    NoneAvailable,
+    IdenticalFilter(usize)
 }

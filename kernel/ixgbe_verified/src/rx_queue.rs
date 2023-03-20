@@ -1,5 +1,5 @@
 use memory::{MappedPages};
-use crate::{hal::{*, descriptors::AdvancedRxDescriptor}, packet_buffers::{MTU, PacketBufferS}, RxBufferSizeKiB, DEFAULT_RX_BUFFER_SIZE_2KB, L5FilterID, regs::*};
+use crate::{hal::{*, descriptors::AdvancedRxDescriptor}, packet_buffers::{MTU, PacketBufferS}, RxBufferSizeKiB, DEFAULT_RX_BUFFER_SIZE_2KB, L5FilterID, regs::*, FilterParameters, FilterError};
 use crate::vec_wrapper::VecWrapper;
 use crate::queue_registers::RxQueueRegisters;
 use crate::NumDesc;
@@ -7,7 +7,7 @@ use crate::allocator::*;
 use crate::verified_functions;
 use packet_buffers::PacketBuffer;
 use owning_ref::BoxRefMut;
-use core::{ops::{DerefMut, Deref}, convert::TryFrom};
+use core::{ops::{DerefMut, Deref}, convert::TryFrom, iter::Filter};
 
 pub type RxQueueE   = RxQueue<{RxState::Enabled}>;
 pub type RxQueueD   = RxQueue<{RxState::Disabled}>;
@@ -150,17 +150,34 @@ impl RxQueue<{RxState::Enabled}> {
         dest_port: Option<u16>, 
         protocol: Option<L5FilterProtocol>, 
         priority: L5FilterPriority, 
-        enabled_filters: &mut [bool; 128],
+        filters: &mut [Option<FilterParameters>; 128],
         regs3: &mut IntelIxgbeRegisters3
     ) -> Result<RxQueue<{RxState::L5Filter}>, &'static str> {
         
         if source_ip.is_none() && dest_ip.is_none() && source_port.is_none() && dest_port.is_none() && protocol.is_none() {
             return Err("Must set one of the five filter options");
         }
+        let new_filter = FilterParameters {
+            source_ip,
+            dest_ip,
+            source_port,
+            dest_port,
+            protocol,
+            priority,
+            qid: self.id
+        };
 
-        // find a free filter
-        let filter_num = L5FilterID::try_from(enabled_filters.iter().position(|&r| r == false).ok_or("Ixgbe: No filter available")?)
-            .map_err(|_| "Invalid filter ID")?;
+        // check if there's an exisiting filter with the same parameters, if not then add it to the filters list.
+        // The index that it is written to is returned.
+        let filter_num = verified_functions::check_and_add_filter(filters, new_filter)
+            .map_err(|e| {
+                match e {
+                    FilterError::IdenticalFilter(x) => "There was an identical filter with the same priority already created",
+                    FilterError::NoneAvailable => "There was no free filter available"
+                }
+            })?;
+
+        let filter_num = L5FilterID::try_from(filter_num).map_err(|_| "filter_num was >= 128, which should be impossible since it's returned from a verified function.")?;
 
         // start off with the filter mask set for all the filters, and clear bits for filters that are enabled
         // bits 29:25 are set to 1.
@@ -210,8 +227,6 @@ impl RxQueue<{RxState::Enabled}> {
         //set the rx queue that the packets for this filter should be sent to
         regs3.l34timir_write(filter_num, self.id);
 
-        //mark the filter as used
-        enabled_filters[filter_num as usize] = true;
 
         Ok(RxQueue {
             id: self.id,
@@ -281,15 +296,15 @@ impl RxQueue<{RxState::L5Filter}> {
 
     /// Right now we restrict each queue to be used for only one filter,
     /// so disabling the filter returns it to an enabled state.
-    pub fn disable_filter(self, enabled_filters: &mut [bool; 128], regs3: &mut IntelIxgbeRegisters3) -> RxQueue<{RxState::Enabled}> {
+    pub fn disable_filter(self, enabled_filters: &mut [Option<FilterParameters>; 128], regs3: &mut IntelIxgbeRegisters3) -> RxQueue<{RxState::Enabled}> {
         // We can unwrap here because created a RxQueue<L5Filter> always sets the filter_num.
         let filter_num = self.filter_num.unwrap();
 
         // disables filter by setting enable bit to 0
         regs3.ftqf_disable_filter(filter_num);
 
-        // sets the record in the nic struct to false
-        enabled_filters[filter_num as usize] = false;
+        // sets the record in the nic struct to None
+        enabled_filters[filter_num as usize] = None;
         
         RxQueue {
             id: self.id,
