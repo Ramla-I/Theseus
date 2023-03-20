@@ -5,7 +5,7 @@
 //! When using virtualization, we disable RSS since we use 5-tuple filters to ensure packets are routed to the correct queues.
 //! We also disable interrupts when using virtualization, since we do not yet have support for allowing applications to register their own interrupt handlers.
 
-// #![no_std]
+#![no_std]
 #![allow(dead_code)] //  to suppress warnings for unused functions/methods
 #![allow(unaligned_references)] // temporary, just to suppress unsafe packed borrows 
 #![allow(incomplete_features)] // to allow adt_const_params without a warning
@@ -151,6 +151,10 @@ pub struct IxgbeNic {
     /// Array to store which L3/L4 5-tuple filters have been used.
     /// There are 128 such filters available.
     l34_5_tuple_filters: [bool; 128],
+    /// The current RETA for RSS.
+    /// We always enable RSS, but if no RETA is provided all routing is forwarded to queue 0.
+    /// This is the default behavior, even when RSS isn't enabled.
+    reta: [[RSSQueueID; 4]; 32],
     /// The number of rx queues enabled
     num_rx_queues: u8,
     /// Vector of the enabled rx queues
@@ -199,6 +203,7 @@ impl IxgbeNic {
         ixgbe_pci_dev: &PciDevice,
         // enable_virtualization: bool,
         // enable_rss: bool,
+        reta: Option<[[RSSQueueID; 4]; 32]>,
         num_rx_descriptors: NumDesc,
         num_tx_descriptors: NumDesc
     ) -> Result<MutexIrqSafe<IxgbeNic>, &'static str> {
@@ -242,16 +247,15 @@ impl IxgbeNic {
 
         // create the rx descriptor queues
         let rx_registers_unusable = rx_mapped_registers.split_off(IXGBE_NUM_RX_QUEUES_ENABLED as usize);
-        let rx_queues = Self::rx_init(&mut mapped_registers1, &mut mapped_registers2, rx_mapped_registers, num_rx_descriptors)?;
+        let mut rx_queues = Self::rx_init(&mut mapped_registers1, &mut mapped_registers2, rx_mapped_registers, num_rx_descriptors)?;
         
          // create the tx descriptor queues
         let tx_registers_unusable = tx_mapped_registers.split_off(IXGBE_NUM_TX_QUEUES_ENABLED as usize);
         let tx_queues = Self::tx_init(&mut mapped_registers2, &mut mapped_registers_mac, tx_mapped_registers, num_tx_descriptors)?;
         
-        // // enable Receive Side Scaling if required
-        // if enable_rss {
-        //     Self::enable_rss(&mut mapped_registers2, &mut mapped_registers3)?;
-        // }
+        // enable Receive Side Scaling if required
+        let reta = reta.unwrap_or([[RSSQueueID::Q0; 4]; 32]);
+        let rx_queues_rss = Self::enable_rss(&mut mapped_registers2, &mut mapped_registers3, &mut rx_queues, reta)?;
 
         // wait 10 seconds for the link to come up, as seen in other ixgbe drivers
         Self::wait_for_link(&mapped_registers2, 10_000_000);
@@ -266,6 +270,7 @@ impl IxgbeNic {
             regs3: mapped_registers3,
             regs_mac: mapped_registers_mac,
             l34_5_tuple_filters: [false; NUM_L34_5_TUPLE_FILTERS],
+            reta,
             num_rx_queues: IXGBE_NUM_RX_QUEUES_ENABLED,
             rx_queues,
             rx_queues_disabled: Vec::new(),
@@ -326,19 +331,19 @@ impl IxgbeNic {
         Ok((&mut self.rx_queues[rq_idx], &mut self.tx_queues[tq_idx]))
     }
 
-    pub fn tx_batch(&mut self, qid: usize, batch_size: usize,  buffers: &mut VecWrapper<PacketBufferS>, used_buffers: &mut VecWrapper<PacketBufferS>) -> Result<(u16, usize), &'static str> {
-        if qid >= self.tx_queues.len() {
-            return Err("Queue index is out of range");
-        }
+    pub fn tx_batch(&mut self, qid: usize, batch_size: usize,  buffers: &mut VecWrapper<PacketBufferS>, used_buffers: &mut VecWrapper<PacketBufferS>) -> u16 {
+        // if qid >= self.tx_queues.len() {
+        //     return Err("Queue index is out of range");
+        // }
 
         self.tx_queues[qid].tx_batch(batch_size, buffers, used_buffers)
     }
 
     pub fn rx_batch(&mut self, qid: usize, buffers: &mut VecWrapper<PacketBufferS>, batch_size: usize, pool: &mut VecWrapper<PacketBufferS>) -> Result<u16, ()> {
-        if qid >= self.rx_queues.len() {
-            error!("Queue index is out of range");
-            return Err(());
-        }
+        // if qid >= self.rx_queues.len() {
+        //     error!("Queue index is out of range");
+        //     return Err(());
+        // }
 
         self.rx_queues[qid].rx_batch(buffers, batch_size, pool)
     }
@@ -757,7 +762,7 @@ impl IxgbeNic {
             // Tx descriptor host threshold (value taken from DPDK)
             let hthresh = HThresh::B3; // b1000 = 8  
             // Tx descriptor write-back threshold (value taken from DPDK)
-            let wthresh = U7::B2; // b100 = 4 
+            let wthresh = U7::zero(); // b100 = 4 
             
             let rs_bit = txq_reg.txdctl_write_wthresh(wthresh); 
             txq_reg.txdctl_write_pthresh_hthresh(pthresh, hthresh); 
@@ -775,71 +780,70 @@ impl IxgbeNic {
         Ok(tx_all_queues)
     }  
 
-    /// 4.2.1.6
-    fn software_reset(&mut self) {
-        self.master_disable();
 
-        // write to Device Reset bit CTRL.RST
+    // Returns an error if the requested Queue ID is disabled or used for an 5-tuple filter
+    pub fn update_reta(&mut self, reta: [[RSSQueueID; 4]; 32]) -> Result<(), &'static str> {
+        let (mut enabled_queues_for_rss, rss_queues_for_rss) = Self::extract_rss_queues(&reta, &mut self.rx_queues, &mut self.rx_queues_rss)?;
 
-        //wait 1 ms to check if this bit is cleared
-        
-        // now initialize the NIC as you would do after power up, except the PCI space is th same so can keep all device regs
-    }
-
-    /// 5.2.5.3.2
-    fn master_disable(&mut self) {
-        // disable all rx queues (4.6.7.1.2)
-
-        // sets the PCIe Master Disable bit
-
-        // wait for PCIe MAster Disable bit to clear?
-
-        // poll PCIe Master Enable Status bit until it's cleared
-
-        // If the driver times out at this point then check Transaction Pending bit and send another SW rest
-
-        // flush transmit data path
-
-        // now a sw reset is safe
-    }
-
-    pub(crate) fn extract_rss_queues(reta: &[[QueueID; 4]; 32], enabled_queues: &mut Vec<RxQueueE>) -> Result<Vec<RxQueueE>, &'static str> {
-        let mut used_queue_ids = Vec::new();
-        for reg in reta {
-            for i in 0..4 {
-                if !used_queue_ids.contains(&reg[i]) {
-                    used_queue_ids.push(reg[i]);
-                }
-            }
+        for idx in 0..32 { // TODO: iterate over the enum
+            let queue_ids = &reta[idx];
+            let reta_reg = RedirectionTableReg::try_from(idx).map_err(|_| "invalid RETA register index")?;
+            self.regs3.reta_write(reta_reg, queue_ids);
         }
-    
-        let mut queues_for_rss = Vec::with_capacity(used_queue_ids.len());
-        for qid in used_queue_ids {
-            let index = enabled_queues.iter().position(|x| x.id == qid as u8)
-                .ok_or("Required Queue for RSS is not in the enabled list")?;
-            queues_for_rss.push(enabled_queues.remove(index));
+
+        // move all the old rss queues to the end of the enabled queues
+        for q in self.rx_queues_rss.drain(..) {
+            self.rx_queues.push(q.remove_from_reta());
         }
-    
-        Ok(queues_for_rss)
-    }
 
-    // check 8.2.3.7.12: I think only 16 queues can be used for RSS
-    pub fn enable_rss(&mut self, rss_field_flags: RSSFieldFlags, reta: [[QueueID; 4]; 32]) -> Result<(), &'static str> {
-        // software reset
-        self.software_reset();
-        // remove all queues that are in RETA to a separate vec
-        let queues_in_reta = Self::extract_rss_queues(&reta, &mut self.rx_queues)?;
-        // call enable_rss
-        let rss_queues = Self::enable_rss_internal(&mut self.regs2, &mut self.regs3, reta, rss_field_flags, queues_in_reta)?;
-        // store RSS queues in the NIC
-        self.rx_queues_rss = rss_queues;
+        // move all the enabled queues and reused RSS queues to the end of the rss queues
+        for q in enabled_queues_for_rss.drain(..).map(|q| q.add_to_reta()).chain(rss_queues_for_rss) {
+            self.rx_queues_rss.push(q.add_to_reta())
+        }
 
+        // update the stored RETA
+        self.reta = reta;
         Ok(())
     }
 
-    pub fn disable_rss(&mut self) {
-        // software reset       
-        self.software_reset();
+
+    fn extract_rss_queues(reta: &[[RSSQueueID; 4]; 32], enabled_queues: &mut Vec<RxQueueE>, rss_queues: &mut Vec<RxQueueRSS>) -> Result<(Vec<RxQueueE>, Vec<RxQueueRSS>), &'static str> {
+        let mut used_queue_ids = Vec::new();
+        for qid in reta.iter().flatten() {
+            if !used_queue_ids.contains(qid) { used_queue_ids.push(*qid); }
+        }
+    
+        let mut enabled_queues_for_rss = Vec::with_capacity(used_queue_ids.len());
+        let mut rss_queues_for_rss = Vec::with_capacity(used_queue_ids.len());
+
+        // we iterate and find all the queues with the matching qids
+        for qid in used_queue_ids {
+            enabled_queues.iter().position(|x| x.id == qid.into())
+                .and_then(|i| { enabled_queues_for_rss.push(enabled_queues.remove(i)); Some(()) })
+                .or_else(|| rss_queues.iter().position(|x| x.id == qid.into())
+                    .and_then(|i| { rss_queues_for_rss.push(rss_queues.remove(i)); Some(()) })
+                )
+                .or_else(|| { // If searching both queues fails then return queues to their original positions
+                    enabled_queues.append(&mut enabled_queues_for_rss);
+                    rss_queues.append(&mut rss_queues_for_rss);
+                    Some(())
+                })
+                .ok_or("queue id not found in the list of enabled or RSS queues")?;
+        }
+    
+        Ok((enabled_queues_for_rss, rss_queues_for_rss))
+    }
+
+    /// (7.1.2.8.1: RSS Hash Function Configuration)
+    /// RSS can only be enabled after a software reset, but the RETA can be changed on the fly, though there is no assurance when the change will take affect. 
+    /// We've set the RSS flags to a default value, can be changed later.
+    fn enable_rss(regs2: &mut IntelIxgbeRegisters2, regs3: &mut IntelIxgbeRegisters3, enabled_queues: &mut Vec<RxQueueE>, reta: [[RSSQueueID; 4]; 32]) -> Result<Vec<RxQueueRSS>, &'static str> {
+        // remove all queues that are in RETA to a separate vec
+        let (queues_in_reta, _) = Self::extract_rss_queues(&reta, enabled_queues, &mut Vec::new())?;
+        // call enable_rss
+        let rss_queues = Self::enable_rss_internal(regs2, regs3, reta, RSSFieldFlags::UDP_IPV4, queues_in_reta)?;
+        // return RSS queues to the NIC
+        Ok(rss_queues)
     }
 
     /// Enable multiple receive queues with RSS.
@@ -847,16 +851,13 @@ impl IxgbeNic {
     pub fn enable_rss_internal(
         regs2: &mut IntelIxgbeRegisters2, 
         regs3: &mut IntelIxgbeRegisters3,
-        redirection_table: [[QueueID; 4];32],
+        redirection_table: [[RSSQueueID; 4];32],
         rss_field_flags: RSSFieldFlags,
         queues: Vec<RxQueueE>
     ) -> Result<Vec<RxQueueRSS>, &'static str> {
         // enable RSS writeback in the header field of the receive descriptor
         regs2.rxcsum_enable_rss_writeback();
         
-        // enable RSS and set fields that will be used by hash function
-        // right now we're using the udp port and ipv4 address.
-        regs3.mrqc_enable_rss(rss_field_flags); 
 
         //set the random keys for the hash function
         let seed = get_hpet().as_ref().ok_or("couldn't get HPET timer")?.get_counter();
@@ -884,15 +885,19 @@ impl IxgbeNic {
             regs3.reta_write(reta_reg, queue_ids);
         }
 
+        // enable RSS and set fields that will be used by hash function
+        // According to the datasheet:"System software must initialize the table prior to enabling multiple receive queues"
+        regs3.mrqc_enable_rss(rss_field_flags); 
+
         let mut rss_queues = Vec::with_capacity(queues.len());
         for queue in queues {
-            rss_queues.push(queue.rss())
+            rss_queues.push(queue.add_to_reta())
         }
         Ok(rss_queues)
     }
 
     fn find_enabled_queue_with_id(&mut self, qid: QueueID) -> Option<RxQueueE> {
-        self.rx_queues.iter().position(|x| x.id == qid as u8)
+        self.rx_queues.iter().position(|x| x.id == qid)
             .and_then(|idx| Some(self.rx_queues.remove(idx)))
     }
 
@@ -918,119 +923,22 @@ impl IxgbeNic {
         qid: QueueID
     ) -> Result<(), &'static str> {
         let queue = self.find_enabled_queue_with_id(qid).ok_or("Requested queue is not an enabled state")?;
-        let l5_queue = self.set_5_tuple_filter_internal(source_ip, dest_ip, source_port, dest_port, protocol, priority, queue, qid)?;
+        let l5_queue = queue.l5_filter(source_ip, dest_ip, source_port, dest_port, protocol, priority, &mut self.l34_5_tuple_filters, &mut self.regs3)?;
         self.rx_queues_filters.push(l5_queue);
         Ok(())
     }
 
-    /// Sets the L3/L4 5-tuple filter which can do an exact match of the packet's header with the filter and send to chosen rx queue (7.1.2.5).
-    /// There are up to 128 such filters. If more are needed, will have to enable Flow Director filters.
-    /// 
-    /// # Argument
-    /// * `source_ip`: ipv4 source address
-    /// * `dest_ip`: ipv4 destination address
-    /// * `source_port`: TCP/UDP/SCTP source port
-    /// * `dest_port`: TCP/UDP/SCTP destination port
-    /// * `protocol`: IP L4 protocol
-    /// * `priority`: priority relative to other filters, can be from 0 (lowest) to 7 (highest)
-    /// * `queue`: Rx Queue to forward the packet to
-    pub fn set_5_tuple_filter_internal(
-        &mut self, 
-        source_ip: Option<[u8;4]>, 
-        dest_ip: Option<[u8;4]>, 
-        source_port: Option<u16>, 
-        dest_port: Option<u16>, 
-        protocol: Option<L5FilterProtocol>, 
-        priority: L5FilterPriority, 
-        queue: RxQueueE,
-        qid: QueueID
-    ) -> Result<RxQueueL5, &'static str> {
-
-        if source_ip.is_none() && dest_ip.is_none() && source_port.is_none() && dest_port.is_none() && protocol.is_none() {
-            return Err("Must set one of the five filter options");
-        }
-
-        let enabled_filters = &mut self.l34_5_tuple_filters;
-
-        // find a free filter
-        let filter_num = L5FilterID::try_from(enabled_filters.iter().position(|&r| r == false).ok_or("Ixgbe: No filter available")?)
-            .map_err(|_| "Invalid filter ID")?;
-
-        // start off with the filter mask set for all the filters, and clear bits for filters that are enabled
-        // bits 29:25 are set to 1.
-        let mut filter_mask = L5FilterMaskFlags::zero();
-
-        // IP addresses are written to the registers in big endian form (LSB is first on wire)
-        // set the source ip address for the filter
-        if let Some (addr) = source_ip {
-            self.regs3.saqf[filter_num as usize].write(((addr[3] as u32) << 24) | ((addr[2] as u32) << 16) | ((addr[1] as u32) << 8) | (addr[0] as u32));
-        } else {
-            filter_mask = filter_mask | L5FilterMaskFlags::SOURCE_ADDRESS;
-        }
-
-        // set the destination ip address for the filter
-        if let Some(addr) = dest_ip {
-            self.regs3.daqf[filter_num as usize].write(((addr[3] as u32) << 24) | ((addr[2] as u32) << 16) | ((addr[1] as u32) << 8) | (addr[0] as u32));
-        } else {
-            filter_mask = filter_mask | L5FilterMaskFlags::DESTINATION_ADDRESS;
-        }        
-
-        // set the source port for the filter    
-        if let Some(port) = source_port {
-            self.regs3.sdpqf[filter_num as usize].write((port as u32) << SPDQF_SOURCE_SHIFT);
-        } else {
-            filter_mask = filter_mask | L5FilterMaskFlags::SOURCE_PORT;
-        }   
-
-        // set the destination port for the filter    
-        if let Some(port) = dest_port {
-            let port_val = self.regs3.sdpqf[filter_num as usize].read();
-            self.regs3.sdpqf[filter_num as usize].write(port_val | (port as u32) << SPDQF_DEST_SHIFT);
-        } else {
-            filter_mask = filter_mask | L5FilterMaskFlags::DESTINATION_PORT;
-        }
-
-        // set the filter protocol
-        let mut filter_protocol = L5FilterProtocol::Other;
-        if let Some(p) = protocol {
-            filter_protocol = p;
-        } else {
-            filter_mask = filter_mask | L5FilterMaskFlags::PROTOCOL;
-        }
-
-        // write the parameters of the filter
-        self.regs3.ftqf_set_filter_and_enable(filter_num, priority, filter_protocol, filter_mask);
-
-        //set the rx queue that the packets for this filter should be sent to
-        self.regs3.l34timir_write(filter_num, qid);
-
-        //mark the filter as used
-        enabled_filters[filter_num as usize] = true;
-        Ok(queue.l5_filter(filter_num))
-    }
 
     /// Disables the the L3/L4 5-tuple filter for the given filter number
     /// but keeps the values stored in the filter registers.
     fn disable_5_tuple_filter(&mut self, qid: QueueID) -> Result<(), &'static str> {
-        let queue = self.rx_queues_filters.iter().position(|x| x.id == qid as u8)
+        let queue = self.rx_queues_filters.iter().position(|x| x.id == qid)
             .and_then(|idx| Some(self.rx_queues_filters.remove(idx)))
             .ok_or("requested qid is not in the list of L5 queues")?;
-        let enabled_queue = self.disable_5_tuple_filter_internal(queue, qid)?; 
+
+        let enabled_queue = queue.disable_filter(&mut self.l34_5_tuple_filters, &mut self.regs3);
         self.rx_queues.push(enabled_queue);
         Ok(())
-    }
-
-    /// Disables the the L3/L4 5-tuple filter for the given filter number
-    /// but keeps the values stored in the filter registers.
-    fn disable_5_tuple_filter_internal(&mut self, queue: RxQueueL5, qid: QueueID) -> Result<RxQueueE, &'static str> {
-        let filter_num = queue.filter_num.ok_or("filter num not availble for an L5 queue, this is a logical error!")?;
-
-        // disables filter by setting enable bit to 0
-        self.regs3.ftqf_disable_filter(filter_num);
-
-        // sets the record in the nic struct to false
-        self.l34_5_tuple_filters[filter_num as usize] = false;
-        Ok(queue.enable())
     }
 
 
@@ -1073,6 +981,7 @@ pub struct IxgbeStats{
     pub rx_packets: u32,
     pub tx_packets: u32,
 }
+
 
 // /// A helper function to poll the nic receive queues (only for testing purposes).
 // pub fn rx_poll_mq(qid: usize, nic_id: PciLocation) -> Result<ReceivedFrame, &'static str> {

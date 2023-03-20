@@ -546,7 +546,7 @@ impl IntelIxgbeRegisters3 {
         self.l34timir[filter_num as usize].write(L34TIMIR_BYPASS_SIZE_CHECK | L34TIMIR_RESERVED | ((queue_id as u32) << L34TIMIR_RX_Q_SHIFT));
     }
 
-    pub fn reta_write(&mut self, reg_idx: RedirectionTableReg, qid: &[QueueID; 4]) {
+    pub fn reta_write(&mut self, reg_idx: RedirectionTableReg, qid: &[RSSQueueID; 4]) {
         const RETA_ENTRY_0_OFFSET:          u32 = 0;
         const RETA_ENTRY_1_OFFSET:          u32 = 8;
         const RETA_ENTRY_2_OFFSET:          u32 = 16;

@@ -62,7 +62,7 @@ impl TxQueue<{TxState::Enabled}> {
 
     /// Sends a maximum of `batch_size` number of packets from the stored `buffers`.
     /// The number of packets sent are returned.
-    pub fn tx_batch(&mut self, batch_size: usize,  buffers: &mut VecWrapper<PacketBufferS>, used_buffers: &mut VecWrapper<PacketBufferS>) -> Result<(u16, usize), &'static str> {
+    pub fn tx_batch(&mut self, batch_size: usize,  buffers: &mut VecWrapper<PacketBufferS>, used_buffers: &mut VecWrapper<PacketBufferS>) -> u16 {
         verified_functions::tx_batch(
             &mut self.tx_descs, 
             &mut self.tx_bufs_in_use,
@@ -74,7 +74,7 @@ impl TxQueue<{TxState::Enabled}> {
             buffers, 
             used_buffers,
             self.RS_bit
-        )
+        ).0
         // let mut pkts_sent = 0;
         // let mut tx_cur = self.tx_cur;
 

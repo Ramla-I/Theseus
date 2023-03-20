@@ -1,6 +1,30 @@
 pub(crate) mod descriptors;
 pub(crate) mod regs;
 
+
+/// The list of valid filter priority levels that can be used for the L5 filters. They range from (0,7).
+#[repr(u8)]
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum L5FilterPriority {
+    P0,
+    P1,
+    P2,
+    P3,
+    P4,
+    P5,
+    P6,
+    P7
+}
+
+/// Options for the filter protocol used in the 5-tuple filters.
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum L5FilterProtocol {
+    Tcp = 0,
+    Udp = 1,
+    Sctp = 2,
+    Other = 3
+}
+
 cfg_if::cfg_if! {
 if #[cfg(not(prusti))] { // These constants and enums are not used for any verification, so they're not included in the verified code for now
 
@@ -69,13 +93,6 @@ pub enum RxBufferSizeKiB {
     Buffer16KiB = 16
 }
 
-/// Options for the filter protocol used in the 5-tuple filters.
-pub enum L5FilterProtocol {
-    Tcp = 0,
-    Udp = 1,
-    Sctp = 2,
-    Other = 3
-}
 
 #[derive(Copy, Clone)]
 pub enum NumDesc {
@@ -89,7 +106,7 @@ pub enum NumDesc {
 
 /// The list of valid Queues that can be used in the 82599 (0,64]
 #[repr(u8)]
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(PartialEq, Eq, Clone, Copy, TryFromPrimitive)]
 pub enum QueueID {
     Q0,Q1,Q2,Q3,Q4,Q5,Q6,Q7,Q8,Q9,
     Q10,Q11,Q12,Q13,Q14,Q15,Q16,Q17,Q18,Q19,
@@ -97,22 +114,66 @@ pub enum QueueID {
     Q30,Q31,Q32,Q33,Q34,Q35,Q36,Q37,Q38,Q39,
     Q40,Q41,Q42,Q43,Q44,Q45,Q46,Q47,Q48,Q49,
     Q50,Q51,Q52,Q53,Q54,Q55,Q56,Q57,Q58,Q59,
-    Q60,Q61,Q62,Q63,Q64
+    Q60,Q61,Q62,Q63
 }
 
-/// The list of valid filter priority levels that can be used for the L5 filters. They range from (0,7).
-#[repr(u8)]
-#[derive(PartialEq, Eq, Clone, Copy)]
-pub enum L5FilterPriority {
-    P0,
-    P1,
-    P2,
-    P3,
-    P4,
-    P5,
-    P6,
-    P7
+impl From<RSSQueueID> for QueueID {
+    fn from(qid: RSSQueueID) -> Self {
+        match qid {
+            RSSQueueID::Q0 => QueueID::Q0,
+            RSSQueueID::Q1 => QueueID::Q1,
+            RSSQueueID::Q2 => QueueID::Q2,
+            RSSQueueID::Q3 => QueueID::Q3,
+            RSSQueueID::Q4 => QueueID::Q4,
+            RSSQueueID::Q5 => QueueID::Q5,
+            RSSQueueID::Q6 => QueueID::Q6,
+            RSSQueueID::Q7 => QueueID::Q7,
+            RSSQueueID::Q8 => QueueID::Q8,
+            RSSQueueID::Q9 => QueueID::Q9,
+            RSSQueueID::Q10 => QueueID::Q10,
+            RSSQueueID::Q11 => QueueID::Q11,
+            RSSQueueID::Q12 => QueueID::Q12,
+            RSSQueueID::Q13 => QueueID::Q13,
+            RSSQueueID::Q14 => QueueID::Q14,
+            RSSQueueID::Q15 => QueueID::Q15,
+        }
+    }
 }
+
+/// The list of valid Queues that can be used in the 82599 (0,64]
+#[repr(u8)]
+#[derive(PartialEq, Eq, Clone, Copy, TryFromPrimitive)]
+pub enum RSSQueueID {
+    Q0,Q1,Q2,Q3,Q4,Q5,Q6,Q7,Q8,Q9,
+    Q10,Q11,Q12,Q13,Q14,Q15
+}
+
+impl From<QueueID> for RSSQueueID {
+    fn from(qid: QueueID) -> Self {
+        match qid {
+            QueueID::Q0 => RSSQueueID::Q0,
+            QueueID::Q1 => RSSQueueID::Q1,
+            QueueID::Q2 => RSSQueueID::Q2,
+            QueueID::Q3 => RSSQueueID::Q3,
+            QueueID::Q4 => RSSQueueID::Q4,
+            QueueID::Q5 => RSSQueueID::Q5,
+            QueueID::Q6 => RSSQueueID::Q6,
+            QueueID::Q7 => RSSQueueID::Q7,
+            QueueID::Q8 => RSSQueueID::Q8,
+            QueueID::Q9 => RSSQueueID::Q9,
+            QueueID::Q10 => RSSQueueID::Q10,
+            QueueID::Q11 => RSSQueueID::Q11,
+            QueueID::Q12 => RSSQueueID::Q12,
+            QueueID::Q13 => RSSQueueID::Q13,
+            QueueID::Q14 => RSSQueueID::Q14,
+            QueueID::Q15 => RSSQueueID::Q15,
+            _ => panic!("Invalid QueueID for RSSQueueID conversion")
+        }
+    }
+}
+
+
+
 
 #[derive(Copy, Clone, Debug, TryFromPrimitive)]
 #[repr(usize)]
@@ -228,4 +289,17 @@ pub enum DescType {
     AdvDescHeadSplitAlways = 5,
 }
 
+} else {
+    /// The list of valid Queues that can be used in the 82599 (0,64]
+    #[repr(u8)]
+    #[derive(PartialEq, Eq, Clone, Copy)]
+    pub enum QueueID {
+        Q0,Q1,Q2,Q3,Q4,Q5,Q6,Q7,Q8,Q9,
+        Q10,Q11,Q12,Q13,Q14,Q15,Q16,Q17,Q18,Q19,
+        Q20,Q21,Q22,Q23,Q24,Q25,Q26,Q27,Q28,Q29,
+        Q30,Q31,Q32,Q33,Q34,Q35,Q36,Q37,Q38,Q39,
+        Q40,Q41,Q42,Q43,Q44,Q45,Q46,Q47,Q48,Q49,
+        Q50,Q51,Q52,Q53,Q54,Q55,Q56,Q57,Q58,Q59,
+        Q60,Q61,Q62,Q63
+    }
 }}

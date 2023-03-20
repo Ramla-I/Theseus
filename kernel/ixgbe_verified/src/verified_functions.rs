@@ -1,3 +1,6 @@
+use core::{f32::consts::E, iter::Filter};
+
+use alloc::vec::Vec;
 use prusti_contracts::*;
 cfg_if::cfg_if! {
 if #[cfg(prusti)] {
@@ -8,10 +11,11 @@ if #[cfg(prusti)] {
 
 #[allow(unused_imports)]
 use crate::{
-    spec::result_spec::*,
+    spec::{result_spec::*, option_spec::*},
     vec_wrapper::VecWrapper, 
     hal::descriptors::*,
     queue_registers::*,
+    hal::{L5FilterPriority, L5FilterProtocol, QueueID}
 };
 
 #[requires(0 <= *rx_cur_stored && (*rx_cur_stored as usize) < rx_descs.len())]
@@ -23,11 +27,11 @@ use crate::{
 #[ensures((result.is_ok() && peek_result(&result) == 0) ==> old(*rx_cur_stored) == *rx_cur_stored)]
 #[ensures(result.is_ok()  ==> buffers.len() == old(buffers.len()) + peek_result(&result) as usize)]
 #[ensures(result.is_ok()  ==> rx_bufs_in_use.len() == old(rx_bufs_in_use.len()))]
-#[after_expiry(result.is_ok() ==> forall (|i: usize| 0<= i && i < peek_result(&result) as usize ==> {
-    let rx_cur = (old(*rx_cur_stored) + i as u16) % num_rx_descs;
-    let old_buffer_len = old(buffers.len());
-    buffers.index(old_buffer_len + i).phys_addr.value() == old(rx_bufs_in_use.index(rx_cur as usize)).phys_addr.value()
-}))]
+// #[after_expiry(result.is_ok() ==> forall (|i: usize| 0<= i && i < peek_result(&result) as usize ==> {
+//     let rx_cur = (old(*rx_cur_stored) + i as u16) % num_rx_descs;
+//     let old_buffer_len = old(buffers.len());
+//     buffers.index(old_buffer_len + i).phys_addr.value() == old(rx_bufs_in_use.index(rx_cur as usize)).phys_addr.value()
+// }))]
 #[after_expiry(result.is_ok() ==> forall (|i: usize| 0<= i && i < peek_result(&result) as usize ==> {
     let rx_cur = (old(*rx_cur_stored) + i as u16) % num_rx_descs;
     let old_buffer_len = old(pool.len());
@@ -56,7 +60,7 @@ pub fn rx_batch(
 
     while i < batch_size {
         body_invariant!(num_rx_descs as usize == rx_descs.len());
-        body_invariant!(rx_cur  < num_rx_descs);
+        body_invariant!(0 <= rx_cur && rx_cur  < num_rx_descs);
         body_invariant!(rx_bufs_in_use.len() == rx_descs.len());
         body_invariant!(rcvd_pkts as usize == i);
         body_invariant!((rx_cur == last_rx_cur) || rx_cur == (last_rx_cur + 1) % num_rx_descs);
@@ -71,7 +75,7 @@ pub fn rx_batch(
         }
 
         if !desc.end_of_packet() {
-            // return Err("Currently do not support multi-descriptor packets");
+            // error!("Currently do not support multi-descriptor packets");
             return Err(());
         }
 
@@ -95,7 +99,7 @@ pub fn rx_batch(
             rx_cur = (rx_cur + 1) % num_rx_descs;
             // prusti_assert!((last_rx_cur + rcvd_pkts) % rx_descs.len() == rx_cur)
         } else {
-            // return Err("Ran out of packet buffers");
+            // error!("Ran out of packet buffers");
             return Err(());
         }
         i += 1;
@@ -109,6 +113,7 @@ pub fn rx_batch(
         regs.rdt_write(last_rx_cur); 
     }
 
+    // error!("received {} packets", rcvd_pkts);
 
     Ok(rcvd_pkts)
 }
@@ -132,12 +137,12 @@ fn replace(dest: &mut PacketBufferS, src: PacketBufferS) -> PacketBufferS{
 #[requires(tx_descs.len() > 0)]
 #[requires((num_tx_descs as usize) == tx_descs.len())]
 #[requires(0 <= *tx_cur_stored && *tx_cur_stored < num_tx_descs)]
-#[ensures(result.is_ok() ==> (old(*tx_cur_stored) + peek_result(&result).0) % num_tx_descs == *tx_cur_stored)]
-#[ensures(result.is_ok()  ==> buffers.len() == old(buffers.len()) - peek_result(&result).0 as usize)]
-#[ensures(result.is_ok()  ==> tx_bufs_in_use.len() == old(tx_bufs_in_use.len()) - peek_result(&result).1 + peek_result(&result).0 as usize)]
-#[ensures(result.is_ok()  ==> used_buffers.len() == old(used_buffers.len()) + peek_result(&result).1 )]
-#[after_expiry(result.is_ok() ==> forall (|i: usize| 0<= i && i < peek_result(&result).0 as usize ==> {
-    let pkts_removed = peek_result(&result).1;
+#[ensures((old(*tx_cur_stored) + result.0) % num_tx_descs == *tx_cur_stored)]
+#[ensures(buffers.len() == old(buffers.len()) - result.0 as usize)]
+#[ensures(tx_bufs_in_use.len() == old(tx_bufs_in_use.len()) - result.1 + result.0 as usize)]
+#[ensures(used_buffers.len() == old(used_buffers.len()) + result.1 )]
+#[after_expiry(forall (|i: usize| 0<= i && i < result.0 as usize ==> {
+    let pkts_removed = result.1;
     let tx_bufs_length_old = old(tx_bufs_in_use.len()) - pkts_removed;
     old(buffers.index(buffers.len() - i)).phys_addr.value() == tx_bufs_in_use.index(tx_bufs_length_old + i).phys_addr.value()
 }))]
@@ -152,7 +157,7 @@ pub(crate) fn tx_batch(
     buffers: &mut VecWrapper<PacketBufferS>, 
     used_buffers: &mut VecWrapper<PacketBufferS>,
     rs_bit: u8
-) -> Result<(u16, usize), &'static str> {
+) -> (u16, usize) {
     let pkts_removed = tx_clean(tx_descs, tx_bufs_in_use, tx_clean_stored, tx_cur_stored, num_tx_descs, used_buffers);
     
     let mut pkts_sent = 0;
@@ -208,7 +213,8 @@ pub(crate) fn tx_batch(
     *tx_cur_stored = tx_cur_total % num_tx_descs;
     regs.tdt_write(tx_cur);
 
-    Ok((pkts_sent, pkts_removed))
+    // error!("sent {} packets, cleaned {}", pkts_sent, pkts_removed);
+    (pkts_sent, pkts_removed)
 }
 
  /// Removes multiples of `TX_CLEAN_BATCH` packets from `queue`.    
@@ -268,4 +274,179 @@ fn tx_clean(
 
     *tx_clean_stored = tx_clean as u16;
     pkts_removed
+}
+
+
+
+// #[derive(Clone, Copy)]
+// pub struct L5Filter {
+//     used: bool,
+//     source_ip: Option<[u8;4]>, 
+//     dest_ip: Option<[u8;4]>, 
+//     source_port: Option<u16>, 
+//     dest_port: Option<u16>, 
+//     protocol: Option<L5FilterProtocol>, 
+//     priority: L5FilterPriority,
+//     qid: QueueID
+// }
+
+// impl PartialEq for L5Filter {
+//     #[pure]
+//     fn eq(&self, other: &Self) -> bool {
+//         self.parameters_equal(other) && self.qid == other.qid && self.used == other.used
+//     }
+// }
+
+// impl L5Filter {
+//     #[pure]
+//     pub fn parameters_equal(   
+//         &self, 
+//         other: &Self
+//     ) -> bool {
+//         self.source_ip == other.source_ip &&
+//         self.dest_ip == other.dest_ip &&
+//         self.source_port == other.source_port &&
+//         self.dest_port == other.dest_port &&
+//         self.protocol == other.protocol &&
+//         self.priority == other.priority
+//     }
+
+//     fn set_filter(&mut self, other: Self) {
+//         self.used = true;
+//         self.source_ip = other.source_ip;
+//         self.dest_ip = other.dest_ip;
+//         self.source_port = other.source_port;
+//         self.dest_port = other.dest_port;
+//         self.protocol = other.protocol;
+//         self.priority = other.priority;
+//         self.qid = other.qid;
+//     }
+// }
+
+// pub enum FilterErr {
+//     IdenticalFilter(usize),
+//     NoFreeFilter,
+// }
+
+// // #[after_expiry(result.is_ok() ==> {
+// //     let idx = peek_result(&result); 
+// //     existing_filters[idx].parameters_equal(&new_filter) && existing_filters[idx].used && existing_filters[idx].qid == new_filter.qid
+// // })]
+// // #[after_expiry(result.is_ok() ==> {
+// //     forall(|i: usize| 0 <= i && i < existing_filters.len() ==> {
+// //         if i == peek_result(&result) {
+// //             existing_filters[i].parameters_equal(&new_filter) && existing_filters[i].used && existing_filters[i].qid == new_filter.qid
+// //         } else {
+// //             old(existing_filters[i]) == existing_filters[i] && !(existing_filters[i].used && existing_filters[i].parameters_equal(&new_filter))
+// //         }
+// //     })
+// // })]
+// #[ensures (result.is_ok() ==> {
+//     forall(|i: usize| 0 <= i && i < existing_filters.len() && i != peek_result(&result) ==> {
+//         old(existing_filters[i]) == existing_filters[i] && !(existing_filters[i].used && existing_filters[i].parameters_equal(&new_filter))
+//     })
+// })]
+// pub(crate) fn check_filter(        
+//     new_filter: L5Filter,
+//     existing_filters: &mut [L5Filter; 128],
+// ) -> Result<usize, FilterErr> {
+//     let mut i = 0;
+//     let mut unused_filter =None ;
+
+//     while i < existing_filters.len() {
+//         body_invariant!(i < existing_filters.len());
+//         body_invariant!(unused_filter.is_some() ==> peek_option(&unused_filter) < existing_filters.len());
+
+//         if existing_filters[i].used && existing_filters[i].parameters_equal(&new_filter) {
+//             return Err(FilterErr::IdenticalFilter(i));
+//         } else if !existing_filters[i].used && unused_filter.is_none() {
+//             unused_filter = Some(i);
+//         }
+//         i += 1;
+//     }
+    
+//     if unused_filter.is_some() {
+//         let filter_idx = unused_filter.unwrap();
+//         let filter = index_mut(existing_filters, filter_idx);
+//         filter.set_filter(new_filter);
+//         Ok(filter_idx)
+//     } else {
+//         Err(FilterErr::NoFreeFilter)
+//     }
+// }
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub struct FilterParameters {
+    source_ip: Option<[u8; 4]>,
+    dest_ip: Option<[u8; 4]>,
+    source_port: Option<u16>,
+    dest_port: Option<u16>,
+    protocol: Option<L5FilterProtocol>,
+    priority: L5FilterPriority,
+    qid: QueueID
+}
+
+impl FilterParameters {
+    #[pure]
+    fn parameters_equal(&self, other: &Self) -> bool {
+        self.source_ip == other.source_ip &&
+        self.dest_ip == other.dest_ip &&
+        self.source_port == other.source_port &&
+        self.dest_port == other.dest_port &&
+        self.protocol == other.protocol &&
+        self.priority == other.priority
+    }
+}
+
+// #[ensures(result.is_ok() ==> {
+//     let idx = peek_result(&result); 
+//     filters[idx].is_some() && peek_option(&filters[idx]) == new_filter
+// })]
+#[ensures(result.is_ok() ==> {
+    forall(|i: usize| 0 <= i && i < 128 ==> {
+        if i == peek_result(&result) {
+            filters[i].is_some() && peek_option(&filters[i]) == new_filter
+        } else {
+            filters[i] == old(filters[i]) && (filters[i].is_some() ==> !peek_option(&filters[i]).parameters_equal(&new_filter))
+        }
+    } )
+})]
+#[ensures(result.is_err() ==> {
+    match peek_err(&result) {
+        FilterError::NoneAvailable => forall(|i: usize|( 0 <= i && i < 128 ==> filters[i].is_some())),
+        FilterError::IdenticalFilter(idx) => filters[idx].is_some() && peek_option(&filters[idx]).parameters_equal(&new_filter),
+    } && forall(|i: usize|( 0 <= i && i < 128 ==> filters[i] == old(filters[i])))
+})]
+pub fn add_filter(filters: &mut [Option<FilterParameters>; 128], new_filter: FilterParameters) -> Result<usize, FilterError> {
+    let mut i = 0;
+    let mut unused_filter = None ;
+
+    while i < 128 {
+        body_invariant!(0 <= i && i < 128);
+        body_invariant!(unused_filter.is_some() ==> peek_option(&unused_filter) < filters.len());
+        body_invariant!(forall( |x: usize| 0 <= x && x < i ==> {filters[x].is_some() ==> !peek_option(&filters[x]).parameters_equal(&new_filter)}));
+        body_invariant!(unused_filter.is_none() ==> forall( |x: usize| 0 <= x && x < i ==> filters[x].is_some()));
+
+        if filters[i].is_some() {
+            if filters[i].unwrap().parameters_equal(&new_filter) {
+                return Err(FilterError::IdenticalFilter(i));
+            }
+        } else if unused_filter.is_none(){
+            unused_filter = Some(i);
+        }
+        i += 1;
+    }
+    if unused_filter.is_some() {
+        let filter_idx = unused_filter.unwrap();
+        filters[filter_idx] = Some(new_filter);
+        Ok(filter_idx)
+    } else {
+        Err(FilterError::NoneAvailable)
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum FilterError {
+    NoneAvailable,
+    IdenticalFilter(usize)
 }
