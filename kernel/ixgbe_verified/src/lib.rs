@@ -256,7 +256,7 @@ impl IxgbeNic {
         
         // enable Receive Side Scaling if required
         let reta = reta.unwrap_or([[RSSQueueID::Q0; 4]; 32]);
-        let rx_queues_rss = Self::enable_rss(&mut mapped_registers2, &mut mapped_registers3, &mut rx_queues, reta)?;
+        // let rx_queues_rss = Self::enable_rss(&mut mapped_registers2, &mut mapped_registers3, &mut rx_queues, reta)?;
 
         // wait 10 seconds for the link to come up, as seen in other ixgbe drivers
         Self::wait_for_link(&mapped_registers2, 10_000_000);
@@ -358,7 +358,7 @@ impl IxgbeNic {
         self.rx_queues[qid].rx_batch_pseudo(batch_size)
     }
 
-    pub fn tx_populate(&mut self, qid: usize, pool: &mut Vec<PacketBufferS>){
+    pub fn tx_populate(&mut self, qid: usize, pool: &mut VecWrapper<PacketBufferS>){
         // if qid >= self.rx_queues.len() {
         //     return Err("Queue index is out of range");
         // }
@@ -637,6 +637,10 @@ impl IxgbeNic {
         stats.tx_packets = self.regs2.gptc.read();
     }
 
+    pub fn fctrl_flags(&self) -> u32 {
+        self.regs2.fctrl_read()
+    }
+
     /// Initializes the array of receive descriptors and their corresponding receive buffers,
     /// and returns a tuple including both of them for all rx queues in use.
     /// Also enables receive functionality for the NIC.
@@ -647,7 +651,7 @@ impl IxgbeNic {
         num_rx_descs: NumDesc
     ) -> Result<Vec<RxQueueE>, &'static str> {
 
-        Self::disable_rx_function(regs);
+        let rxctrl_disabled = Self::disable_rx_function(regs);
         // program RXPBSIZE according to DCB and virtualization modes (both off)
         // regs.rxpbsize_set_buffer_size(0, RXPBSIZE_128KB)?;
         for i in 1..8 {
@@ -688,18 +692,17 @@ impl IxgbeNic {
             rx_all_queues.push(rxq);
         }
         
-        Self::enable_rx_function(regs1,regs)?;
+        Self::enable_rx_function(regs1,regs, rxctrl_disabled)?;
         Ok(rx_all_queues)
     }
 
     /// disable receive functionality
-    fn disable_rx_function(regs: &mut IntelIxgbeRegisters2) {        
-        regs.rxctrl_rx_disable();
+    fn disable_rx_function(regs: &mut IntelIxgbeRegisters2) -> RXCTRLDisabled {        
+        regs.rxctrl_rx_disable()
     }
 
     /// enable receive functionality
-    fn enable_rx_function(regs1: &mut IntelIxgbeRegisters1,regs: &mut IntelIxgbeRegisters2) -> Result<(), &'static str> {
-        let rxctrl_disabled = regs.rxctrl_rx_disable();
+    fn enable_rx_function(regs1: &mut IntelIxgbeRegisters1,regs: &mut IntelIxgbeRegisters2, rxctrl_disabled: RXCTRLDisabled) -> Result<(), &'static str> {
         // set rx parameters of which type of packets are accepted by the nic
         // right now we allow the nic to receive all types of packets, even incorrectly formed ones
         let fctrl_set = regs.fctrl_write(FilterCtrlFlags::STORE_BAD_PACKETS | FilterCtrlFlags::MULTICAST_PROMISCUOUS_ENABLE | FilterCtrlFlags::UNICAST_PROMISCUOUS_ENABLE | FilterCtrlFlags::BROADCAST_ACCEPT_MODE, rxctrl_disabled); 

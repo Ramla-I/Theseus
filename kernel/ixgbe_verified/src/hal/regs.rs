@@ -347,6 +347,10 @@ impl IntelIxgbeRegisters2 {
         FCTRLSet(true)
     }
 
+    pub fn fctrl_read(&self) -> u32 {
+        self.fctrl.read()
+    }
+
     pub fn rttdcs_set_arbdis(&mut self) {
         self.rttdcs.write(self.rttdcs.read() | RTTDCS_ARBDIS);
     }

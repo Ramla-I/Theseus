@@ -206,7 +206,7 @@ impl TxQueue<{TxState::Disabled}> {
 impl TxQueue<{TxState::Enabled}> {
     /// Sets all the descriptors in the tx queue with a valid packet buffer but doesn't update the TDT.
     /// Requires that the length of `buffers` is equal to the number of descriptors in the queue
-    pub fn tx_populate(&mut self, buffers: &mut Vec<PacketBufferS>) {
+    pub fn tx_populate(&mut self, buffers: &mut VecWrapper<PacketBufferS>) {
         // assert!(buffers.len() == self.tx_descs.len());
 
         for desc in self.tx_descs.iter_mut() {
