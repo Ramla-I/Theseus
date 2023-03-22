@@ -4,10 +4,14 @@
 
 extern crate memory;
 extern crate zerocopy;
+extern crate owning_ref;
+extern crate alloc;
 
 use core::ops::{Deref, DerefMut};
 use memory::{MappedPages, PhysicalAddress, create_contiguous_mapping, EntryFlags};
 use zerocopy::FromBytes;
+use owning_ref::BoxRefMut;
+use alloc::boxed::Box;
 
 /// All buffers are created with 2KiB so that the max ethernet frame can fit in one packet buffer
 pub const DEFAULT_RX_BUFFER_SIZE_IN_BYTES_2KB: usize   = 2 * 1024;
@@ -27,12 +31,14 @@ pub const CRC_CHECKSUM_LEN_IN_BYTES:                    u16 = 4;
 pub const MAC_ADDR_LEN_IN_BYTES:                        u16 = 6;
 /// Size of ethernet frame header which contains a source and destination mac address, and the ether type field.
 pub const ETHERNET_HEADER_LEN_IN_BYTES:                 u16 = MAC_ADDR_LEN_IN_BYTES * 2 + ETHER_TYPE_LEN_IN_BYTES;
-/// Minimum size of the payload of an ethernet frame (doesn't include the ethernet header)
+/// Minimum size of the payload of an ethernet frame (doesn't include the ethernet header or offloaded CRC)
 pub const MIN_PAYLOAD_LEN_IN_BYTES:                     u16 = 46;
-/// Maximum size of the payload of an ethernet frame (doesn't include the ethernet header)
+/// Maximum size of the payload of an ethernet frame (doesn't include the ethernet header or offloaded CRC)
 pub const MAX_STANDARD_PAYLOAD_LEN_IN_BYTES:            u16 = 1500;
-pub const MAX_STANDARD_ETHERNET_FRAME_LEN_IN_BYTES:     u16 = MAX_STANDARD_PAYLOAD_LEN_IN_BYTES + ETHERNET_HEADER_LEN_IN_BYTES + CRC_CHECKSUM_LEN_IN_BYTES;
-pub const MIN_ETHERNET_FRAME_LEN_IN_BYTES:              u16 = MIN_PAYLOAD_LEN_IN_BYTES + ETHERNET_HEADER_LEN_IN_BYTES + CRC_CHECKSUM_LEN_IN_BYTES;
+/// Minimum size of of an ethernet frame with an offloaded CRC
+pub const MIN_ETHERNET_FRAME_LEN_IN_BYTES:              u16 = MIN_PAYLOAD_LEN_IN_BYTES + ETHERNET_HEADER_LEN_IN_BYTES;
+/// Maximum size of of an ethernet frame with an offloaded CRC
+pub const MAX_STANDARD_ETHERNET_FRAME_LEN_IN_BYTES:     u16 = MAX_STANDARD_PAYLOAD_LEN_IN_BYTES + ETHERNET_HEADER_LEN_IN_BYTES;
 
 
 /// The different payload sizes supported by the NIC.
@@ -53,10 +59,9 @@ pub type PacketBufferJ = PacketBuffer<{MTU::Jumbo}>;
 /// This is a combined packet buffer without any drop handler to make it easy to use buffers in a network function loop.
 /// Network functions receive a packet, process it, and then transmit it.
 pub struct PacketBuffer<const N: MTU> {
-    pub(crate) mp: MappedPages,
-    pub(crate) phys_addr: PhysicalAddress,
+    phys_addr: PhysicalAddress,
     pub length: u16,
-    // pub buffer: *mut EthernetFrame //look into ouborous or pinned. should be able to store reference to MappedPages
+    buffer: BoxRefMut<MappedPages, EthernetFrame> //look into ouborous or pinned. should be able to store reference to MappedPages
 }
 
 impl<const N: MTU> PacketBuffer<N> {
@@ -77,13 +82,12 @@ impl<const N: MTU> PacketBuffer<N> {
             NIC_MAPPING_FLAGS_CACHED,
         )?;
         
-        // let buffer = mp.as_type_mut::<EthernetFrame>(0)? as *mut EthernetFrame;
+        let buffer = BoxRefMut::new(Box::new(mp)).try_map_mut(|mp| mp.as_type_mut::<EthernetFrame>(0))?;
 
         Ok(PacketBuffer {
-            mp: mp,
             phys_addr: starting_phys_addr,
             length: length_in_bytes,
-            // buffer
+            buffer
         })
     }
 
@@ -99,15 +103,15 @@ impl<const N: MTU> PacketBuffer<N> {
 }
 
 impl<const N: MTU> Deref for PacketBuffer<N> {
-    type Target = MappedPages;
-    fn deref(&self) -> &MappedPages {
-        &self.mp
+    type Target = EthernetFrame;
+    fn deref(&self) -> &EthernetFrame {
+        &self.buffer
     }
 }
 
 impl<const N: MTU> DerefMut for PacketBuffer<N> {
-    fn deref_mut(&mut self) -> &mut MappedPages {
-        &mut self.mp
+    fn deref_mut(&mut self) -> &mut EthernetFrame {
+        &mut self.buffer
     }
 }
 
@@ -120,5 +124,4 @@ pub struct EthernetFrame {
     pub src_addr:   [u8; MAC_ADDR_LEN_IN_BYTES as usize],
     pub length:     u16,
     pub payload:    [u8; MAX_STANDARD_PAYLOAD_LEN_IN_BYTES as usize],
-    _crc:            [u8; CRC_CHECKSUM_LEN_IN_BYTES as usize]
 }
