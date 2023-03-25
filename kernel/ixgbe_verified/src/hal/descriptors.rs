@@ -183,7 +183,7 @@ impl AdvancedRxDescriptor {
     #[inline(always)]
     #[trusted]
     pub fn get_pkt_len(&self) -> u64{
-        (self.header_buffer_address.read() & 0xFFFF) >> 32 //.get_bits(32..47) 
+        (self.header_buffer_address.read() >> 32) & 0xFFFF //.get_bits(32..47) 
     }
 }
 
