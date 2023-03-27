@@ -8,7 +8,7 @@ use owning_ref::BoxRefMut;
 use core::panic;
 use core::{ops::{DerefMut, Deref}};
 use alloc::{
-    vec::Vec, collections::VecDeque,
+    vec::Vec,
 };
 use packet_buffers::PacketBufferS;
 use hal::regs::TDHSet;
@@ -38,7 +38,7 @@ pub struct TxQueue<const S: TxState> {
     /// This in itself doesn't guarantee anything but we use this value when setting the cpu id for interrupts and DCA.
     cpu_id : Option<u8>,
     /// value of Report Status flag in the descriptors
-    RS_bit: u8
+    rs_bit: u8
 }
 
 impl TxQueue<{TxState::Enabled}> {
@@ -57,7 +57,7 @@ impl TxQueue<{TxState::Enabled}> {
         let tdh_set = regs.tdh_write(0, tdlen_set);
         regs.tdt_write(0);
 
-        Ok((TxQueue { id: regs.id() as u8, regs, tx_descs, num_tx_descs: num_tx_descs as u16, tx_cur: 0, tx_bufs_in_use: Vec::with_capacity(num_tx_descs), tx_clean: 0, cpu_id, RS_bit: rs_bit.value() }, tdh_set))
+        Ok((TxQueue { id: regs.id() as u8, regs, tx_descs, num_tx_descs: num_tx_descs as u16, tx_cur: 0, tx_bufs_in_use: Vec::with_capacity(num_tx_descs), tx_clean: 0, cpu_id, rs_bit: rs_bit.value() }, tdh_set))
     }
 
     /// Sends a maximum of `batch_size` number of packets from the stored `buffers`.
@@ -76,12 +76,6 @@ impl TxQueue<{TxState::Enabled}> {
         //     used_buffers,
         //     self.RS_bit
         // ).0
-<<<<<<< HEAD
-        let tx_cur_org = self.tx_cur;
-        let tx_clean_org = self.tx_clean;
-        let buffers_len_org = buffers.len();
-=======
->>>>>>> 3236a9ecbacb3436bb23cb84b93a1365b2a8a53d
         let mut pkts_sent = 0;
         let mut tx_cur = self.tx_cur;
 
@@ -97,7 +91,6 @@ impl TxQueue<{TxState::Enabled}> {
                     // tx queue of device is full, push packet back onto the
                     // queue of to-be-sent packets
                     // error!("could not send packet, tx queue is full {}", buffers.len() + 1);
-                    // error!("original tx clean {}, tx cur {}, buffer len {}", tx_clean_org, tx_cur_org, buffers_len_org);
                     // error!("tx clean {}, tx cur {}", tx_clean, tx_cur);
                     buffers.push(packet);
                     break;
@@ -106,7 +99,7 @@ impl TxQueue<{TxState::Enabled}> {
                     error!("zero sized packet!");
                     panic!();
                 }
-                self.tx_descs[tx_cur as usize].send(packet.phys_addr(), packet.length, self.RS_bit);
+                self.tx_descs[tx_cur as usize].send(packet.phys_addr(), packet.length, self.rs_bit);
                 self.tx_bufs_in_use.push(packet);
     
                 tx_cur = tx_next;
@@ -128,11 +121,7 @@ impl TxQueue<{TxState::Enabled}> {
     /// Removes multiples of `TX_CLEAN_BATCH` packets from `queue`.    
     /// (code taken from https://github.com/ixy-languages/ixy.rs/blob/master/src/ixgbe.rs#L1016)
     fn tx_clean(&mut self, used_buffers: &mut Vec<PacketBufferS>)  {
-<<<<<<< HEAD
         const TX_CLEAN_BATCH: usize = 32;
-=======
-        const TX_CLEAN_BATCH: usize = 16;
->>>>>>> 3236a9ecbacb3436bb23cb84b93a1365b2a8a53d
 
         let mut tx_clean = self.tx_clean as usize;
         let tx_cur = self.tx_cur;
@@ -197,7 +186,7 @@ impl TxQueue<{TxState::Enabled}> {
         for desc in self.tx_descs.iter_mut() {
             let mut packet = buffers.pop().unwrap();
             packet.length = 64;
-            desc.send(packet.phys_addr(), packet.length, self.RS_bit);
+            desc.send(packet.phys_addr(), packet.length, self.rs_bit);
             self.tx_bufs_in_use.push(packet);
         }
 
@@ -223,7 +212,7 @@ impl TxQueue<{TxState::Enabled}> {
                 break;
             }
 
-            self.tx_descs[tx_cur as usize].send(self.tx_bufs_in_use[tx_cur as usize].phys_addr(), self.tx_bufs_in_use[tx_cur as usize].length, self.RS_bit);
+            self.tx_descs[tx_cur as usize].send(self.tx_bufs_in_use[tx_cur as usize].phys_addr(), self.tx_bufs_in_use[tx_cur as usize].length, self.rs_bit);
 
             tx_cur = tx_next;
             pkts_sent += 1;

@@ -7,7 +7,7 @@ use alloc::{
 };
 use zerocopy::FromBytes;
 use owning_ref::BoxRefMut;
-use packet_buffers::{PacketBuffer, MTU, MAX_STANDARD_ETHERNET_FRAME_LEN_IN_BYTES, MIN_ETHERNET_FRAME_LEN_IN_BYTES};
+use packet_buffers::{PacketBuffer, MTU, MIN_ETHERNET_FRAME_LEN_IN_BYTES};
 use core::ops::Deref;
 
 /// The mapping flags used for MMIO registers.

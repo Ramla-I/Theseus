@@ -285,7 +285,7 @@ impl IntelIxgbeRegisters2 {
     }
 
    
-    pub fn rxctrl_rx_enable(&mut self, fctrl_set: FCTRLSet) {
+    pub fn rxctrl_rx_enable(&mut self, _fctrl_set: FCTRLSet) {
         let val = self.rxctrl.read();
         self.rxctrl.write(val | RECEIVE_ENABLE); 
     }
@@ -334,7 +334,7 @@ impl IntelIxgbeRegisters2 {
     }
 
     // Resolves DPDK Bug 21
-    pub fn fctrl_write(&mut self, val: FilterCtrlFlags, rx_disabled: RXCTRLDisabled) -> FCTRLSet {
+    pub fn fctrl_write(&mut self, val: FilterCtrlFlags, _rx_disabled: RXCTRLDisabled) -> FCTRLSet {
         self.fctrl.write(val.bits());
         FCTRLSet(true)
     }
@@ -519,7 +519,7 @@ impl IntelIxgbeRegisters3 {
 
     // Returns bit 3:1 if the firmware mode is valid
     // Prevents DPDK bug 26
-    pub fn fswm_fw_mode(&self, valid: FWValid) -> u32 {
+    pub fn fswm_fw_mode(&self, _valid: FWValid) -> u32 {
         (self.fwsm.read() >> 1) & 0x7
     }
 
@@ -780,7 +780,7 @@ impl RegistersTx {
     }
 
     // the queue can only be enabled after the TDH register is set
-    pub fn txdctl_txq_enable(&mut self, tdh_set: TDHSet) {
+    pub fn txdctl_txq_enable(&mut self, _tdh_set: TDHSet) {
         let val = self.txdctl.read();
         self.txdctl.write(val | TX_Q_ENABLE); 
     }

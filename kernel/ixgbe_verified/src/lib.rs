@@ -64,11 +64,11 @@ use irq_safety::MutexIrqSafe;
 use memory::MappedPages;
 use pci::{PciDevice, PciConfigSpaceAccessMechanism, PciLocation, BAR, PciBaseAddr, PciMemSize};
 use owning_ref::BoxRefMut;
-use bit_field::BitField;
-use hpet::get_hpet;
-use rand::{SeedableRng, RngCore};
+// use bit_field::BitField;
+// use hpet::get_hpet;
+// use rand::{SeedableRng, RngCore};
 use core::ops::{Deref};
-use core::convert::{TryInto, TryFrom};
+use core::convert::{TryFrom};
 
 /// Vendor ID for Intel
 pub const INTEL_VEND:                   u16 = 0x8086;  
@@ -211,7 +211,7 @@ impl IxgbeNic {
 
         // 16-byte aligned memory mapped base address
         let mem_base =  ixgbe_pci_dev.determine_pci_base_addr(BAR::BAR0)?;
-        let mem_size = ixgbe_pci_dev.determine_pci_mem_size(BAR::BAR0);
+        let _mem_size = ixgbe_pci_dev.determine_pci_mem_size(BAR::BAR0);
 
         // set the bus mastering bit for this PciDevice, which allows it to use DMA
         ixgbe_pci_dev.pci_set_command_bus_master_bit();
@@ -236,7 +236,7 @@ impl IxgbeNic {
 
         // create the rx descriptor queues
         let rx_registers_unusable = rx_mapped_registers.split_off(IXGBE_NUM_RX_QUEUES_ENABLED as usize);
-        let mut rx_queues = Self::rx_init(&mut mapped_registers1, &mut mapped_registers2, rx_mapped_registers, num_rx_descriptors)?;
+        let rx_queues = Self::rx_init(&mut mapped_registers1, &mut mapped_registers2, rx_mapped_registers, num_rx_descriptors)?;
         
          // create the tx descriptor queues
         let tx_registers_unusable = tx_mapped_registers.split_off(IXGBE_NUM_TX_QUEUES_ENABLED as usize);
@@ -393,19 +393,19 @@ impl IxgbeNic {
         let mut offset_page = *mapped_pages.deref().start() + GENERAL_REGISTERS_1_SIZE;
         let (nic_regs1_mapped_page, mapped_pages) = mapped_pages.split(offset_page).unwrap();
 
-        let mut offset_page = *mapped_pages.deref().start() + RX_REGISTERS_SIZE;
+        offset_page = *mapped_pages.deref().start() + RX_REGISTERS_SIZE;
         let (nic_rx_regs1_mapped_page, mapped_pages) = mapped_pages.split(offset_page).unwrap();
 
-        let mut offset_page = *mapped_pages.deref().start() + GENERAL_REGISTERS_2_SIZE;
+        offset_page = *mapped_pages.deref().start() + GENERAL_REGISTERS_2_SIZE;
         let (nic_regs2_mapped_page, mapped_pages) = mapped_pages.split(offset_page).unwrap();
 
-        let mut offset_page = *mapped_pages.deref().start() + TX_REGISTERS_SIZE;
+        offset_page = *mapped_pages.deref().start() + TX_REGISTERS_SIZE;
         let (nic_tx_regs_mapped_page, mapped_pages) = mapped_pages.split(offset_page).unwrap();
 
-        let mut offset_page = *mapped_pages.deref().start() + MAC_REGISTERS_SIZE;
+        offset_page = *mapped_pages.deref().start() + MAC_REGISTERS_SIZE;
         let (nic_mac_regs_mapped_page, mapped_pages) = mapped_pages.split(offset_page).unwrap();
 
-        let mut offset_page = *mapped_pages.deref().start() + RX_REGISTERS_SIZE;
+        offset_page = *mapped_pages.deref().start() + RX_REGISTERS_SIZE;
         let (nic_rx_regs2_mapped_page, nic_regs3_mapped_page) = mapped_pages.split(offset_page).unwrap();  
 
         // Map the memory as the register struct and tie the lifetime of the struct with its backing mapped pages

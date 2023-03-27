@@ -6,7 +6,7 @@ use crate::NumDesc;
 use crate::allocator::*;
 use packet_buffers::PacketBuffer;
 use owning_ref::BoxRefMut;
-use core::{ops::{DerefMut, Deref}, convert::TryFrom, iter::Filter};
+use core::{ops::{DerefMut, Deref}, convert::TryFrom};
 use alloc::vec::Vec;
 
 pub type RxQueueE   = RxQueue<{RxState::Enabled}>;
