@@ -17,14 +17,6 @@
 //! This simply indicates that the extra functions are currently not used in the driver, 
 //! and so we haven't implemented the necessary checks for safe access.
 
-use prusti_contracts::trusted;
-
-cfg_if::cfg_if! {
-if #[cfg(prusti)] { // We used a a spec for the volatile crate during verification
-
-use crate::spec::volatile_spec::*;
-
-} else { // We don't include any registers in the verification code besides the Rx and Tx Queue registers, since they're used in the rx/tx functions
 
 use volatile::{Volatile, ReadOnly, WriteOnly};
 use zerocopy::FromBytes;
@@ -863,11 +855,10 @@ impl RegistersRx {
         self.rxdctl.write(val | RX_Q_ENABLE); 
     }
 }
-}}
 
 
 /// Set of registers associated with one transmit descriptor queue.
-#[cfg_attr(not(prusti), derive(FromBytes))]
+#[derive(FromBytes)]
 #[repr(C)]
 pub(crate) struct RegistersTx {
     /// Transmit Descriptor Base Address Low
@@ -910,7 +901,7 @@ impl RegistersTx {
 }
 
 /// Set of registers associated with one receive descriptor queue.
-#[cfg_attr(not(prusti), derive(FromBytes))]
+#[derive(FromBytes)]
 #[repr(C)]
 pub struct RegistersRx {
     /// Receive Descriptor Base Address Low
