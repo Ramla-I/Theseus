@@ -1,18 +1,7 @@
-use prusti_contracts::*;
-
-cfg_if::cfg_if! {
-if #[cfg(prusti)] { // all memory related structs are verified via a spec since we are not verifying the memory crate.
-
-use crate::spec::{memory_spec::*, volatile_spec::*};
-
-} else {
-
 use memory::PhysicalAddress;
 use volatile::Volatile;
 use zerocopy::FromBytes;
 use bit_field::BitField;
-
-}} 
 
 pub trait Descriptor {
     /// set all fields to 0
@@ -65,7 +54,7 @@ pub const RX_STATUS_EOP:                   u8 = 1 << 1;
 /// Write Back contains information the hardware writes on receiving a packet.
 ///
 /// More information can be found in the 82599 datasheet.
-#[cfg_attr(not(prusti), derive(FromBytes))]
+#[derive(FromBytes)]
 #[repr(C)]
 pub struct AdvancedTxDescriptor {
     /// Starting physical address of the receive buffer for the packet.
@@ -88,7 +77,6 @@ pub struct AdvancedTxDescriptor {
 
 impl AdvancedTxDescriptor {
     #[inline(always)]
-    #[trusted]
     pub(crate) fn send(&mut self, transmit_buffer_addr: PhysicalAddress, transmit_buffer_length: u16, rs_bit: u8) {
         self.packet_buffer_address.write(transmit_buffer_addr.value() as u64);
         self.data_len.write(transmit_buffer_length);
@@ -98,7 +86,6 @@ impl AdvancedTxDescriptor {
     }
 
     #[inline(always)]
-    #[trusted]
     pub fn wait_for_packet_tx(&self) {
         while (self.paylen_popts_cc_idx_sta.read() as u8 & TX_STATUS_DD) == 0 {
             // error!("tx desc status: {:#X}", self.desc.read());
@@ -106,7 +93,6 @@ impl AdvancedTxDescriptor {
     }
 
     #[inline(always)]
-    #[trusted]
     pub fn desc_done(&self) -> bool {
         (self.paylen_popts_cc_idx_sta.read() as u8 & TX_STATUS_DD) == TX_STATUS_DD
     }
@@ -130,7 +116,7 @@ impl Descriptor for AdvancedTxDescriptor {
 /// Read contains the addresses that the driver writes.
 /// Write Back contains information the hardware writes on receiving a packet.
 /// More information can be found in the 82599 datasheet.
-#[cfg_attr(not(prusti), derive(FromBytes))]
+#[derive(FromBytes)]
 #[repr(C)]
 pub struct AdvancedRxDescriptor {
     /// Starting physcal address of the receive buffer for the packet.
@@ -188,8 +174,6 @@ impl AdvancedRxDescriptor {
 }
 
 
-cfg_if::cfg_if! { // functions that are not used during receiving a packet are not included in the verification code. Even if they were, we would just set them to be trusted 
-if #[cfg(not(prusti))] {
 // functions that don't have to be verified
 impl AdvancedRxDescriptor {
     pub(crate) fn init (&mut self, packet_buffer_address: PhysicalAddress) {
@@ -252,7 +236,6 @@ impl AdvancedRxDescriptor {
         self.header_buffer_address.read().get_bits(48..63) 
     }    
 }
-}}
 
 impl Descriptor for AdvancedRxDescriptor {
     fn clear(&mut self) {

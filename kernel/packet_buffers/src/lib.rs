@@ -68,8 +68,6 @@ impl<const N: MTU> PacketBuffer<N> {
     /// Creates a new `PacketBuffer` of the standard 2 KiB size.
     /// The actual size of the buffer is always >= `length_in_bytes`
     /// The `length_in_bytes` is a `u16` because that is the maximum size of a NIC buffer. 
-    /// # Note: The `length_in_bytes` should include the total length, payload + headers + checksum. 
-    /// # Warning: Since the checksum is added by the NIC using a hardware offload, the last 4 bytes of the buffer should never be used.
     pub fn new(mut length_in_bytes: u16) -> Result<PacketBuffer<{MTU::Standard}>, &'static str> {
         if length_in_bytes >  MAX_STANDARD_ETHERNET_FRAME_LEN_IN_BYTES {
             return Err("Size of packet buffer is larger than MTU");
@@ -104,12 +102,14 @@ impl<const N: MTU> PacketBuffer<N> {
 
 impl<const N: MTU> Deref for PacketBuffer<N> {
     type Target = EthernetFrame;
+    #[inline(always)]
     fn deref(&self) -> &EthernetFrame {
         &self.buffer
     }
 }
 
 impl<const N: MTU> DerefMut for PacketBuffer<N> {
+    #[inline(always)]
     fn deref_mut(&mut self) -> &mut EthernetFrame {
         &mut self.buffer
     }

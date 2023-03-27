@@ -17,14 +17,6 @@
 //! This simply indicates that the extra functions are currently not used in the driver, 
 //! and so we haven't implemented the necessary checks for safe access.
 
-use prusti_contracts::trusted;
-
-cfg_if::cfg_if! {
-if #[cfg(prusti)] { // We used a a spec for the volatile crate during verification
-
-use crate::spec::volatile_spec::*;
-
-} else { // We don't include any registers in the verification code besides the Rx and Tx Queue registers, since they're used in the rx/tx functions
 
 use volatile::{Volatile, ReadOnly, WriteOnly};
 use zerocopy::FromBytes;
@@ -795,7 +787,7 @@ impl RegistersTx {
 
     pub fn txdctl_write_wthresh(&mut self, wthresh: U7) -> ReportStatusBit {
         let val = self.txdctl.read() & !0x7F_0000;
-        self.txdctl.write(val | (wthresh.bits() as u32) << 16);
+        self.txdctl.write(val | ((wthresh.bits() as u32) << 16));
 
         if wthresh.bits() > 0 {
             ReportStatusBit::zero()
@@ -807,7 +799,7 @@ impl RegistersTx {
     // Upholds the invariant that hthresh > 0 when pthresh is set
     pub fn txdctl_write_pthresh_hthresh(&mut self, pthresh: U7, hthresh: HThresh) {
         let val = self.txdctl.read() & !0x7F7F;
-        self.txdctl.write(val | (pthresh.bits() as u32) | (hthresh.bits() as u32) << 8);
+        self.txdctl.write(val | (pthresh.bits() as u32) | ((hthresh.bits() as u32) << 8));
     }
 
     /// Assume we used the advanced tx descriptors, otherwise create an enum for descriptor types
@@ -819,7 +811,7 @@ impl RegistersTx {
     // gate access so that the upper 16 bits are always set to 0
     // Prevents DPDK bug 25
     // The two linear types enforce the order of operations tdlen -> tdh -> txq enable
-    pub fn tdh_write(&mut self, val: u16, tdlen_written: TDLENSet) -> TDHSet {
+    pub fn tdh_write(&mut self, val: u16, _tdlen_written: TDLENSet) -> TDHSet {
         self.tdh.write(val as u32);
         TDHSet(true)
     }
@@ -843,8 +835,8 @@ impl RegistersRx {
         self.dca_rxctrl.write(val & !DCA_RXCTRL_CLEAR_BIT_12);
     }
     
-    pub fn srrctl_write(&mut self, desc_type: DescType) {
-        self.srrctl.write((desc_type as u32) << 25);
+    pub fn srrctl_write(&mut self, desc_type: DescType, receive_buffer_size: RxBufferSizeKiB) {
+        self.srrctl.write(((desc_type as u32) << 25) | (receive_buffer_size as u32));
     }
 
     pub fn srrctl_drop_enable(&mut self) {
@@ -863,11 +855,10 @@ impl RegistersRx {
         self.rxdctl.write(val | RX_Q_ENABLE); 
     }
 }
-}}
 
 
 /// Set of registers associated with one transmit descriptor queue.
-#[cfg_attr(not(prusti), derive(FromBytes))]
+#[derive(FromBytes)]
 #[repr(C)]
 pub(crate) struct RegistersTx {
     /// Transmit Descriptor Base Address Low
@@ -910,7 +901,7 @@ impl RegistersTx {
 }
 
 /// Set of registers associated with one receive descriptor queue.
-#[cfg_attr(not(prusti), derive(FromBytes))]
+#[derive(FromBytes)]
 #[repr(C)]
 pub struct RegistersRx {
     /// Receive Descriptor Base Address Low

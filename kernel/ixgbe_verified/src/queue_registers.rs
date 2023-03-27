@@ -5,17 +5,9 @@
 
 use super::hal::regs::{RegistersRx, RegistersTx};
 use core::ops::{Deref, DerefMut};
-
-cfg_if::cfg_if! {
-if #[cfg(prusti)] {
-
-use crate::spec::memory_spec::*;
-
-} else {
-
 use mapped_pages_fragments::{MappedPagesFragments, Fragment};
 
-}}
+
 
 /// Struct that stores a pointer to registers for one ixgbe transmit queue
 /// as well as a shared reference to the backing `MappedPages` where these registers are located.
@@ -63,8 +55,6 @@ impl DerefMut for RxQueueRegisters {
     }
 }
 
-cfg_if::cfg_if! {
-if #[cfg(not(prusti))] {
 
 impl TxQueueRegisters {
     pub fn new(queue_id: usize, mp: &mut MappedPagesFragments) -> Result<TxQueueRegisters, &'static str> {
@@ -96,4 +86,3 @@ impl RxQueueRegisters {
     }
 }
 
-}}
