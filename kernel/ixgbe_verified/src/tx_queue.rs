@@ -76,9 +76,12 @@ impl TxQueue<{TxState::Enabled}> {
         //     used_buffers,
         //     self.RS_bit
         // ).0
+<<<<<<< HEAD
         let tx_cur_org = self.tx_cur;
         let tx_clean_org = self.tx_clean;
         let buffers_len_org = buffers.len();
+=======
+>>>>>>> 3236a9ecbacb3436bb23cb84b93a1365b2a8a53d
         let mut pkts_sent = 0;
         let mut tx_cur = self.tx_cur;
 
@@ -125,7 +128,11 @@ impl TxQueue<{TxState::Enabled}> {
     /// Removes multiples of `TX_CLEAN_BATCH` packets from `queue`.    
     /// (code taken from https://github.com/ixy-languages/ixy.rs/blob/master/src/ixgbe.rs#L1016)
     fn tx_clean(&mut self, used_buffers: &mut Vec<PacketBufferS>)  {
+<<<<<<< HEAD
         const TX_CLEAN_BATCH: usize = 32;
+=======
+        const TX_CLEAN_BATCH: usize = 16;
+>>>>>>> 3236a9ecbacb3436bb23cb84b93a1365b2a8a53d
 
         let mut tx_clean = self.tx_clean as usize;
         let tx_cur = self.tx_cur;
