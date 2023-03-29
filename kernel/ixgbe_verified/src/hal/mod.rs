@@ -280,8 +280,8 @@ const_assert_eq!(HThresh::all().bits() & 0x80, 0);
 
 // Since all our code is for Advanced Descriptors, we don't let any other value be used
 pub enum DescType {
-    // Legacy = 0,
-    AdvDesc1Buf = 1,
+    Legacy = 0,
+    // AdvDesc1Buf = 1,
     // AdvDescHeadSplit = 2,
     // AdvDescHeadSplitAlways = 5,
 }

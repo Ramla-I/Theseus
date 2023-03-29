@@ -1,10 +1,11 @@
-use memory::{MappedPages};
+use memory::{MappedPages, create_contiguous_mapping};
+use zerocopy::FromBytes;
 use crate::regs::ReportStatusBit;
-use crate::{hal::descriptors::AdvancedTxDescriptor};
+use crate::{hal::descriptors::LegacyTxDescriptor};
 use crate::queue_registers::TxQueueRegisters;
 use crate::{NumDesc};
 use crate::allocator::*;
-use owning_ref::BoxRefMut;
+use owning_ref::{BoxRefMut, BoxRef};
 use core::panic;
 use core::{ops::{DerefMut, Deref}};
 use alloc::{
@@ -12,6 +13,7 @@ use alloc::{
 };
 use packet_buffers::PacketBufferS;
 use hal::regs::TDHSet;
+use volatile::Volatile;
 
 pub type TxQueueE = TxQueue<{TxState::Enabled}>;
 pub type TxQueueD = TxQueue<{TxState::Disabled}>;
@@ -25,7 +27,7 @@ pub struct TxQueue<const S: TxState> {
     /// Registers for this transmit queue
     pub(crate) regs: TxQueueRegisters,
     /// Transmit descriptors 
-    pub(crate) tx_descs: BoxRefMut<MappedPages, [AdvancedTxDescriptor]>,
+    pub(crate) tx_descs: BoxRefMut<MappedPages, [LegacyTxDescriptor]>,
     /// The number of transmit descriptors in the descriptor ring
     num_tx_descs: u16,
     /// Current transmit descriptor index
@@ -38,7 +40,17 @@ pub struct TxQueue<const S: TxState> {
     /// This in itself doesn't guarantee anything but we use this value when setting the cpu id for interrupts and DCA.
     cpu_id : Option<u8>,
     /// value of Report Status flag in the descriptors
-    rs_bit: u8
+    rs_bit: u8,
+    /// descriptor write back address
+    head_wb: BoxRefMut<MappedPages, TransmitHead>,
+}
+
+#[derive(FromBytes)]
+#[repr(C, align(64))]
+pub struct TransmitHead {
+    pub value: Volatile<u32>,
+    pub value2: Volatile<u32>,
+    pub value3: Volatile<u32>,
 }
 
 impl TxQueue<{TxState::Enabled}> {
@@ -57,13 +69,75 @@ impl TxQueue<{TxState::Enabled}> {
         let tdh_set = regs.tdh_write(0, tdlen_set);
         regs.tdt_write(0);
 
-        Ok((TxQueue { id: regs.id() as u8, regs, tx_descs, num_tx_descs: num_tx_descs as u16, tx_cur: 0, tx_bufs_in_use: Vec::with_capacity(num_tx_descs), tx_clean: 0, cpu_id, rs_bit: rs_bit.value() }, tdh_set))
+        let (head_wb, desc_wb_paddr) = create_descriptor_writeback_field()?;
+
+        regs.tdwba_set_and_enable(desc_wb_paddr.value() as u64);
+
+        // Not sure why but listed in TinyNF as
+        //"INTERPRETATION-MISSING: We must disable relaxed ordering of head pointer write-back, since it could cause the head pointer to be updated backwards"
+        regs.dca_txctrl_disable_relaxed_ordering_head_wb();
+
+        Ok((TxQueue { id: regs.id() as u8, regs, tx_descs, num_tx_descs: num_tx_descs as u16, tx_cur: 0, tx_bufs_in_use: Vec::with_capacity(num_tx_descs), tx_clean: 0, cpu_id, rs_bit: rs_bit.value(), head_wb }, tdh_set))
     }
 
     /// Sends a maximum of `batch_size` number of packets from the stored `buffers`.
     /// The number of packets sent are returned.
     #[inline(always)]
     pub fn tx_batch(&mut self, batch_size: usize,  buffers: &mut Vec<PacketBufferS>, pool: &mut Vec<PacketBufferS>) -> u16 {
+        const TX_CLEAN_THRESHOLD: u16 = 2;
+        error!("before cleaning: tx_cur = {}, tx_clean ={}", self.tx_cur, self.tx_clean);
+        error!("wb head = {} {} {}", self.head_wb.value.read(), self.head_wb.value2.read(), self.head_wb.value3.read());
+
+        if (self.tx_cur - self.tx_clean) >= 2 * TX_CLEAN_THRESHOLD {
+            let actual_tx_head: u32 = self.head_wb.value.read();
+            
+            let mut descs_to_clean = actual_tx_head as i32 - self.tx_clean as i32;
+            if descs_to_clean < 0 { descs_to_clean += self.num_tx_descs as i32; }
+            
+            pool.extend(self.tx_bufs_in_use.drain(..descs_to_clean as usize)); // if descs_to_clean = 0, won't do anything
+            self.tx_clean = (self.tx_clean + descs_to_clean as u16) % self.num_tx_descs;
+        }
+
+        let mut pkts_sent = 0;
+        error!("tx_cur = {}, tx_clean ={}", self.tx_cur, self.tx_clean);
+
+        for _ in 0..batch_size {
+            let tx_next = (self.tx_cur + 1) % self.num_tx_descs;
+            if tx_next == self.tx_clean {
+                break;
+            }
+
+            if let Some(packet) = buffers.pop() {
+                if packet.length == 0 {
+                    error!("zero sized packet!");
+                    panic!();
+                }
+                let rs_bit = if (self.tx_cur % TX_CLEAN_THRESHOLD) == TX_CLEAN_THRESHOLD - 1 { self.rs_bit } else { 0 };
+                error!("rs_bit = {}", rs_bit);
+                self.tx_descs[self.tx_cur as usize].send(packet.phys_addr(), packet.length, rs_bit);
+                self.tx_bufs_in_use.push(packet);
+    
+                self.tx_cur = tx_next;
+                pkts_sent += 1;
+            } else {
+                break;
+            }
+        }
+
+        error!("sent {} packets", pkts_sent);
+        error!("tx_clean = {}, tx_cur = {}", self.tx_clean, self.tx_cur);
+        error!("tdwbal: {}", self.regs.tdwbal_read());
+        for i in 0..self.num_tx_descs {
+            error!("desc{}: {:?}", i, self.tx_descs[i as usize].desc_done());
+        }
+        if pkts_sent > 0 { self.regs.tdt_write(self.tx_cur); }
+        pkts_sent
+    }
+
+    /// Sends a maximum of `batch_size` number of packets from the stored `buffers`.
+    /// The number of packets sent are returned.
+    #[inline(always)]
+    pub fn tx_batch_wo_wb(&mut self, batch_size: usize,  buffers: &mut Vec<PacketBufferS>, pool: &mut Vec<PacketBufferS>) -> u16 {
         // verified_functions::tx_batch(
         //     &mut self.tx_descs, 
         //     &mut self.tx_bufs_in_use,
@@ -163,7 +237,7 @@ impl TxQueue<{TxState::Enabled}> {
 
 
 impl Deref for TxQueue<{TxState::Enabled}> {
-    type Target = BoxRefMut<MappedPages, [AdvancedTxDescriptor]>;
+    type Target = BoxRefMut<MappedPages, [LegacyTxDescriptor]>;
 
     fn deref(&self) -> &Self::Target {
         &self.tx_descs

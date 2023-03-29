@@ -815,6 +815,22 @@ impl RegistersTx {
         self.tdh.write(val as u32);
         TDHSet(true)
     }
+
+    pub fn tdwba_set_and_enable(&mut self, addr: u64) {
+        self.tdwbah.write((addr >> 32) as u32);
+        self.tdwbal.write(addr as u32 | 0x1);
+    }
+
+    pub fn tdwbal_read(&self) -> u32 {
+        self.tdwbal.read()
+    }
+
+    pub fn dca_txctrl_disable_relaxed_ordering_head_wb(&mut self){
+        const TX_DESC_WBRO_EN_BIT: u32 = 1 << 11;
+
+        let val = self.dca_txctrl.read();
+        self.dca_txctrl.write(val & !TX_DESC_WBRO_EN_BIT);
+    }
 }
 
 const_assert_eq!(core::mem::size_of::<RegistersRx>(), 64);

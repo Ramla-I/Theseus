@@ -1,5 +1,5 @@
 use memory::PhysicalAddress;
-use volatile::Volatile;
+use volatile::{Volatile, ReadOnly};
 use zerocopy::FromBytes;
 use bit_field::BitField;
 
@@ -17,8 +17,6 @@ pub const TX_CMD_IFCS:                     u8 = 1 << 1;
 pub const TX_CMD_IC:                       u8 = 1 << 2;     
 /// Tx Command: Report Status
 pub const TX_CMD_RS:                       u8 = 1 << 3;     
-/// Tx Command: Report Packet Sent
-pub const TX_CMD_RPS:                      u8 = 1 << 4;     
 /// Tx Command: Descriptor Extension (Advanced format)
 pub const TX_CMD_DEXT:                     u8 = 1 << 5;  
 /// Tx Command: VLAN Packet Enable
@@ -42,7 +40,70 @@ pub const RX_STATUS_DD:                    u8 = 1 << 0;
 /// Rx Status: End of Packet
 pub const RX_STATUS_EOP:                   u8 = 1 << 1;
 
+/// This struct is a Legacy Transmit Descriptor. 
+/// It's the descriptor type used in older Intel NICs and the E1000 driver.
+#[derive(FromBytes)]
+#[repr(C)]
+pub struct LegacyTxDescriptor {
+    /// The starting physical address of the transmit buffer
+    pub phys_addr:  Volatile<u64>,
+    /// Length of the transmit buffer in bytes
+    pub length:     Volatile<u16>,
+    /// Checksum offset: where to insert the checksum from the start of the packet if enabled
+    pub cso:        Volatile<u8>,
+    /// Command bits
+    pub cmd:        Volatile<u8>,
+    /// Status bits
+    pub status:     Volatile<u8>,
+    /// Checksum start: where to begin computing the checksum, if enabled
+    pub css:        Volatile<u8>,
+    /// Vlan tags 
+    pub vlan :      Volatile<u16>,
+}
 
+impl LegacyTxDescriptor {
+    fn init(&mut self) {
+        self.phys_addr.write(0);
+        self.length.write(0);
+        self.cso.write(0);
+        self.cmd.write(0);
+        self.status.write(0);
+        self.css.write(0);
+        self.vlan.write(0);
+    }
+
+    #[inline(always)]
+    pub fn send(&mut self, transmit_buffer_addr: PhysicalAddress, transmit_buffer_length: u16, rs_bit: u8) {
+        self.phys_addr.write(transmit_buffer_addr.value() as u64);
+        self.length.write(transmit_buffer_length);
+        self.cmd.write(TX_CMD_EOP | TX_CMD_IFCS | rs_bit); 
+        self.status.write(0);
+    }
+
+    fn wait_for_packet_tx(&self) {
+        while (self.status.read() & TX_STATUS_DD) == 0 {
+            // debug!("tx desc status: {}", self.status.read());
+        } 
+    }
+
+    #[inline(always)]
+    pub fn desc_done(&self) -> bool {
+        (self.status.read() & TX_STATUS_DD) == TX_STATUS_DD
+    }
+}
+
+impl Descriptor for LegacyTxDescriptor {
+    /// Set all fields to 0
+    fn clear(&mut self) {
+        self.phys_addr.write(0);
+        self.length.write(0);
+        self.cso.write(0);
+        self.cmd.write(0);
+        self.status.write(0);
+        self.css.write(0);
+        self.vlan.write(0);
+    }
+}
 
 /// Advanced Transmit Descriptor used by the `ixgbe` NIC driver.
 ///
@@ -110,6 +171,69 @@ impl Descriptor for AdvancedTxDescriptor {
     }
 }
 
+
+
+/// This struct is a Legacy Receive Descriptor. 
+/// The driver writes to the upper 64 bits, and the NIC writes to the lower 64 bits.
+/// It's the descriptor type used in older Intel NICs and the E1000 driver.
+#[derive(FromBytes)]
+#[repr(C)]
+pub struct LegacyRxDescriptor {
+    /// The starting physical address of the receive buffer
+    pub phys_addr:  Volatile<u64>,      
+    /// Length of the receive buffer in bytes
+    pub length:     ReadOnly<u16>,
+    /// Checksum value of the packet after the IP header till the end 
+    pub checksum:   ReadOnly<u16>,
+    /// Status bits which tell if the descriptor has been used
+    pub status:     Volatile<u8>,
+    /// Receive errors
+    pub errors:     ReadOnly<u8>,
+    /// Vlan tags
+    pub vlan:       ReadOnly<u16>,
+}
+
+impl LegacyRxDescriptor {
+    pub fn init(&mut self, packet_buffer_address: PhysicalAddress) {
+        self.phys_addr.write(packet_buffer_address.value() as u64);
+        self.status.write(0);
+    }
+
+    pub fn set_packet_address(&mut self, packet_buffer_address: PhysicalAddress) {
+        self.phys_addr.write(packet_buffer_address.value() as u64);
+    }
+
+    pub fn reset_status(&mut self) {
+        self.status.write(0);
+    }
+
+    pub fn descriptor_done(&self) -> bool {
+        (self.status.read() & RX_STATUS_DD) == RX_STATUS_DD
+    }
+
+    pub fn end_of_packet(&self) -> bool {
+        (self.status.read() & RX_STATUS_EOP) == RX_STATUS_EOP        
+    }
+
+    pub fn length(&self) -> u64 {
+        self.length.read() as u64
+    }
+}
+
+impl Descriptor for LegacyRxDescriptor {
+    fn clear(&mut self) {
+        self.phys_addr.write(0);
+        self.status.write(0);
+    }
+}
+
+use core::fmt;
+impl fmt::Debug for LegacyRxDescriptor {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "{{addr: {:#X}, length: {}, checksum: {}, status: {}, errors: {}, special: {}}}",
+                    self.phys_addr.read(), self.length.read(), self.checksum.read(), self.status.read(), self.errors.read(), self.vlan.read())
+    }
+}
 /// Advanced Receive Descriptor used in the Ixgbe driver.
 /// It has 2 modes: Read and Write Back, both of which use the whole 128 bits. 
 /// There is one receive descriptor per receive buffer that can be converted between these 2 modes.

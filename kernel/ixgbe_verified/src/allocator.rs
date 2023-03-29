@@ -1,6 +1,6 @@
 use memory::{EntryFlags, PhysicalAddress, allocate_pages_by_bytes, allocate_frames_by_bytes_at, get_kernel_mmi_ref, MappedPages, create_contiguous_mapping};
 use pci::{PciBaseAddr, PciMemSize};
-use crate::{hal::{NumDesc, descriptors::Descriptor}};
+use crate::{hal::{NumDesc, descriptors::Descriptor}, descriptors::AdvancedTxDescriptor, tx_queue::TransmitHead};
 use alloc::{
     boxed::Box,
     vec::Vec,
@@ -9,6 +9,7 @@ use zerocopy::FromBytes;
 use owning_ref::BoxRefMut;
 use packet_buffers::{PacketBuffer, MTU, MIN_ETHERNET_FRAME_LEN_IN_BYTES};
 use core::ops::Deref;
+use volatile::ReadOnly;
 
 /// The mapping flags used for MMIO registers.
 /// They include the NO_CACHE flag.
@@ -82,4 +83,11 @@ pub(crate) fn create_desc_ring<T: Descriptor + FromBytes>(num_desc: NumDesc) -> 
     for desc in desc_ring.iter_mut() { desc.clear() }
 
     Ok((desc_ring, descs_starting_phys_addr))
+}
+
+/// This wastes a lot of memory, but it's the easiest way to get an aligned physical address
+pub(crate) fn create_descriptor_writeback_field() -> Result<(BoxRefMut<MappedPages, TransmitHead>, PhysicalAddress), &'static str> {
+    let (desc_wb_mapped_pages, desc_wb_starting_phys_addr) = create_contiguous_mapping(core::mem::size_of::<TransmitHead>(), NIC_MAPPING_FLAGS_CACHED)?;
+
+    Ok((BoxRefMut::new(Box::new(desc_wb_mapped_pages)).try_map_mut(|mp| mp.as_type_mut::<TransmitHead>(0))?, desc_wb_starting_phys_addr))
 }

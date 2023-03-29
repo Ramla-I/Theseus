@@ -240,7 +240,7 @@ impl PciLocation {
         }
     }
 
-    /// Sets the PCI device's bit 3 in the command portion, which is apparently needed to activate DMA (??)
+    /// Sets the PCI device's bit 2 in the command portion, which is apparently needed to activate DMA (??)
     pub fn pci_set_command_bus_master_bit(&self) {
         unsafe { 
             PCI_CONFIG_ADDRESS_PORT.lock().write(self.pci_address(PCI_COMMAND));
@@ -251,6 +251,22 @@ impl PciLocation {
             PCI_CONFIG_DATA_PORT.lock().write(inval | (1 << 2));
         }
         trace!("pci_set_command_bus_master_bit: PciDevice: {}, read value AFTER WRITE CMD: {:#x}", 
+            self,
+            PCI_CONFIG_DATA_PORT.lock().read()
+        );
+    }
+
+    /// Sets the PCI device's bit 1 in the command portion
+    pub fn pci_set_command_memory_space_bit(&self) {
+        unsafe { 
+            PCI_CONFIG_ADDRESS_PORT.lock().write(self.pci_address(PCI_COMMAND));
+        }
+        let inval = PCI_CONFIG_DATA_PORT.lock().read(); 
+        trace!("pci_set_command_memory_space_bit: PciDevice: {}, read value: {:#x}", self, inval);
+        unsafe {
+            PCI_CONFIG_DATA_PORT.lock().write(inval | (1 << 1));
+        }
+        trace!("pci_set_command_memory_space_bit: PciDevice: {}, read value AFTER WRITE CMD: {:#x}", 
             self,
             PCI_CONFIG_DATA_PORT.lock().read()
         );

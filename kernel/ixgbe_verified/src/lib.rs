@@ -215,6 +215,7 @@ impl IxgbeNic {
 
         // set the bus mastering bit for this PciDevice, which allows it to use DMA
         ixgbe_pci_dev.pci_set_command_bus_master_bit();
+        ixgbe_pci_dev.pci_set_command_memory_space_bit();
 
         // map the IntelIxgbeRegisters structs to the address found from the pci space
         let (mut mapped_registers1, 
@@ -663,7 +664,7 @@ impl IxgbeNic {
             let mut rxq = RxQueueE::new(rxq_reg, num_rx_descs, None)?;
 
             // set the size of the packet buffers(leave default value) and the descriptor format used
-            rxq.regs.srrctl_write(DescType::AdvDesc1Buf, RxBufferSizeKiB::Buffer2KiB);
+            rxq.regs.srrctl_write(DescType::Legacy, RxBufferSizeKiB::Buffer2KiB);
             rxq.regs.srrctl_drop_enable();
 
             // enable the rx queue
@@ -760,7 +761,7 @@ impl IxgbeNic {
             let wthresh = U7::zero(); // b100 = 4 
             
             let rs_bit = txq_reg.txdctl_write_wthresh(wthresh); 
-            txq_reg.txdctl_write_pthresh_hthresh(pthresh, hthresh); 
+            // txq_reg.txdctl_write_pthresh_hthresh(pthresh, hthresh); 
             
             let (mut txq, tdh_set) = TxQueueE::new(txq_reg, num_tx_descs, None, rs_bit)?;
 

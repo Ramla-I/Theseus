@@ -47,7 +47,7 @@ use getopts::{Matches, Options};
 use hpet::get_hpet;
 
 // const DEST_MAC_ADDR: [u8; 6] = [0xa0, 0x36, 0x9f, 0x1d, 0x94, 0x4c];
-const DESC_RING_SIZE: usize = 512;
+const DESC_RING_SIZE: usize = 16;
 
 pub fn main(args: Vec<String>) -> isize {
 
@@ -194,24 +194,30 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
 
     let src_addr = dev0.mac_addr();
 
-    loop {
+    for _ in 0..DESC_RING_SIZE* 2 {
+        tx_packets_dev1 += dev1.tx_batch(0, 1, &mut pool0, &mut pool1) as usize;   
+    }
+    dev1.get_stats(&mut dev1_stats);
+    print_stats(1, &dev1_stats, rx_packets_dev1, tx_packets_dev1);
+    error!("total of {} packets sent", tx_packets_dev1);
+    // loop {
 
-        if collect_stats && (iterations & 0xFFF == 0){
-            delta_hpet = hpet.get_counter() - start_hpet;
+    //     if collect_stats && (iterations & 0xFFF == 0){
+    //         delta_hpet = hpet.get_counter() - start_hpet;
 
-            if delta_hpet >= cycles_in_one_sec {
-                if pmu {
-                    error!("{:?}\n", counters.as_mut().unwrap().read());
-                }
+    //         if delta_hpet >= cycles_in_one_sec {
+    //             if pmu {
+    //                 error!("{:?}\n", counters.as_mut().unwrap().read());
+    //             }
 
-                dev0.get_stats(&mut dev0_stats);
-                dev1.get_stats(&mut dev1_stats);
-                print_stats(0, &dev0_stats,  rx_packets_dev0, tx_packets_dev0);
-                print_stats(1, &dev1_stats, rx_packets_dev1, tx_packets_dev1);
-                rx_packets_dev0 = 0; tx_packets_dev0 = 0; rx_packets_dev1 = 0; tx_packets_dev1 = 0;
-                start_hpet = hpet.get_counter();
-            }
-        }
+    //             dev0.get_stats(&mut dev0_stats);
+    //             dev1.get_stats(&mut dev1_stats);
+    //             print_stats(0, &dev0_stats,  rx_packets_dev0, tx_packets_dev0);
+    //             print_stats(1, &dev1_stats, rx_packets_dev1, tx_packets_dev1);
+    //             rx_packets_dev0 = 0; tx_packets_dev0 = 0; rx_packets_dev1 = 0; tx_packets_dev1 = 0;
+    //             start_hpet = hpet.get_counter();
+    //         }
+    //     }
 
         /*** bidirectional forwarder ***/
         // rx_packets_dev0 += dev0.rx_batch(0, &mut received_buffers0, batch_size, &mut pool0).unwrap() as usize;
@@ -241,19 +247,19 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
         // tx_packets_dev1 += dev1.tx_batch(0, batch_size, &mut received_buffers0, &mut used_buffers0) as usize;   
 
         /*** unidirectional forwarder 2 ports (tested till 8.8 Mpps)***/
-        rx_packets_dev0 += dev0.rx_batch(0, &mut received_buffers0, batch_size, &mut pool0) as usize;
-        for p in &mut received_buffers0 {
-            p.dest_addr = [0,0,0,0,0,1];
-            p.src_addr = src_addr;
-        }
-        tx_packets_dev1 += dev1.tx_batch(0, batch_size, &mut received_buffers0, &mut pool0) as usize;   
-        pool0.append(&mut received_buffers0);
+    //     rx_packets_dev0 += dev0.rx_batch(0, &mut received_buffers0, batch_size, &mut pool0) as usize;
+    //     for p in &mut received_buffers0 {
+    //         p.dest_addr = [0,0,0,0,0,1];
+    //         p.src_addr = src_addr;
+    //     }
+    //     tx_packets_dev1 += dev1.tx_batch(0, batch_size, &mut received_buffers0, &mut pool0) as usize;   
+    //     pool0.append(&mut received_buffers0);
         
-        if collect_stats {
-            iterations += 1;
-        }
+    //     if collect_stats {
+    //         iterations += 1;
+    //     }
 
-    }
+    // }
 }
 
 
