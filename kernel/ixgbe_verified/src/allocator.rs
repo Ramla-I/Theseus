@@ -53,6 +53,14 @@ pub fn allocate_memory(mem_base: PhysicalAddress, mem_size_in_bytes: usize, mapp
     Ok(nic_mapped_page)
 }
 
+pub struct Packet {
+    pub index: usize
+}
+
+pub struct mempool {
+    pub buffers: Vec<PacketBuffer<{MTU::Standard}>>,
+    pub indexes: Vec<Packet>
+}
 
 /// Returns a buffer pool from where packet buffers are taken and returned
 /// 
@@ -67,6 +75,25 @@ pub fn init_rx_buf_pool(num_buffers: usize) -> Result<Vec<PacketBuffer<{MTU::Sta
         buffer_pool.push(rx_buf);
     }
     Ok(buffer_pool)
+}
+
+/// Returns a buffer pool from where packet buffers are taken and returned
+/// 
+/// # Arguments
+/// * `num_buffers`: number of buffers that are initially added to the pool 
+/// * `buffer_size`: size of the receive buffers in bytes
+pub fn init_mempool(num_buffers: usize) -> Result<mempool, &'static str> {
+    // let buffer_size_in_bytes = DEFAULT_RX_BUFFER_SIZE_2KB as u16 * 1024;
+    let mut buffers = Vec::with_capacity(num_buffers);
+    let mut indexes = Vec::with_capacity(num_buffers);
+
+    for i in 0..num_buffers {
+        let rx_buf = PacketBuffer::<{MTU::Standard}>::new(MIN_ETHERNET_FRAME_LEN_IN_BYTES)?;
+        buffers.push(rx_buf);
+        indexes.push(Packet{index: i});
+    }
+
+    Ok(mempool{buffers, indexes})
 }
 
 /// Allocates the memory for a descriptor ring, maps it to a slice of descriptors `T`, and clears each descriptor in the ring.

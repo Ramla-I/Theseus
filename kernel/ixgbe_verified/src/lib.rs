@@ -311,6 +311,11 @@ impl IxgbeNic {
         Ok(&mut self.tx_queues[idx])
     }
 
+    pub fn get_mempool(&mut self, idx: usize) -> mempool {
+        let mempool = allocator::init_mempool(512).unwrap();
+        core::mem::replace(&mut self.rx_queues[idx].rx_buffer_pool, mempool)
+    }
+
     /// Returns the Tx queue located at this index. 
     /// This doesn't have to match the queue ID.
     pub fn get_queue_pair(&mut self, rq_idx: usize, tq_idx: usize) -> Result<(&mut RxQueueE, &mut TxQueueE), &'static str> {
@@ -322,49 +327,49 @@ impl IxgbeNic {
     }
     
     #[inline(always)]
-    pub fn tx_batch(&mut self, qid: usize, batch_size: usize,  buffers: &mut Vec<PacketBufferS>, used_buffers: &mut Vec<PacketBufferS>) -> u16 {
+    pub fn tx_batch(&mut self, qid: usize, batch_size: usize,  buffers: &mut Vec<Packet>, used_buffers: &mut mempool, length: u16) -> u16 {
         // if qid >= self.tx_queues.len() {
         //     return Err("Queue index is out of range");
         // }
 
-        self.tx_queues[qid].tx_batch(batch_size, buffers, used_buffers)
+        self.tx_queues[qid].tx_batch(batch_size, length, buffers, used_buffers)
     }
 
     #[inline(always)]
-    pub fn rx_batch(&mut self, qid: usize, buffers: &mut Vec<PacketBufferS>, batch_size: usize, pool: &mut Vec<PacketBufferS>) -> u16 {
+    pub fn rx_batch(&mut self, qid: usize, buffers: &mut Vec<Packet>, batch_size: usize, pool: &mut mempool, length: &mut u16) -> u16 {
         // if qid >= self.rx_queues.len() {
         //     error!("Queue index is out of range");
         //     return Err(());
         // }
 
-        self.rx_queues[qid].rx_batch(buffers, batch_size, pool)
+        self.rx_queues[qid].rx_batch(buffers, batch_size, pool, length)
     }
 
-    #[inline(always)]
-    pub fn rx_batch_pseudo(&mut self, qid: usize, batch_size: usize) -> usize {
-        // if qid >= self.rx_queues.len() {
-        //     return Err("Queue index is out of range");
-        // }
+    // #[inline(always)]
+    // pub fn rx_batch_pseudo(&mut self, qid: usize, batch_size: usize) -> usize {
+    //     // if qid >= self.rx_queues.len() {
+    //     //     return Err("Queue index is out of range");
+    //     // }
 
-        self.rx_queues[qid].rx_batch_pseudo(batch_size)
-    }
+    //     self.rx_queues[qid].rx_batch_pseudo(batch_size)
+    // }
 
-    pub fn tx_populate(&mut self, qid: usize, pool: &mut Vec<PacketBufferS>){
-        // if qid >= self.rx_queues.len() {
-        //     return Err("Queue index is out of range");
-        // }
+    // pub fn tx_populate(&mut self, qid: usize, pool: &mut Vec<PacketBufferS>){
+    //     // if qid >= self.rx_queues.len() {
+    //     //     return Err("Queue index is out of range");
+    //     // }
 
-        self.tx_queues[qid].tx_populate(pool)
-    }
+    //     self.tx_queues[qid].tx_populate(pool)
+    // }
 
-    #[inline(always)]
-    pub fn tx_batch_pseudo(&mut self, qid: usize, batch_size: usize) -> usize {
-        // if qid >= self.rx_queues.len() {
-        //     return Err("Queue index is out of range");
-        // }
+    // #[inline(always)]
+    // pub fn tx_batch_pseudo(&mut self, qid: usize, batch_size: usize) -> usize {
+    //     // if qid >= self.rx_queues.len() {
+    //     //     return Err("Queue index is out of range");
+    //     // }
 
-        self.tx_queues[qid].tx_batch_pseudo(batch_size)
-    }
+    //     self.tx_queues[qid].tx_batch_pseudo(batch_size)
+    // }
 
     /// Returns the memory-mapped control registers of the nic and the rx/tx queue registers.
     fn mapped_reg2(
@@ -754,14 +759,14 @@ impl IxgbeNic {
             // If we enable this then we need to change the packet send function to stop polling for a descriptor done on every packet sent
             
             // Tx descriptor pre-fetch threshold (value taken from DPDK)
-            let pthresh = U7::B5 | U7::B2; // b100100 = 36
+            let pthresh = U7::B5 | U7::B2; // b100100 = 36 (DPDK), TInyNF uses 60
             // Tx descriptor host threshold (value taken from DPDK)
-            let hthresh = HThresh::B3; // b1000 = 8  
+            let hthresh = HThresh::B3; // b1000 = 8 (DPDK), TinyNF uses 4  
             // Tx descriptor write-back threshold (value taken from DPDK)
             let wthresh = U7::zero(); // b100 = 4 
             
             let rs_bit = txq_reg.txdctl_write_wthresh(wthresh); 
-            // txq_reg.txdctl_write_pthresh_hthresh(pthresh, hthresh); 
+            txq_reg.txdctl_write_pthresh_hthresh(pthresh, hthresh); 
             
             let (mut txq, tdh_set) = TxQueueE::new(txq_reg, num_tx_descs, None, rs_bit)?;
 

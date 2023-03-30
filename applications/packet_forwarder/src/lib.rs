@@ -40,14 +40,14 @@ use alloc::vec::Vec;
 use alloc::string::String;
 use ixgbe_verified::{
     get_ixgbe_nics_list, IxgbeStats,
-    allocator::init_rx_buf_pool,
+    allocator::{init_rx_buf_pool, Packet},
 };
-use packet_buffers::{PacketBufferS};
+use packet_buffers::{PacketBufferS, EthernetFrame};
 use getopts::{Matches, Options};
 use hpet::get_hpet;
 
 // const DEST_MAC_ADDR: [u8; 6] = [0xa0, 0x36, 0x9f, 0x1d, 0x94, 0x4c];
-const DESC_RING_SIZE: usize = 16;
+const DESC_RING_SIZE: usize = 512;
 
 pub fn main(args: Vec<String>) -> isize {
 
@@ -140,14 +140,15 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
 
     // create the buffers to store packets. 
     // They should have a large capacity so that no heap allocation is done during the benchmark
-    let mut received_buffers0: Vec<PacketBufferS> = Vec::with_capacity(DESC_RING_SIZE * 2);
-    let mut used_buffers0: Vec<PacketBufferS> = Vec::with_capacity(DESC_RING_SIZE * 2);
-    let mut received_buffers1: Vec<PacketBufferS> = Vec::with_capacity(DESC_RING_SIZE * 2);
-    let mut used_buffers1: Vec<PacketBufferS> = Vec::with_capacity(DESC_RING_SIZE * 2);
+    let mut received_buffers0: Vec<Packet> = Vec::with_capacity(DESC_RING_SIZE * 2);
+    let mut received_buffers1: Vec<Packet> = Vec::with_capacity(DESC_RING_SIZE * 2);
     
-    // Create a pool of unused packet buffers
-    let mut pool0 = init_rx_buf_pool(DESC_RING_SIZE * 2).expect("failed to init buf pool");
-    let mut pool1 = init_rx_buf_pool(DESC_RING_SIZE * 2).expect("failed to init buf pool");
+    // // Create a pool of unused packet buffers
+    // let mut pool0 = init_rx_buf_pool(DESC_RING_SIZE * 2).expect("failed to init buf pool");
+    // let mut pool1 = init_rx_buf_pool(DESC_RING_SIZE * 2).expect("failed to init buf pool");
+
+    let mut pool0 = dev0.get_mempool(0);
+    let mut pool1 = dev1.get_mempool(0);
 
 
     // clear the stats registers, and create an object to store the NIC stats during the benchmark
@@ -194,30 +195,31 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
 
     let src_addr = dev0.mac_addr();
 
-    for _ in 0..DESC_RING_SIZE* 2 {
-        tx_packets_dev1 += dev1.tx_batch(0, 1, &mut pool0, &mut pool1) as usize;   
-    }
-    dev1.get_stats(&mut dev1_stats);
-    print_stats(1, &dev1_stats, rx_packets_dev1, tx_packets_dev1);
-    error!("total of {} packets sent", tx_packets_dev1);
-    // loop {
+    // for _ in 0..(DESC_RING_SIZE* 2) / batch_size {
+    //     tx_packets_dev1 += dev1.tx_batch(0, batch_size, &mut pool0, &mut pool1) as usize;   
+    // }
+    // dev1.get_stats(&mut dev1_stats);
+    // print_stats(1, &dev1_stats, rx_packets_dev1, tx_packets_dev1);
+    // error!("total of {} packets sent", tx_packets_dev1);
 
-    //     if collect_stats && (iterations & 0xFFF == 0){
-    //         delta_hpet = hpet.get_counter() - start_hpet;
+    loop {
 
-    //         if delta_hpet >= cycles_in_one_sec {
-    //             if pmu {
-    //                 error!("{:?}\n", counters.as_mut().unwrap().read());
-    //             }
+        if collect_stats && (iterations & 0xFFF == 0){
+            delta_hpet = hpet.get_counter() - start_hpet;
 
-    //             dev0.get_stats(&mut dev0_stats);
-    //             dev1.get_stats(&mut dev1_stats);
-    //             print_stats(0, &dev0_stats,  rx_packets_dev0, tx_packets_dev0);
-    //             print_stats(1, &dev1_stats, rx_packets_dev1, tx_packets_dev1);
-    //             rx_packets_dev0 = 0; tx_packets_dev0 = 0; rx_packets_dev1 = 0; tx_packets_dev1 = 0;
-    //             start_hpet = hpet.get_counter();
-    //         }
-    //     }
+            if delta_hpet >= cycles_in_one_sec {
+                if pmu {
+                    error!("{:?}\n", counters.as_mut().unwrap().read());
+                }
+
+                dev0.get_stats(&mut dev0_stats);
+                dev1.get_stats(&mut dev1_stats);
+                print_stats(0, &dev0_stats,  rx_packets_dev0, tx_packets_dev0);
+                print_stats(1, &dev1_stats, rx_packets_dev1, tx_packets_dev1);
+                rx_packets_dev0 = 0; tx_packets_dev0 = 0; rx_packets_dev1 = 0; tx_packets_dev1 = 0;
+                start_hpet = hpet.get_counter();
+            }
+        }
 
         /*** bidirectional forwarder ***/
         // rx_packets_dev0 += dev0.rx_batch(0, &mut received_buffers0, batch_size, &mut pool0).unwrap() as usize;
@@ -247,19 +249,34 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
         // tx_packets_dev1 += dev1.tx_batch(0, batch_size, &mut received_buffers0, &mut used_buffers0) as usize;   
 
         /*** unidirectional forwarder 2 ports (tested till 8.8 Mpps)***/
-    //     rx_packets_dev0 += dev0.rx_batch(0, &mut received_buffers0, batch_size, &mut pool0) as usize;
-    //     for p in &mut received_buffers0 {
-    //         p.dest_addr = [0,0,0,0,0,1];
-    //         p.src_addr = src_addr;
-    //     }
-    //     tx_packets_dev1 += dev1.tx_batch(0, batch_size, &mut received_buffers0, &mut pool0) as usize;   
-    //     pool0.append(&mut received_buffers0);
-        
-    //     if collect_stats {
-    //         iterations += 1;
-    //     }
+        let mut length =60;
+        rx_packets_dev0 += dev0.rx_batch(0, &mut received_buffers0, batch_size, &mut pool0, &mut length) as usize;
+        for p in &received_buffers0 {
+           unsafe {
+                let frame = pool0.buffers[p.index].v_addr as *mut u8;
+                // (*frame).dest_addr = [0,0,0,0,0,1];
+                // (*frame).src_addr = src_addr;
+           }
+        }
+        tx_packets_dev1 += dev1.tx_batch(0, batch_size, &mut received_buffers0, &mut pool0, length) as usize;   
+        pool0.indexes.append(&mut received_buffers0);
 
-    // }
+        rx_packets_dev1 += dev1.rx_batch(0, &mut received_buffers1, batch_size, &mut pool1, &mut length) as usize;
+        for p in &mut received_buffers0 {
+            unsafe {
+                let frame = pool1.buffers[p.index].v_addr as *mut u8;
+                // (*frame).dest_addr = [0,0,0,0,0,1];
+                // (*frame).src_addr = src_addr;
+           }
+        }
+        tx_packets_dev0 += dev0.tx_batch(0, batch_size, &mut received_buffers1, &mut pool1, length) as usize;   
+        pool1.indexes.append(&mut received_buffers1);
+        
+        if collect_stats {
+            iterations += 1;
+        }
+
+    }
 }
 
 

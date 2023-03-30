@@ -2262,6 +2262,7 @@ dependencies = [
  "log",
  "memory",
  "owning_ref",
+ "static_assertions",
  "zerocopy",
 ]
 

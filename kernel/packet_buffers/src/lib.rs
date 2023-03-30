@@ -6,6 +6,7 @@ extern crate memory;
 extern crate zerocopy;
 extern crate owning_ref;
 extern crate alloc;
+#[macro_use] extern crate static_assertions;
 
 use core::ops::{Deref, DerefMut};
 use memory::{MappedPages, PhysicalAddress, create_contiguous_mapping, EntryFlags};
@@ -60,9 +61,14 @@ pub type PacketBufferJ = PacketBuffer<{MTU::Jumbo}>;
 /// Network functions receive a packet, process it, and then transmit it.
 pub struct PacketBuffer<const N: MTU> {
     phys_addr: PhysicalAddress,
-    pub length: u16,
-    buffer: BoxRefMut<MappedPages, EthernetFrame> //look into ouborous or pinned. should be able to store reference to MappedPages
+    // pub length: u16,
+    pub v_addr: u64,
+    // buffer: BoxRefMut<MappedPages, EthernetFrame> //look into ouborous or pinned. should be able to store reference to MappedPages
 }
+const_assert_eq!(core::mem::size_of::<PacketBufferS>(), 16);
+const_assert_eq!(core::mem::size_of::<BoxRefMut<MappedPages, EthernetFrame>>(), 16);
+
+
 
 impl<const N: MTU> PacketBuffer<N> {
     /// Creates a new `PacketBuffer` of the standard 2 KiB size.
@@ -80,12 +86,13 @@ impl<const N: MTU> PacketBuffer<N> {
             NIC_MAPPING_FLAGS_CACHED,
         )?;
         
-        let buffer = BoxRefMut::new(Box::new(mp)).try_map_mut(|mp| mp.as_type_mut::<EthernetFrame>(0))?;
-
+        // let buffer = BoxRefMut::new(Box::new(mp)).try_map_mut(|mp| mp.as_type_mut::<EthernetFrame>(0))?;
+        let v_addr = mp.start_address().value() as u64;
+        core::mem::forget(mp);
         Ok(PacketBuffer {
             phys_addr: starting_phys_addr,
-            length: length_in_bytes,
-            buffer
+            // length: length_in_bytes,
+            v_addr
         })
     }
 
@@ -94,26 +101,26 @@ impl<const N: MTU> PacketBuffer<N> {
         self.phys_addr
     }
 
-    /// Returns the size of the buffer without the bytes used for the ethernet header and checksum
-    pub fn ethernet_payload_len(&self) -> u16 {
-        self.length - ETHERNET_HEADER_LEN_IN_BYTES - CRC_CHECKSUM_LEN_IN_BYTES
-    }
+    // /// Returns the size of the buffer without the bytes used for the ethernet header and checksum
+    // pub fn ethernet_payload_len(&self) -> u16 {
+    //     self.length - ETHERNET_HEADER_LEN_IN_BYTES - CRC_CHECKSUM_LEN_IN_BYTES
+    // }
 }
 
-impl<const N: MTU> Deref for PacketBuffer<N> {
-    type Target = EthernetFrame;
-    #[inline(always)]
-    fn deref(&self) -> &EthernetFrame {
-        &self.buffer
-    }
-}
+// impl<const N: MTU> Deref for PacketBuffer<N> {
+//     type Target = EthernetFrame;
+//     #[inline(always)]
+//     fn deref(&self) -> &EthernetFrame {
+//         &self.buffer
+//     }
+// }
 
-impl<const N: MTU> DerefMut for PacketBuffer<N> {
-    #[inline(always)]
-    fn deref_mut(&mut self) -> &mut EthernetFrame {
-        &mut self.buffer
-    }
-}
+// impl<const N: MTU> DerefMut for PacketBuffer<N> {
+//     #[inline(always)]
+//     fn deref_mut(&mut self) -> &mut EthernetFrame {
+//         &mut self.buffer
+//     }
+// }
 
 
 /// A struct that makes it easy to access different fields of an ethernet frame

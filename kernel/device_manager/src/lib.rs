@@ -154,8 +154,8 @@ pub fn init(key_producer: Queue<Event>, mouse_producer: Queue<Event>) -> Result<
                     // RSS_ENABLED, 
                     // RX_DESCS,
                     None,
-                    ixgbe_verified::NumDesc::Descs16,
-                    ixgbe_verified::NumDesc::Descs16
+                    ixgbe_verified::NumDesc::Descs512,
+                    ixgbe_verified::NumDesc::Descs512
                 )?;
 
                 ixgbe_devs.push(ixgbe_nic);

@@ -47,48 +47,64 @@ pub const RX_STATUS_EOP:                   u8 = 1 << 1;
 pub struct LegacyTxDescriptor {
     /// The starting physical address of the transmit buffer
     pub phys_addr:  Volatile<u64>,
-    /// Length of the transmit buffer in bytes
-    pub length:     Volatile<u16>,
-    /// Checksum offset: where to insert the checksum from the start of the packet if enabled
-    pub cso:        Volatile<u8>,
-    /// Command bits
-    pub cmd:        Volatile<u8>,
-    /// Status bits
-    pub status:     Volatile<u8>,
-    /// Checksum start: where to begin computing the checksum, if enabled
-    pub css:        Volatile<u8>,
-    /// Vlan tags 
-    pub vlan :      Volatile<u16>,
+    pub other: Volatile<u64>
+    // /// Length of the transmit buffer in bytes
+    // pub length:     Volatile<u16>,
+    // /// Checksum offset: where to insert the checksum from the start of the packet if enabled
+    // pub cso:        Volatile<u8>,
+    // /// Command bits
+    // pub cmd:        Volatile<u8>,
+    // /// Status bits
+    // pub status:     Volatile<u8>,
+    // /// Checksum start: where to begin computing the checksum, if enabled
+    // pub css:        Volatile<u8>,
+    // /// Vlan tags 
+    // pub vlan :      Volatile<u16>,
 }
 
 impl LegacyTxDescriptor {
     fn init(&mut self) {
         self.phys_addr.write(0);
-        self.length.write(0);
-        self.cso.write(0);
-        self.cmd.write(0);
-        self.status.write(0);
-        self.css.write(0);
-        self.vlan.write(0);
+        self.other.write(0);
+        // self.length.write(0);
+        // self.cso.write(0);
+        // self.cmd.write(0);
+        // self.status.write(0);
+        // self.css.write(0);
+        // self.vlan.write(0);
     }
 
+    // #[inline(always)]
+    // pub fn send(&mut self, transmit_buffer_addr: PhysicalAddress, transmit_buffer_length: u16, rs_bit: u8) {
+    //     self.phys_addr.write(transmit_buffer_addr.value() as u64);
+    //     self.length.write(transmit_buffer_length);
+    //     self.cmd.write(TX_CMD_EOP | TX_CMD_IFCS | rs_bit); 
+    //     self.status.write(0);
+    // }
+
+    // fn wait_for_packet_tx(&self) {
+    //     while (self.status.read() & TX_STATUS_DD) == 0 {
+    //         // debug!("tx desc status: {}", self.status.read());
+    //     } 
+    // }
+
+    // #[inline(always)]
+    // pub fn desc_done(&self) -> bool {
+    //     (self.status.read() & TX_STATUS_DD) == TX_STATUS_DD
+    // }
     #[inline(always)]
     pub fn send(&mut self, transmit_buffer_addr: PhysicalAddress, transmit_buffer_length: u16, rs_bit: u8) {
         self.phys_addr.write(transmit_buffer_addr.value() as u64);
-        self.length.write(transmit_buffer_length);
-        self.cmd.write(TX_CMD_EOP | TX_CMD_IFCS | rs_bit); 
-        self.status.write(0);
-    }
+        // self.length.write(transmit_buffer_length);
+        // self.cmd.write(TX_CMD_EOP | TX_CMD_IFCS | rs_bit); 
+        // self.status.write(0);
 
-    fn wait_for_packet_tx(&self) {
-        while (self.status.read() & TX_STATUS_DD) == 0 {
-            // debug!("tx desc status: {}", self.status.read());
-        } 
+        self.other.write(transmit_buffer_length as u64 | (((TX_CMD_EOP | TX_CMD_IFCS | rs_bit) as u64) << 24));
     }
 
     #[inline(always)]
     pub fn desc_done(&self) -> bool {
-        (self.status.read() & TX_STATUS_DD) == TX_STATUS_DD
+        (self.other.read() & (1 << 32)) == (1 << 32)
     }
 }
 
@@ -96,12 +112,13 @@ impl Descriptor for LegacyTxDescriptor {
     /// Set all fields to 0
     fn clear(&mut self) {
         self.phys_addr.write(0);
-        self.length.write(0);
-        self.cso.write(0);
-        self.cmd.write(0);
-        self.status.write(0);
-        self.css.write(0);
-        self.vlan.write(0);
+        self.other.write(0);
+        // self.length.write(0);
+        // self.cso.write(0);
+        // self.cmd.write(0);
+        // self.status.write(0);
+        // self.css.write(0);
+        // self.vlan.write(0);
     }
 }
 

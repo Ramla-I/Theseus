@@ -29,10 +29,10 @@ pub struct RxQueue<const S: RxState> {
     pub rx_cur: u16,
     /// The list of rx buffers, in which the index in the vector corresponds to the index in `rx_descs`.
     /// For example, `rx_bufs_in_use[2]` is the receive buffer that will be used when `rx_descs[2]` is the current rx descriptor (rx_cur = 2).
-    pub rx_bufs_in_use: Vec<PacketBufferS>,
+    pub rx_bufs_in_use: Vec<Packet>,
     pub rx_buffer_size: RxBufferSizeKiB,
     /// Pool where `ReceiveBuffer`s are stored.
-    pub rx_buffer_pool: Vec<PacketBufferS>,
+    pub rx_buffer_pool: mempool,
     /// The cpu which this queue is mapped to. 
     /// This in itself doesn't guarantee anything, but we use this value when setting the cpu id for interrupts and DCA.
     pub cpu_id: Option<u8>,
@@ -48,18 +48,18 @@ impl RxQueue<{RxState::Enabled}> {
         let num_rx_descs = rx_descs.len();
 
         // create a buffer pool with 2KiB size buffers. This ensures that 1 ethernet frame (which can be 1.5KiB) will always fit in one buffer
-        let mut rx_buffer_pool = init_rx_buf_pool(num_rx_descs * 2)?;
+        let mut rx_buffer_pool = init_mempool(num_rx_descs * 4)?;
 
         // now that we've created the rx descriptors, we can fill them in with initial values
-        let mut rx_bufs_in_use: Vec<PacketBuffer<{MTU::Standard}>> = Vec::with_capacity(num_rx_descs);
+        let mut rx_bufs_in_use: Vec<Packet> = Vec::with_capacity(num_rx_descs);
         for rd in rx_descs.iter_mut()
         {
             // obtain a receive buffer for each rx_desc
             // letting this fail instead of allocating here alerts us to a logic error, we should always have more buffers in the pool than the fdescriptor ringh
-            let rx_buf = rx_buffer_pool.pop()
+            let rx_buf = rx_buffer_pool.indexes.pop()
                 .ok_or("Couldn't obtain a ReceiveBuffer from the pool")?; 
             
-            rd.init(rx_buf.phys_addr()); 
+            rd.init(rx_buffer_pool.buffers[rx_buf.index].phys_addr()); 
             rx_bufs_in_use.push(rx_buf); 
         }
 
@@ -94,7 +94,7 @@ impl RxQueue<{RxState::Enabled}> {
     /// Retrieves a maximum of `batch_size` number of packets and stores them in `buffers`.
     /// Returns the total number of received packets.
     #[inline(always)]
-    pub fn rx_batch(&mut self, buffers: &mut Vec<PacketBufferS>, batch_size: usize, pool: &mut Vec<PacketBufferS>) -> u16 {
+    pub fn rx_batch(&mut self, buffers: &mut Vec<Packet>, batch_size: usize, pool: &mut mempool, packet_length: &mut u16) -> u16 {
         // verified_functions::rx_batch(
         //     &mut self.rx_descs, 
         //     &mut self.rx_cur, 
@@ -129,13 +129,14 @@ impl RxQueue<{RxState::Enabled}> {
             // Now that we are "removing" the current receive buffer from the list of receive buffers that the NIC can use,
             // (because we're saving it for higher layers to use),
             // we need to obtain a new `ReceiveBuffer` and set it up such that the NIC will use it for future receivals.
-            if let Some(new_receive_buf) = pool.pop() {
+            if let Some(new_receive_buf) = pool.indexes.pop() {
                 // actually tell the NIC about the new receive buffer, and that it's ready for use now
-                desc.set_packet_address(new_receive_buf.phys_addr());
+                desc.set_packet_address(pool.buffers[new_receive_buf.index].phys_addr());
                 desc.reset_status();
                 
-                let mut current_rx_buf = core::mem::replace(&mut self.rx_bufs_in_use[rx_cur as usize], new_receive_buf);
-                current_rx_buf.length = length as u16; // set the ReceiveBuffer's length to the size of the actual packet received
+                let current_rx_buf = core::mem::replace(&mut self.rx_bufs_in_use[rx_cur as usize], new_receive_buf);
+                // current_rx_buf.length = length as u16; // set the ReceiveBuffer's length to the size of the actual packet received
+                *packet_length = length as u16; // set the ReceiveBuffer's length to the size of the actual packet received
                 buffers.push(current_rx_buf);
 
                 rcvd_pkts += 1;
@@ -183,38 +184,38 @@ pub enum RxState {
 }
 
 
-// implementation of pseudo functions that should only be used for testing
-impl RxQueue<{RxState::Enabled}> {
-    /// Simply iterates through a max of `batch_size` descriptors and resets the descriptors. 
-    /// There is no buffer management, and this function simply reuses the packet buffer that's already stored.
-    /// Returns the total number of received packets.
-    pub fn rx_batch_pseudo(&mut self, batch_size: usize) -> usize {
-        let mut rx_cur = self.rx_cur as usize;
-        let mut last_rx_cur = self.rx_cur as usize;
+// // implementation of pseudo functions that should only be used for testing
+// impl RxQueue<{RxState::Enabled}> {
+//     /// Simply iterates through a max of `batch_size` descriptors and resets the descriptors. 
+//     /// There is no buffer management, and this function simply reuses the packet buffer that's already stored.
+//     /// Returns the total number of received packets.
+//     pub fn rx_batch_pseudo(&mut self, batch_size: usize) -> usize {
+//         let mut rx_cur = self.rx_cur as usize;
+//         let mut last_rx_cur = self.rx_cur as usize;
 
-        let mut rcvd_pkts = 0;
+//         let mut rcvd_pkts = 0;
 
-        for _ in 0..batch_size {
-            let desc = &mut self.rx_descs[rx_cur];
-            if !desc.descriptor_done() {
-                break;
-            }
+//         for _ in 0..batch_size {
+//             let desc = &mut self.rx_descs[rx_cur];
+//             if !desc.descriptor_done() {
+//                 break;
+//             }
 
-            // actually tell the NIC about the new receive buffer, and that it's ready for use now
-            desc.set_packet_address(self.rx_bufs_in_use[rx_cur].phys_addr());
-            desc.reset_status();
+//             // actually tell the NIC about the new receive buffer, and that it's ready for use now
+//             desc.set_packet_address(self.rx_bufs_in_use[rx_cur].phys_addr());
+//             desc.reset_status();
                 
-            rcvd_pkts += 1;
-            last_rx_cur = rx_cur;
-            rx_cur = (rx_cur + 1) & (self.num_rx_descs as usize - 1);
-        }
+//             rcvd_pkts += 1;
+//             last_rx_cur = rx_cur;
+//             rx_cur = (rx_cur + 1) & (self.num_rx_descs as usize - 1);
+//         }
 
-        if last_rx_cur != rx_cur {
-            self.rx_cur = rx_cur as u16;
-            self.regs.rdt_write(last_rx_cur as u16); 
-        }
+//         if last_rx_cur != rx_cur {
+//             self.rx_cur = rx_cur as u16;
+//             self.regs.rdt_write(last_rx_cur as u16); 
+//         }
 
-        rcvd_pkts
-    }
+//         rcvd_pkts
+//     }
 
-}
+// }
