@@ -311,10 +311,10 @@ impl IxgbeNic {
         Ok(&mut self.tx_queues[idx])
     }
 
-    pub fn get_mempool(&mut self, idx: usize) -> mempool {
-        let mempool = allocator::init_mempool(512).unwrap();
-        core::mem::replace(&mut self.rx_queues[idx].rx_buffer_pool, mempool)
-    }
+    // pub fn get_mempool(&mut self, idx: usize) -> mempool {
+    //     let mempool = allocator::init_mempool(512).unwrap();
+    //     core::mem::replace(&mut self.rx_queues[idx].rx_buffer_pool, mempool)
+    // }
 
     /// Returns the Tx queue located at this index. 
     /// This doesn't have to match the queue ID.
@@ -327,7 +327,7 @@ impl IxgbeNic {
     }
     
     #[inline(always)]
-    pub fn tx_batch(&mut self, qid: usize, batch_size: usize,  buffers: &mut Vec<Packet>, used_buffers: &mut mempool, length: u16) -> u16 {
+    pub fn tx_batch(&mut self, qid: usize, batch_size: usize,  buffers: &mut Vec<PacketBufferS>, used_buffers: &mut Vec<PacketBufferS>, length: u16) -> u16 {
         // if qid >= self.tx_queues.len() {
         //     return Err("Queue index is out of range");
         // }
@@ -336,7 +336,7 @@ impl IxgbeNic {
     }
 
     #[inline(always)]
-    pub fn rx_batch(&mut self, qid: usize, buffers: &mut Vec<Packet>, batch_size: usize, pool: &mut mempool, length: &mut u16) -> u16 {
+    pub fn rx_batch(&mut self, qid: usize, buffers: &mut Vec<PacketBufferS>, batch_size: usize, pool: &mut Vec<PacketBufferS>, length: &mut u16) -> u16 {
         // if qid >= self.rx_queues.len() {
         //     error!("Queue index is out of range");
         //     return Err(());

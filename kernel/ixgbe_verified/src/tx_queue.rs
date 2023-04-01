@@ -11,7 +11,7 @@ use core::{ops::{DerefMut, Deref}};
 use alloc::{
     vec::Vec,
 };
-use packet_buffers::PacketBufferS;
+use packet_buffers::{PacketBufferS, PacketBuffer};
 use hal::regs::TDHSet;
 use volatile::Volatile;
 
@@ -33,7 +33,7 @@ pub struct TxQueue<const S: TxState> {
     /// Current transmit descriptor index (first desc that can be used)
     tx_cur: u16,
     /// The packet buffers that descriptors have stored information of
-    tx_bufs_in_use: Vec<Packet>,
+    tx_bufs_in_use: Vec<PacketBufferS>,
     /// first descriptor that has been used but not checked for transmit completion
     /// or in some cases, it hasn't been used like when we start out and right after clean
     tx_clean: u16,
@@ -86,7 +86,7 @@ impl TxQueue<{TxState::Enabled}> {
     /// 
     /// I don't think this code is very stable, if the TX_CLEAN_THRESHOLD is less than the number of descriptors, and divisor, then we should be good.
     #[inline(always)]
-    pub fn tx_batch(&mut self, batch_size: usize, length: u16,  buffers: &mut Vec<Packet>, pool: &mut mempool) -> u16 {
+    pub fn tx_batch(&mut self, batch_size: usize, length: u16,  buffers: &mut Vec<PacketBufferS>, pool: &mut Vec<PacketBufferS>) -> u16 {
         const TX_CLEAN_THRESHOLD: u16 = 32; // make sure this is less than and an even divisor fo the queue size
         // error!("before cleaning: tx_cur = {}, tx_clean ={}", self.tx_cur, self.tx_clean);
 
@@ -128,7 +128,7 @@ impl TxQueue<{TxState::Enabled}> {
                 // }
                 let rs_bit = if (self.tx_cur % TX_CLEAN_THRESHOLD) == TX_CLEAN_THRESHOLD - 1 { self.rs_bit } else { 0 };
                 // error!("rs_bit = {}", rs_bit);
-                self.tx_descs[self.tx_cur as usize].send(pool.buffers[packet.index].phys_addr(), length, rs_bit);
+                self.tx_descs[self.tx_cur as usize].send(packet.phys_addr(), length, rs_bit);
                 self.tx_bufs_in_use.push(packet);
     
                 self.tx_cur = tx_next;
@@ -207,7 +207,7 @@ impl TxQueue<{TxState::Enabled}> {
 
     /// Removes multiples of `TX_CLEAN_BATCH` packets from `queue`.    
     /// (code taken from https://github.com/ixy-languages/ixy.rs/blob/master/src/ixgbe.rs#L1016)
-    fn tx_clean(&mut self, used_buffers: &mut mempool)  {
+    fn tx_clean(&mut self, used_buffers: &mut Vec<PacketBufferS>)  {
         const TX_CLEAN_BATCH: usize = 32;
 
         let mut tx_clean = self.tx_clean as usize;
@@ -232,9 +232,9 @@ impl TxQueue<{TxState::Enabled}> {
 
             if self.tx_descs[cleanup_to].desc_done() {
                 if TX_CLEAN_BATCH >= self.tx_bufs_in_use.len() {
-                    used_buffers.indexes.extend(self.tx_bufs_in_use.drain(..))
+                    used_buffers.extend(self.tx_bufs_in_use.drain(..))
                 } else {
-                    used_buffers.indexes.extend(self.tx_bufs_in_use.drain(..TX_CLEAN_BATCH))
+                    used_buffers.extend(self.tx_bufs_in_use.drain(..TX_CLEAN_BATCH))
                 };
 
                 tx_clean = (cleanup_to + 1) % self.num_tx_descs as usize;
