@@ -45,6 +45,7 @@ use ixgbe_verified::{
 use packet_buffers::{PacketBufferS, EthernetFrame};
 use getopts::{Matches, Options};
 use hpet::get_hpet;
+use pmu_x86::EventType;
 
 // const DEST_MAC_ADDR: [u8; 6] = [0xa0, 0x36, 0x9f, 0x1d, 0x94, 0x4c];
 const DESC_RING_SIZE: usize = 512;
@@ -189,11 +190,19 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
     let mut counters = None;
     if pmu {
         pmu_x86::init().unwrap();
-        counters = Some(pmu_x86::stat::PerformanceCounters::new().expect("Couldn't get performance counters"));
+        counters = Some(pmu_x86::variable_stat::PerformanceCounters::new(
+            [
+                EventType::L2RqstsMiss, EventType::L2RqstsReferences,
+                EventType::LastLevelCacheMisses, EventType::LastLevelCacheReferences,
+                EventType::MemInstRetiredSTLBMissLoads, EventType::MemInstRetiredSTLBMissStores,
+                EventType::MemInstRetiredAllLoads, EventType::MemInstRetiredAllStores,
+            ]
+        ).expect("Couldn't get performance counters"));
         counters.as_mut().unwrap().start().expect("failed to start counters");
     }
 
     let src_addr = dev0.mac_addr();
+    let mut old_counters = pmu_x86::variable_stat::PMUResults::default();
 
     // for _ in 0..(DESC_RING_SIZE* 2) / batch_size {
     //     tx_packets_dev1 += dev1.tx_batch(0, batch_size, &mut pool0, &mut pool1) as usize;   
@@ -201,6 +210,8 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
     // dev1.get_stats(&mut dev1_stats);
     // print_stats(1, &dev1_stats, rx_packets_dev1, tx_packets_dev1);
     // error!("total of {} packets sent", tx_packets_dev1);
+    
+    let mut pmu_round = 0;
 
     loop {
 
@@ -208,16 +219,81 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
             delta_hpet = hpet.get_counter() - start_hpet;
 
             if delta_hpet >= cycles_in_one_sec {
-                if pmu {
-                    error!("{:?}\n", counters.as_mut().unwrap().read());
-                }
-
                 dev0.get_stats(&mut dev0_stats);
                 dev1.get_stats(&mut dev1_stats);
                 print_stats(0, &dev0_stats,  rx_packets_dev0, tx_packets_dev0);
                 print_stats(1, &dev1_stats, rx_packets_dev1, tx_packets_dev1);
                 rx_packets_dev0 = 0; tx_packets_dev0 = 0; rx_packets_dev1 = 0; tx_packets_dev1 = 0;
                 start_hpet = hpet.get_counter();
+            }
+        }
+
+        if pmu && rx_packets_dev0 >= 7_400_000 { // as 14.8 MPPS, should get around  7.4 M packets in 30 seconds
+            delta_hpet = hpet.get_counter() - start_hpet;
+
+            if delta_hpet >= 60 * cycles_in_one_sec {
+                let seconds = delta_hpet as f64 / cycles_in_one_sec as f64;
+
+                if pmu_round == 0 {
+                    let new_counters = counters.unwrap().end().unwrap();
+                    let l2_miss_rate = new_counters.programmable_events[0] as f64 / new_counters.programmable_events[1] as f64;
+                    let l3_miss_rate = new_counters.programmable_events[2] as f64 / new_counters.programmable_events[3] as f64;
+                    
+                    error!("l2 miss rate = {:.2}", l2_miss_rate);
+                    error!("l3 miss rate = {:.2}", l3_miss_rate);
+                    error!("inst retired = {}", new_counters.inst_retired);
+                    error!("core cycles = {}", new_counters.core_cycles);
+                    error!("ref cycles = {}", new_counters.ref_cycles);
+                    error!("l2 misses = {}",new_counters.programmable_events[0]);
+                    error!("l2 references = {}", new_counters.programmable_events[1]);
+                    error!("l3 misses = {}", new_counters.programmable_events[2]);
+                    error!("l3 references = {}", new_counters.programmable_events[3]);
+
+                    error!("0: rx pkts = {}, tx pkts = {}", rx_packets_dev0, tx_packets_dev0);
+                    error!("1: rx pkts = {}, tx pkts = {}", rx_packets_dev1, tx_packets_dev1);
+
+                    let rate = (tx_packets_dev0 + tx_packets_dev1) as f64 / (1_000_000.0 * seconds);
+                    error!("rate = {:.2} Mpps", rate);
+                    error!("cycles / packet = {:.2}", new_counters.ref_cycles as f64 / (tx_packets_dev0 + tx_packets_dev1) as f64);
+                    error!("inst / packet = {:.2}", new_counters.inst_retired as f64 / (tx_packets_dev0 + tx_packets_dev1) as f64);
+
+                    pmu_round += 1;
+                    rx_packets_dev0 = 0; tx_packets_dev0 = 0; rx_packets_dev1 = 0; tx_packets_dev1 = 0;
+                    start_hpet = hpet.get_counter();
+
+                    counters = Some(pmu_x86::variable_stat::PerformanceCounters::new(
+                        [
+                            EventType::MemInstRetiredSTLBMissLoads, EventType::MemInstRetiredSTLBMissStores,
+                            EventType::MemInstRetiredAllLoads, EventType::MemInstRetiredAllStores,
+                            EventType::L2RqstsMiss, EventType::L2RqstsReferences,
+                            EventType::LastLevelCacheMisses, EventType::LastLevelCacheReferences,
+                        ]
+                    ).expect("Couldn't get performance counters"));
+                    counters.as_mut().unwrap().start().expect("failed to start counters");
+
+                } else {
+
+                    let new_counters = counters.unwrap().end().unwrap();
+                    let tlb_miss_rate = (new_counters.programmable_events[0] as f64 + new_counters.programmable_events[1] as f64) / (new_counters.programmable_events[2] as f64 + new_counters.programmable_events[3] as f64);
+                    
+                    error!("tlb miss rate = {:.2}", tlb_miss_rate);
+                    error!("inst retired = {}", new_counters.inst_retired);
+                    error!("core cycles = {}", new_counters.core_cycles);
+                    error!("ref cycles = {}", new_counters.ref_cycles);
+                    error!("stlb miss loads = {}", new_counters.programmable_events[0]);
+                    error!("stlb miss stores = {}", new_counters.programmable_events[1]);
+                    error!("loads = {}", new_counters.programmable_events[2]);
+                    error!("stores = {}", new_counters.programmable_events[3]);
+                    error!("0: rx pkts = {}, tx pkts = {}", rx_packets_dev0, tx_packets_dev0);
+                    error!("1: rx pkts = {}, tx pkts = {}", rx_packets_dev1, tx_packets_dev1);
+
+                    let rate = (tx_packets_dev0 + tx_packets_dev1) as f64 / (1_000_000.0 * seconds);
+                    error!("rate = {:.2} Mpps", rate);
+                    error!("cycles / packet = {:.2}", new_counters.ref_cycles as f64 / (tx_packets_dev0 + tx_packets_dev1) as f64);
+                    error!("inst / packet = {:.2}", new_counters.inst_retired as f64 / (tx_packets_dev0 + tx_packets_dev1) as f64);
+
+                    break;
+                }
             }
         }
 
@@ -251,30 +327,30 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
         /*** unidirectional forwarder 2 ports (tested till 8.8 Mpps)***/
         let mut length =60;
         rx_packets_dev0 += dev0.rx_batch(0, &mut received_buffers0, batch_size, &mut pool0, &mut length) as usize;
-        for p in &received_buffers0 {
-           unsafe {
-                let frame = pool0.buffers[p.index].v_addr as *mut u8;
-                // (*frame).dest_addr = [0,0,0,0,0,1];
-                // (*frame).src_addr = src_addr;
-           }
-        }
+        // for p in &received_buffers0 {
+        //    unsafe {
+        //         let frame = pool0.buffers[p.index].v_addr as *mut EthernetFrame;
+        //         (*frame).dest_addr = [0,0,0,0,0,1];
+        //         (*frame).src_addr = src_addr;
+        //    }
+        // }
         tx_packets_dev1 += dev1.tx_batch(0, batch_size, &mut received_buffers0, &mut pool0, length) as usize;   
         pool0.indexes.append(&mut received_buffers0);
 
         rx_packets_dev1 += dev1.rx_batch(0, &mut received_buffers1, batch_size, &mut pool1, &mut length) as usize;
-        for p in &mut received_buffers0 {
-            unsafe {
-                let frame = pool1.buffers[p.index].v_addr as *mut u8;
-                // (*frame).dest_addr = [0,0,0,0,0,1];
-                // (*frame).src_addr = src_addr;
-           }
-        }
+        // for p in &mut received_buffers0 {
+        //     unsafe {
+        //         let frame = pool1.buffers[p.index].v_addr as *mut EthernetFrame;
+        //         (*frame).dest_addr = [0,0,0,0,0,1];
+        //         (*frame).src_addr = src_addr;
+        //    }
+        // }
         tx_packets_dev0 += dev0.tx_batch(0, batch_size, &mut received_buffers1, &mut pool1, length) as usize;   
         pool1.indexes.append(&mut received_buffers1);
         
-        if collect_stats {
-            iterations += 1;
-        }
+        // if collect_stats {
+        //     iterations += 1;
+        // }
 
     }
 }

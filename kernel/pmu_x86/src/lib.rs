@@ -69,7 +69,7 @@ extern crate raw_cpuid;
 extern crate task;
 extern crate memory;
 extern crate irq_safety;
-extern crate alloc;
+#[macro_use] extern crate alloc;
 extern crate apic;
 #[macro_use] extern crate log;
 extern crate mod_mgmt;
@@ -87,6 +87,7 @@ use bit_field::BitField;
 use core::sync::atomic::{Ordering, AtomicU64, AtomicU8};
 
 pub mod stat;
+pub mod variable_stat;
 
 /// The minimum version ID a PMU can have, as retrieved by cpuid. Anything lower than this means a PMU is not supported.
 const MIN_PMU_VERSION: u8 = 1;
@@ -147,6 +148,7 @@ static SAMPLING_INFO: MutexIrqSafe<BTreeMap<u8, SampledEvents>> =  MutexIrqSafe:
 /// (0x03 << 16) enables performance monitoring for both priviledge levels
 /// (x << 8) is the unit mask (UMask)
 /// (x) is the event select
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum EventType{
     /// This event counts the number of instructions at retirement. For instructions that consist of multiple micro-ops,
     /// this event counts the retirement of the last micro-op of the instruction.
@@ -174,48 +176,42 @@ pub enum EventType{
     /// of a branch instruction in the architectural path of execution and experienced misprediction in the branch
     /// prediction hardware.
     BranchMissesRetired = (0x03 << 16) | (0x00 << 8) | 0xC5,
-    /// Note: Only checked that it is supported on Xeon scalable family of processors
+
+    //*** Note: For all the events below, we've only checked that it is supported on Xeon scalable family of processors ***//
+
     /// Counts demand data loads that cause a page walk of any size. This implies it missed in all TLB levels, but the walk need not have completed.
     DTLBLoadMissesMissCausesAWalk = (0x03 << 16) | (0x1 << 8) | 0x08,
-    /// Note: Only checked that it is supported on Xeon scalable family of processors
     /// Counts demand data loads that caused a completed page walk of any size. This implies it missed in all TLB levels.The page walk can end with or without a fault.
     DTLBLoadMissesWalkCompleted = (0x03 << 16) | (0xE << 8) | 0x08,
-    /// Note: Only checked that it is supported on Xeon scalable family of processors
     /// Counts demand data stores that cause a page walk of any size. This implies it missed in all TLB levels, but the walk need not have completed.
     DTLBStoreMissesMissCausesAWalk = (0x03 << 16) | (0x1 << 8) | 0x49,
-    /// Note: Only checked that it is supported on Xeon scalable family of processors
     /// Counts demand data stores that caused a completed page walk of any size. This implies it missed in all TLB levels.The page walk can end with or without a fault.
     DTLBStoreMissesWalkCompleted = (0x03 << 16) | (0xE << 8) | 0x49,
-    /// Note: Only checked that it is supported on Xeon scalable family of processors
+
     /// All requests that miss L2 cache.
     L2RqstsMiss = (0x03 << 16) | (0x3F << 8) | 0x24,
-    /// Note: Only checked that it is supported on Xeon scalable family of processors
     /// All L2 requests.
     L2RqstsReferences = (0x03 << 16) | (0xFF << 8) | 0x24,
 
-    /// Note: Only checked that it is supported on Xeon scalable family of processors
+    /// Retired load instructions that miss the STLB
+    MemInstRetiredSTLBMissLoads = (0x03 << 16) | (0x11 << 8) | 0xD0,
+    /// Retired store instructions that miss the STLB
+    MemInstRetiredSTLBMissStores = (0x03 << 16) | (0x12 << 8) | 0xD0,
     /// All retired load instructions
     MemInstRetiredAllLoads = (0x03 << 16) | (0x81 << 8) | 0xD0,
-    /// Note: Only checked that it is supported on Xeon scalable family of processors
     /// All retired store instructions
     MemInstRetiredAllStores = (0x03 << 16) | (0x82 << 8) | 0xD0,
-    /// Note: Only checked that it is supported on Xeon scalable family of processors
     /// Counts retired load instructions with at least one uop that hit in the L1 data cache. 
     /// This event includes all SW prefetches and lock instructions regardless of the data source.
     MemLoadRetiredL1Hit = (0x03 << 16) | (0x01 << 8) | 0xD1,
-    /// Note: Only checked that it is supported on Xeon scalable family of processors
     /// Retired load instructions with L2 cache hits as data sources.
     MemLoadRetiredL2Hit = (0x03 << 16) | (0x02 << 8) | 0xD1,
-    /// Note: Only checked that it is supported on Xeon scalable family of processors
     /// Counts retired load instructions with at least one uop that hit in the L3 cache.
     MemLoadRetiredL3Hit = (0x03 << 16) | (0x04 << 8) | 0xD1,
-    /// Note: Only checked that it is supported on Xeon scalable family of processors
     /// Counts retired load instructions with at least one uop that missed in the L1 cache.
     MemLoadRetiredL1Miss = (0x03 << 16) | (0x08 << 8) | 0xD1,
-    /// Note: Only checked that it is supported on Xeon scalable family of processors
     /// Retired load instructions missed L2 cache as data sources.
     MemLoadRetiredL2Miss = (0x03 << 16) | (0x10 << 8) | 0xD1,
-    /// Note: Only checked that it is supported on Xeon scalable family of processors
     /// Counts retired load instructions with at least one uop that missed in the L3 cache.
     MemLoadRetiredL3Miss = (0x03 << 16) | (0x20 << 8) | 0xD1,
 }
@@ -325,6 +321,10 @@ fn init_registers() {
         Msr::new(IA32_PMC1).write(0);
         Msr::new(IA32_PMC2).write(0);
         Msr::new(IA32_PMC3).write(0);
+        Msr::new(IA32_PMC4).write(0);
+        Msr::new(IA32_PMC5).write(0);
+        Msr::new(IA32_PMC6).write(0);
+        Msr::new(IA32_PMC7).write(0);
         // clear the fixed event counters
         Msr::new(IA32_FIXED_CTR0).write(0);
         Msr::new(IA32_FIXED_CTR1).write(0);

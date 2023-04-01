@@ -26,21 +26,15 @@ pub struct PerformanceCounters {
     inst_retired: Counter,
     core_cycles: Counter,
     ref_cycles: Counter,
-    llc_ref: Counter,
-    llc_miss: Counter,
-    br_inst_ret: Counter,
-    br_miss_ret: Counter,
+    programmable_events: Vec<Counter>
 }
 
 #[derive(Default, Clone, Copy)]
 pub struct PMUResults {
-    inst_retired: u64,
-    core_cycles: u64,
-    ref_cycles: u64,
-    llc_ref: u64,
-    llc_miss: u64,
-    br_inst_ret: u64,
-    br_miss_ret: u64,
+    pub inst_retired: u64,
+    pub core_cycles: u64,
+    pub ref_cycles: u64,
+    pub programmable_events: [u64; 8],
 }
 
 impl fmt::Debug for PMUResults {
@@ -49,11 +43,8 @@ impl fmt::Debug for PMUResults {
         instructions retired:   {} \n 
         core cycles:    {} \n 
         reference cycles:   {} \n 
-        llc references: {} \n 
-        llc misses: {} \n 
-        branch instructions retired:    {} \n 
-        branch missed retired:  {} \n", 
-        self.inst_retired, self.core_cycles, self.ref_cycles, self.llc_ref, self.llc_miss, self.br_inst_ret, self.br_miss_ret)
+        programmable_events: {:?} \n", 
+        self.inst_retired, self.core_cycles, self.ref_cycles, self.programmable_events)
     }
 }
 
@@ -65,10 +56,11 @@ impl Sub for PMUResults {
             inst_retired: self.inst_retired - rhs.inst_retired,
             core_cycles: self.core_cycles - rhs.core_cycles,
             ref_cycles: self.ref_cycles - rhs.ref_cycles,
-            llc_ref: self.llc_ref - rhs.llc_ref,
-            llc_miss: self.llc_miss - rhs.llc_miss,
-            br_inst_ret: self.br_inst_ret - rhs.br_inst_ret,
-            br_miss_ret: self.br_miss_ret - rhs.br_miss_ret,
+            programmable_events: {
+                let mut result = [0; 8];
+                self.programmable_events.iter().zip(rhs.programmable_events.iter()).enumerate().for_each(|(i, (a, b))| result[i] = *a - *b);
+                result
+            }
         }
     }
 }
@@ -78,10 +70,7 @@ impl SubAssign for PMUResults {
         self.inst_retired -= other.inst_retired;
         self.core_cycles -= other.core_cycles;
         self.ref_cycles -= other.ref_cycles;
-        self.llc_ref -= other.llc_ref;
-        self.llc_miss -= other.llc_miss;
-        self.br_inst_ret -= other.br_inst_ret;
-        self.br_miss_ret -= other.br_miss_ret;
+        self.programmable_events.iter_mut().zip(other.programmable_events.iter()).for_each(|(a, b)| *a -= *b);
     }
 }
 
@@ -95,20 +84,22 @@ impl PerformanceCounters {
     /// - LLC misses 
     /// - Branch instructions retired
     /// - Branch misses retired
-    pub fn new() -> Result<PerformanceCounters, &'static str> {                
+    pub fn new(programmable_events: [EventType; 8]) -> Result<PerformanceCounters, &'static str> {                
         Ok(PerformanceCounters {
             inst_retired:  Counter::new(EventType::InstructionsRetired)?,
             core_cycles: Counter::new(EventType::UnhaltedCoreCycles)?,    
-            ref_cycles: Counter::new(EventType::UnhaltedReferenceCycles)?,           
-            // llc_ref: Counter::new(EventType::LastLevelCacheReferences)?,       
-            // llc_miss: Counter::new(EventType::LastLevelCacheMisses)?,
-            // br_inst_ret: Counter::new(EventType::BranchInstructionsRetired)?,   
-            // br_miss_ret: Counter::new(EventType::BranchMissesRetired)?,
+            ref_cycles: Counter::new(EventType::UnhaltedReferenceCycles)?,    
+            programmable_events: vec!(
+                Counter::new(programmable_events[0])?,
+                Counter::new(programmable_events[1])?,
+                Counter::new(programmable_events[2])?,
+                Counter::new(programmable_events[3])?,
+                Counter::new(programmable_events[4])?,
+                Counter::new(programmable_events[5])?,
+                Counter::new(programmable_events[6])?,
+                Counter::new(programmable_events[7])?,
+            )       
 
-            llc_ref: Counter::new(EventType::DTLBLoadMissesMissCausesAWalk)?,       
-            llc_miss: Counter::new(EventType::DTLBLoadMissesWalkCompleted)?,
-            br_inst_ret: Counter::new(EventType::DTLBStoreMissesMissCausesAWalk)?,   
-            br_miss_ret: Counter::new(EventType::DTLBStoreMissesWalkCompleted)?,
         } )
     }
 
@@ -117,10 +108,9 @@ impl PerformanceCounters {
         self.ref_cycles.start()?;
         self.core_cycles.start()?;
         self.inst_retired.start()?;        
-        self.llc_ref.start()?;
-        self.llc_miss.start()?;
-        self.br_inst_ret.start()?;
-        self.br_miss_ret.start()?;
+        for counter in self.programmable_events.iter_mut() {
+            counter.start()?;
+        }
         Ok(())
     }
 
@@ -130,10 +120,16 @@ impl PerformanceCounters {
             inst_retired: self.inst_retired.diff(),
             core_cycles: self.core_cycles.diff(), 
             ref_cycles: self.ref_cycles.diff(), 
-            llc_ref: self.llc_ref.diff(), 
-            llc_miss: self.llc_miss.diff(), 
-            br_inst_ret: self.br_inst_ret.diff(), 
-            br_miss_ret: self.br_miss_ret.diff()
+            programmable_events: [
+                self.programmable_events[0].diff(),
+                self.programmable_events[1].diff(),
+                self.programmable_events[2].diff(),
+                self.programmable_events[3].diff(),
+                self.programmable_events[4].diff(),
+                self.programmable_events[5].diff(),
+                self.programmable_events[6].diff(),
+                self.programmable_events[7].diff(),
+            ]
         }
     }
 
@@ -141,14 +137,14 @@ impl PerformanceCounters {
     /// The `PerformanceCounters` object is consumed since the counters are freed in this function
     /// and should not be accessed again.
     pub fn end(self) -> Result<PMUResults, &'static str> {
+        let mut result = [0; 8];
+        self.programmable_events.into_iter().enumerate().for_each(|(i, counter)| {result[i] = counter.end().unwrap();});
+
         Ok( PMUResults {
             inst_retired: self.inst_retired.end()?,
             core_cycles: self.core_cycles.end()?, 
             ref_cycles: self.ref_cycles.end()?, 
-            llc_ref: self.llc_ref.end()?, 
-            llc_miss: self.llc_miss.end()?, 
-            br_inst_ret: self.br_inst_ret.end()?, 
-            br_miss_ret: self.br_miss_ret.end()?
+            programmable_events: result
         } )
     }
 }
