@@ -94,7 +94,7 @@ impl RxQueue<{RxState::Enabled}> {
     /// Retrieves a maximum of `batch_size` number of packets and stores them in `buffers`.
     /// Returns the total number of received packets.
     #[inline(always)]
-    pub fn rx_batch(&mut self, buffers: &mut Vec<PacketBufferS>, batch_size: usize, pool: &mut Vec<PacketBufferS>, packet_length: &mut u16) -> u16 {
+    pub fn rx_batch(&mut self, buffers: &mut Vec<PacketBufferS>, batch_size: usize, pool: &mut Vec<PacketBufferS>) -> u16 {
         // verified_functions::rx_batch(
         //     &mut self.rx_descs, 
         //     &mut self.rx_cur, 
@@ -134,9 +134,9 @@ impl RxQueue<{RxState::Enabled}> {
                 desc.set_packet_address(new_receive_buf.phys_addr());
                 desc.reset_status();
                 
-                let current_rx_buf = core::mem::replace(&mut self.rx_bufs_in_use[rx_cur as usize], new_receive_buf);
+                let mut current_rx_buf = core::mem::replace(&mut self.rx_bufs_in_use[rx_cur as usize], new_receive_buf);
                 // current_rx_buf.length = length as u16; // set the ReceiveBuffer's length to the size of the actual packet received
-                *packet_length = length as u16; // set the ReceiveBuffer's length to the size of the actual packet received
+                current_rx_buf.length = length as u16; // set the ReceiveBuffer's length to the size of the actual packet received
                 buffers.push(current_rx_buf);
 
                 rcvd_pkts += 1;

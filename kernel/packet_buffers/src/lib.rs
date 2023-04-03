@@ -61,11 +61,10 @@ pub type PacketBufferJ = PacketBuffer<{MTU::Jumbo}>;
 /// Network functions receive a packet, process it, and then transmit it.
 pub struct PacketBuffer<const N: MTU> {
     phys_addr: PhysicalAddress,
-    // pub length: u16,
-    pub v_addr: u64,
-    // buffer: BoxRefMut<MappedPages, EthernetFrame> //look into ouborous or pinned. should be able to store reference to MappedPages
+    pub length: u16,
+    pub buffer: BoxRefMut<MappedPages, EthernetFrame> //look into ouborous or pinned. should be able to store reference to MappedPages
 }
-const_assert_eq!(core::mem::size_of::<PacketBufferS>(), 16);
+const_assert_eq!(core::mem::size_of::<PacketBufferS>(), 32);
 const_assert_eq!(core::mem::size_of::<BoxRefMut<MappedPages, EthernetFrame>>(), 16);
 
 
@@ -86,13 +85,13 @@ impl<const N: MTU> PacketBuffer<N> {
             NIC_MAPPING_FLAGS_CACHED,
         )?;
         
-        // let buffer = BoxRefMut::new(Box::new(mp)).try_map_mut(|mp| mp.as_type_mut::<EthernetFrame>(0))?;
-        let v_addr = mp.start_address().value() as u64;
-        core::mem::forget(mp);
+        let buffer = BoxRefMut::new(Box::new(mp)).try_map_mut(|mp| mp.as_type_mut::<EthernetFrame>(0))?;
+        // let v_addr = mp.start_address().value() as u64;
+        // core::mem::forget(mp);
         Ok(PacketBuffer {
             phys_addr: starting_phys_addr,
-            // length: length_in_bytes,
-            v_addr
+            length: length_in_bytes,
+            buffer
         })
     }
 

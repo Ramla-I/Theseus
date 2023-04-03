@@ -326,26 +326,20 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
 
         /*** unidirectional forwarder 2 ports (tested till 8.8 Mpps)***/
         let mut length =60;
-        rx_packets_dev0 += dev0.rx_batch(0, &mut received_buffers0, batch_size, &mut pool0, &mut length) as usize;
-        for p in &received_buffers0 {
-           unsafe {
-                let frame = p.v_addr as *mut EthernetFrame;
-                (*frame).dest_addr = [0,0,0,0,0,1];
-                (*frame).src_addr = src_addr;
-           }
+        rx_packets_dev0 += dev0.rx_batch(0, &mut received_buffers0, batch_size, &mut pool0) as usize;
+        for p in &mut received_buffers0 {
+                p.buffer.dest_addr = [0,0,0,0,0,1];
+                p.buffer.src_addr = src_addr;
         }
-        tx_packets_dev1 += dev1.tx_batch(0, batch_size, &mut received_buffers0, &mut pool0, length) as usize;   
+        tx_packets_dev1 += dev1.tx_batch(0, batch_size, &mut received_buffers0, &mut pool0) as usize;   
         pool0.append(&mut received_buffers0);
 
-        rx_packets_dev1 += dev1.rx_batch(0, &mut received_buffers1, batch_size, &mut pool1, &mut length) as usize;
+        rx_packets_dev1 += dev1.rx_batch(0, &mut received_buffers1, batch_size, &mut pool1) as usize;
         for p in &mut received_buffers0 {
-            unsafe {
-                let frame = p.v_addr as *mut EthernetFrame;
-                (*frame).dest_addr = [0,0,0,0,0,1];
-                (*frame).src_addr = src_addr;
-           }
+                p.buffer.dest_addr = [0,0,0,0,0,1];
+                p.buffer.src_addr = src_addr;
         }
-        tx_packets_dev0 += dev0.tx_batch(0, batch_size, &mut received_buffers1, &mut pool1, length) as usize;   
+        tx_packets_dev0 += dev0.tx_batch(0, batch_size, &mut received_buffers1, &mut pool1) as usize;   
         pool1.append(&mut received_buffers1);
         
         // if collect_stats {
