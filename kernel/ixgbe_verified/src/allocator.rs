@@ -1,4 +1,4 @@
-use memory::{EntryFlags, PhysicalAddress, allocate_pages_by_bytes, allocate_frames_by_bytes_at, get_kernel_mmi_ref, MappedPages, create_contiguous_mapping};
+use memory::{EntryFlags, PhysicalAddress, allocate_pages_by_bytes, allocate_frames_by_bytes_at, get_kernel_mmi_ref, MappedPages, create_contiguous_mapping, BorrowedSliceMappedPages, Mutable};
 use pci::{PciBaseAddr, PciMemSize};
 use crate::{hal::{NumDesc, descriptors::Descriptor}, descriptors::AdvancedTxDescriptor, tx_queue::TransmitHead};
 use alloc::{
@@ -97,15 +97,14 @@ pub fn init_mempool(num_buffers: usize) -> Result<mempool, &'static str> {
 }
 
 /// Allocates the memory for a descriptor ring, maps it to a slice of descriptors `T`, and clears each descriptor in the ring.
-pub(crate) fn create_desc_ring<T: Descriptor + FromBytes>(num_desc: NumDesc) -> Result<(BoxRefMut<MappedPages, [T]>, PhysicalAddress), &'static str> {
+pub(crate) fn create_desc_ring<T: Descriptor + FromBytes>(num_desc: NumDesc) -> Result<(BorrowedSliceMappedPages<T, Mutable>, PhysicalAddress), &'static str> {
     
     let size_in_bytes_of_all_tx_descs = num_desc as usize * core::mem::size_of::<T>();
     
     // descriptor rings must be 128 byte-aligned, which is satisfied below because it's aligned to a page boundary.
     let (descs_mapped_pages, descs_starting_phys_addr) = create_contiguous_mapping(size_in_bytes_of_all_tx_descs, NIC_MAPPING_FLAGS_CACHED)?;
 
-    let mut desc_ring = BoxRefMut::new(Box::new(descs_mapped_pages))
-        .try_map_mut(|mp| mp.as_slice_mut::<T>(0, num_desc as usize))?;
+    let mut desc_ring = descs_mapped_pages.into_borrowed_slice_mut::<T>(0, num_desc as usize).map_err(|(_mp, err)| err)?;
 
     for desc in desc_ring.iter_mut() { desc.clear() }
 

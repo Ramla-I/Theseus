@@ -9,7 +9,7 @@ extern crate alloc;
 #[macro_use] extern crate static_assertions;
 
 use core::ops::{Deref, DerefMut};
-use memory::{MappedPages, PhysicalAddress, create_contiguous_mapping, EntryFlags};
+use memory::{MappedPages, PhysicalAddress, create_contiguous_mapping, EntryFlags, BorrowedMappedPages, Mutable};
 use zerocopy::FromBytes;
 use owning_ref::BoxRefMut;
 use alloc::boxed::Box;
@@ -62,10 +62,10 @@ pub type PacketBufferJ = PacketBuffer<{MTU::Jumbo}>;
 pub struct PacketBuffer<const N: MTU> {
     phys_addr: PhysicalAddress,
     pub length: u16,
-    pub buffer: BoxRefMut<MappedPages, EthernetFrame> //look into ouborous or pinned. should be able to store reference to MappedPages
+    pub buffer: BorrowedMappedPages<EthernetFrame, Mutable> //look into ouborous or pinned. should be able to store reference to MappedPages
 }
-const_assert_eq!(core::mem::size_of::<PacketBufferS>(), 32);
-const_assert_eq!(core::mem::size_of::<BoxRefMut<MappedPages, EthernetFrame>>(), 16);
+const_assert_eq!(core::mem::size_of::<PacketBufferS>(), 64);
+const_assert_eq!(core::mem::size_of::<BorrowedMappedPages<EthernetFrame, Mutable>>(), 48);
 
 
 
@@ -85,7 +85,7 @@ impl<const N: MTU> PacketBuffer<N> {
             NIC_MAPPING_FLAGS_CACHED,
         )?;
         
-        let buffer = BoxRefMut::new(Box::new(mp)).try_map_mut(|mp| mp.as_type_mut::<EthernetFrame>(0))?;
+        let buffer = mp.into_borrowed_mut(0).map_err(|(_mp, err)| err)?;
         // let v_addr = mp.start_address().value() as u64;
         // core::mem::forget(mp);
         Ok(PacketBuffer {

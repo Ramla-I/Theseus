@@ -8,10 +8,14 @@
 // except according to those terms.
 
 use core::{
+    borrow::{Borrow, BorrowMut},
+    cmp::Ordering,
+    hash::{Hash, Hasher},
+    marker::PhantomData,
     mem,
     fmt::{self, Write},
-    ops::Deref,
-    ptr::Unique,
+    ops::{Deref, DerefMut},
+    ptr::{Unique, NonNull},
     slice,
 };
 use {BROADCAST_TLB_SHOOTDOWN_FUNC, VirtualAddress, PhysicalAddress, Page, Frame, FrameRange, AllocatedPages, AllocatedFrames}; 
@@ -789,6 +793,40 @@ impl MappedPages {
 
         Ok(slc)
     }
+
+    /// A convenience function for [`BorrowedMappedPages::from()`].
+    pub fn into_borrowed<T: FromBytes>(
+        self,
+        byte_offset: usize,
+    ) -> Result<BorrowedMappedPages<T, Immutable>, (MappedPages, &'static str)> {
+        BorrowedMappedPages::from(self, byte_offset)
+    }
+
+    /// A convenience function for [`BorrowedMappedPages::from_mut()`].
+    pub fn into_borrowed_mut<T: FromBytes>(
+        self,
+        byte_offset: usize,
+    ) -> Result<BorrowedMappedPages<T, Mutable>, (MappedPages, &'static str)> {
+        BorrowedMappedPages::from_mut(self, byte_offset)
+    }
+
+    /// A convenience function for [`BorrowedSliceMappedPages::from()`].
+    pub fn into_borrowed_slice<T: FromBytes>(
+        self,
+        byte_offset: usize,
+        length: usize,
+    ) -> Result<BorrowedSliceMappedPages<T, Immutable>, (MappedPages, &'static str)> {
+        BorrowedSliceMappedPages::from(self, byte_offset, length)
+    }
+
+    /// A convenience function for [`BorrowedSliceMappedPages::from_mut()`].
+    pub fn into_borrowed_slice_mut<T: FromBytes>(
+        self,
+        byte_offset: usize,
+        length: usize,
+    ) -> Result<BorrowedSliceMappedPages<T, Mutable>, (MappedPages, &'static str)> {
+        BorrowedSliceMappedPages::from_mut(self, byte_offset, length)
+    }
 }
 
 impl Drop for MappedPages {
@@ -807,6 +845,283 @@ impl Drop for MappedPages {
     }
 }
 
+/// A borrowed [`MappedPages`] object that derefs to `&T` and optionally also `&mut T`.
+/// 
+/// By default, the `Mutability` type parameter is `Immutable` for ease of use.
+///
+/// When dropped, the borrow ends and the contained `MappedPages` is dropped and unmapped.
+/// You can manually end the borrow and reclaim the inner `MappedPages` via [`Self::into_inner()`].
+pub struct BorrowedMappedPages<T: FromBytes, M: Mutability = Immutable> {
+    ptr: Unique<T>,
+    mp: MappedPages,
+    _mut: PhantomData<M>,
+}
+
+impl<T: FromBytes> BorrowedMappedPages<T, Immutable> {
+    /// Immutably borrows the given `MappedPages` as an instance of type `&T` 
+    /// located at the given `byte_offset` into the `MappedPages`.
+    ///
+    /// See [`MappedPages::as_type()`] for more info.
+    ///
+    /// Upon failure, returns an error containing the unmodified `MappedPages` and a string
+    /// describing the error.
+    pub fn from(
+        mp: MappedPages,
+        byte_offset: usize,
+    ) -> Result<BorrowedMappedPages<T>, (MappedPages, &'static str)> {
+        Ok(Self {
+            ptr: match mp.as_type::<T>(byte_offset) {
+                Ok(r) => {
+                    let nn: NonNull<T> = r.into();
+                    nn.into()
+                }
+                Err(e_str) => return Err((mp, e_str)),
+            },
+            mp,
+            _mut: PhantomData,
+        })
+    }
+}
+
+impl<T: FromBytes> BorrowedMappedPages<T, Mutable> {
+    /// Mutably borrows the given `MappedPages` as an instance of type `&mut T` 
+    /// located at the given `byte_offset` into the `MappedPages`.
+    /// 
+    /// See [`MappedPages::as_type_mut()`] for more info.
+    /// 
+    /// Upon failure, returns an error containing the unmodified `MappedPages`
+    /// and a string describing the error.
+    pub fn from_mut(
+        mut mp: MappedPages,
+        byte_offset: usize,
+    ) -> Result<BorrowedMappedPages<T, Mutable>, (MappedPages, &'static str)> {
+        Ok(Self {
+            ptr: match mp.as_type_mut::<T>(byte_offset) {
+                Ok(r) => r.into(),
+                Err(e_str) => return Err((mp, e_str)),
+            },
+            mp,
+            _mut: PhantomData,
+        })
+    }
+}
+
+impl<T: FromBytes, M: Mutability> BorrowedMappedPages<T, M> {
+    /// Consumes this object and returns the inner `MappedPages`.
+    pub fn into_inner(self) -> MappedPages {
+        self.mp
+    }
+}
+
+/// Both [`Mutable`] and [`Immutable`] [`BorrowedMappedPages`] can deref into `&T`.
+impl<T: FromBytes, M: Mutability> Deref for BorrowedMappedPages<T, M> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        // SAFETY:
+        // ✅ The pointer is properly aligned; its alignment has been checked in `MappedPages::as_type()`.
+        // ✅ The pointer is dereferenceable; it has been bounds checked by `MappedPages::as_type()`.
+        // ✅ The pointer has been initialized in the constructor `from()`.
+        // ✅ The lifetime of the returned reference `&T` is tied to the lifetime of the `MappedPages`,
+        //     ensuring that the `MappedPages` object will persist at least as long as the reference.
+        unsafe { self.ptr.as_ref() }
+    }
+}
+/// Only [`Mutable`] [`BorrowedMappedPages`] can deref into `&mut T`.
+impl<T: FromBytes> DerefMut for BorrowedMappedPages<T, Mutable> {
+    fn deref_mut(&mut self) -> &mut T {
+        // SAFETY:
+        // ✅ Same as the above `Deref` block, plus:
+        // ✅ The underlying `MappedPages` is guaranteed to be writable by `MappedPages::as_type_mut()`.
+        unsafe { self.ptr.as_mut() }
+    }
+}
+/// Both [`Mutable`] and [`Immutable`] [`BorrowedMappedPages`] implement `AsRef<T>`.
+impl<T: FromBytes, M: Mutability> AsRef<T> for BorrowedMappedPages<T, M> {
+    fn as_ref(&self) -> &T { self.deref() }
+}
+/// Only [`Mutable`] [`BorrowedMappedPages`] implement `AsMut<T>`.
+impl<T: FromBytes> AsMut<T> for BorrowedMappedPages<T, Mutable> {
+    fn as_mut(&mut self) -> &mut T { self.deref_mut() }
+}
+/// Both [`Mutable`] and [`Immutable`] [`BorrowedMappedPages`] implement `Borrow<T>`.
+impl<T: FromBytes, M: Mutability> Borrow<T> for BorrowedMappedPages<T, M> {
+    fn borrow(&self) -> &T { self.deref() }
+}
+/// Only [`Mutable`] [`BorrowedMappedPages`] implement `BorrowMut<T>`.
+impl<T: FromBytes> BorrowMut<T> for BorrowedMappedPages<T, Mutable> {
+    fn borrow_mut(&mut self) -> &mut T { self.deref_mut() }
+}
+
+// Forward the impls of `PartialEq`, `Eq`, `PartialOrd`, `Ord`, and `Hash`.
+impl<T: FromBytes + PartialEq, M: Mutability> PartialEq for BorrowedMappedPages<T, M> {
+    fn eq(&self, other: &Self) -> bool { self.deref().eq(other.deref()) }
+}
+impl<T: FromBytes + Eq, M: Mutability> Eq for BorrowedMappedPages<T, M> { }
+impl<T: FromBytes + PartialOrd, M: Mutability> PartialOrd for BorrowedMappedPages<T, M> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { self.deref().partial_cmp(other.deref()) }
+}
+impl<T: FromBytes + Ord, M: Mutability> Ord for BorrowedMappedPages<T, M> {
+    fn cmp(&self, other: &Self) -> Ordering { self.deref().cmp(other.deref()) }
+}
+impl<T: FromBytes + Hash, M: Mutability> Hash for BorrowedMappedPages<T, M> {
+    fn hash<H: Hasher>(&self, state: &mut H) { self.deref().hash(state) }
+}
+
+
+/// A borrowed [`MappedPages`] object that derefs to a slice `&[T]` and optionally also `&mut [T]`.
+/// 
+/// For ease of use, the default `Mutability` type parameter is `Immutable`.
+///
+/// When dropped, the borrow ends and the contained `MappedPages` is dropped and unmapped.
+/// You can manually end the borrow and reclaim the inner `MappedPages` via [`Self::into_inner()`].
+pub struct BorrowedSliceMappedPages<T: FromBytes, M: Mutability = Immutable> {
+    ptr: Unique<[T]>,
+    mp: MappedPages,
+    _mut: PhantomData<M>,
+}
+
+impl<T: FromBytes> BorrowedSliceMappedPages<T, Immutable> {
+    /// Immutably borrows the given `MappedPages` as a slice `&[T]`
+    /// of `length` elements of type `T` starting at the given `byte_offset` into the `MappedPages`.
+    ///
+    /// See [`MappedPages::as_slice()`] for more info.
+    ///
+    /// Upon failure, returns an error containing the unmodified `MappedPages` and a string
+    /// describing the error.
+    pub fn from(
+        mp: MappedPages,
+        byte_offset: usize,
+        length: usize,
+    ) -> Result<BorrowedSliceMappedPages<T>, (MappedPages, &'static str)> {
+        Ok(Self {
+            ptr: match mp.as_slice::<T>(byte_offset, length) {
+                Ok(r) => {
+                    let nn: NonNull<[T]> = r.into();
+                    nn.into()
+                }
+                Err(e_str) => return Err((mp, e_str)),
+            },
+            mp,
+            _mut: PhantomData,
+        })
+    }
+}
+
+impl<T: FromBytes> BorrowedSliceMappedPages<T, Mutable> {
+    /// Mutably borrows the given `MappedPages` as an instance of type `&mut T` 
+    /// starting at the given `byte_offset` into the `MappedPages`.
+    /// 
+    /// See [`MappedPages::as_type_mut()`] for more info.
+    /// 
+    /// Upon failure, returns an error containing the unmodified `MappedPages`
+    /// and a string describing the error.
+    pub fn from_mut(
+        mut mp: MappedPages,
+        byte_offset: usize,
+        length: usize,
+    ) -> Result<Self, (MappedPages, &'static str)> {
+        Ok(Self {
+            ptr: match mp.as_slice_mut::<T>(byte_offset, length) {
+                Ok(r) => r.into(),
+                Err(e_str) => return Err((mp, e_str)),
+            },
+            mp,
+            _mut: PhantomData,
+        })
+    }
+}
+
+impl<T: FromBytes, M: Mutability> BorrowedSliceMappedPages<T, M> {
+    /// Consumes this object and returns the inner `MappedPages`.
+    pub fn into_inner(self) -> MappedPages {
+        self.mp
+    }
+}
+
+/// Both [`Mutable`] and [`Immutable`] [`BorrowedSliceMappedPages`] can deref into `&[T]`.
+impl<T: FromBytes, M: Mutability> Deref for BorrowedSliceMappedPages<T, M> {
+    type Target = [T];
+    fn deref(&self) -> &[T] {
+        // SAFETY:
+        // ✅ The pointer is properly aligned; its alignment has been checked in `MappedPages::as_slice()`.
+        // ✅ The pointer is dereferenceable; it has been bounds checked by `MappedPages::as_slice()`.
+        // ✅ The pointer has been initialized in the constructor `from()`.
+        // ✅ The lifetime of the returned reference `&[T]` is tied to the lifetime of the `MappedPages`,
+        //     ensuring that the `MappedPages` object will persist at least as long as the reference.
+        unsafe { self.ptr.as_ref() }
+    }
+}
+/// Only [`Mutable`] [`BorrowedSliceMappedPages`] can deref into `&mut T`.
+impl<T: FromBytes> DerefMut for BorrowedSliceMappedPages<T, Mutable> {
+    fn deref_mut(&mut self) -> &mut [T] {
+        // SAFETY:
+        // ✅ Same as the above `Deref` block, plus:
+        // ✅ The underlying `MappedPages` is guaranteed to be writable by `MappedPages::as_slice_mut()`.
+        unsafe { self.ptr.as_mut() }
+    }
+}
+
+/// Both [`Mutable`] and [`Immutable`] [`BorrowedSliceMappedPages`] implement `AsRef<[T]>`.
+impl<T: FromBytes, M: Mutability> AsRef<[T]> for BorrowedSliceMappedPages<T, M> {
+    fn as_ref(&self) -> &[T] { self.deref() }
+}
+/// Only [`Mutable`] [`BorrowedSliceMappedPages`] implement `AsMut<T>`.
+impl<T: FromBytes> AsMut<[T]> for BorrowedSliceMappedPages<T, Mutable> {
+    fn as_mut(&mut self) -> &mut [T] { self.deref_mut() }
+}
+/// Both [`Mutable`] and [`Immutable`] [`BorrowedSliceMappedPages`] implement `Borrow<T>`.
+impl<T: FromBytes, M: Mutability> Borrow<[T]> for BorrowedSliceMappedPages<T, M> {
+    fn borrow(&self) -> &[T] { self.deref() }
+}
+/// Only [`Mutable`] [`BorrowedSliceMappedPages`] implement `BorrowMut<T>`.
+impl<T: FromBytes> BorrowMut<[T]> for BorrowedSliceMappedPages<T, Mutable> {
+    fn borrow_mut(&mut self) -> &mut [T] { self.deref_mut() }
+}
+
+// Forward the impls of `PartialEq`, `Eq`, `PartialOrd`, `Ord`, and `Hash`.
+impl<T: FromBytes + PartialEq, M: Mutability> PartialEq for BorrowedSliceMappedPages<T, M> {
+    fn eq(&self, other: &Self) -> bool { self.deref().eq(other.deref()) }
+}
+impl<T: FromBytes + Eq, M: Mutability> Eq for BorrowedSliceMappedPages<T, M> { }
+impl<T: FromBytes + PartialOrd, M: Mutability> PartialOrd for BorrowedSliceMappedPages<T, M> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { self.deref().partial_cmp(other.deref()) }
+}
+impl<T: FromBytes + Ord, M: Mutability> Ord for BorrowedSliceMappedPages<T, M> {
+    fn cmp(&self, other: &Self) -> Ordering { self.deref().cmp(other.deref()) }
+}
+impl<T: FromBytes + Hash, M: Mutability> Hash for BorrowedSliceMappedPages<T, M> {
+    fn hash<H: Hasher>(&self, state: &mut H) { self.deref().hash(state) }
+}
+
+
+/// A marker type used to indicate that a [`BorrowedMappedPages`]
+/// or [`BorrowedSliceMappedPages`] is borrowed mutably.
+/// 
+/// Implements the [`Mutability`] trait. 
+#[non_exhaustive]
+pub struct Mutable { }
+
+/// A marker type used to indicate that a [`BorrowedMappedPages`]
+/// or [`BorrowedSliceMappedPages`] is borrowed immutably.
+/// 
+/// Implements the [`Mutability`] trait.
+#[non_exhaustive]
+pub struct Immutable { }
+
+/// A trait for parameterizing a [`BorrowedMappedPages`]
+/// or [`BorrowedSliceMappedPages`] as mutably or immutably borrowed.
+/// 
+/// Only [`Mutable`] and [`Immutable`] are able to implement this trait.
+pub trait Mutability: private::Sealed { }
+
+impl private::Sealed for Immutable { }
+impl private::Sealed for Mutable { }
+impl Mutability for Immutable { }
+impl Mutability for Mutable { }
+
+mod private {
+    pub trait Sealed { }
+}
 
 // Exposing private functions to the spillful mapper for benchmarking purposes.
 #[cfg(mapper_spillful)]

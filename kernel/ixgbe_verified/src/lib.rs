@@ -61,7 +61,7 @@ use alloc::{
     boxed::Box,
 };
 use irq_safety::MutexIrqSafe;
-use memory::MappedPages;
+use memory::{MappedPages, BorrowedMappedPages, Mutable};
 use pci::{PciDevice, PciConfigSpaceAccessMechanism, PciLocation, BAR, PciBaseAddr, PciMemSize};
 use owning_ref::BoxRefMut;
 // use bit_field::BitField;
@@ -130,13 +130,13 @@ pub struct IxgbeNic {
     /// The actual MAC address burnt into the hardware  
     mac_hardware: [u8;6],       
     /// Memory-mapped control registers
-    regs1: BoxRefMut<MappedPages, IntelIxgbeRegisters1>,
+    regs1: BorrowedMappedPages<IntelIxgbeRegisters1, Mutable>,
     /// Memory-mapped control registers
-    regs2: BoxRefMut<MappedPages, IntelIxgbeRegisters2>,
+    regs2: BorrowedMappedPages<IntelIxgbeRegisters2, Mutable>,
     /// Memory-mapped control registers
-    regs3: BoxRefMut<MappedPages, IntelIxgbeRegisters3>,
+    regs3: BorrowedMappedPages<IntelIxgbeRegisters3, Mutable>,
     /// Memory-mapped control registers
-    regs_mac: BoxRefMut<MappedPages, IntelIxgbeMacRegisters>,
+    regs_mac: BorrowedMappedPages<IntelIxgbeMacRegisters, Mutable>,
     /// Array to store which L3/L4 5-tuple filters have been used.
     /// There are 128 such filters available.
     l34_5_tuple_filters: [Option<FilterParameters>; 128],
@@ -434,10 +434,10 @@ impl IxgbeNic {
     fn mapped_reg(
         mem_base: &PciBaseAddr
     ) -> Result<(
-        BoxRefMut<MappedPages, IntelIxgbeRegisters1>, 
-        BoxRefMut<MappedPages, IntelIxgbeRegisters2>, 
-        BoxRefMut<MappedPages, IntelIxgbeRegisters3>, 
-        BoxRefMut<MappedPages, IntelIxgbeMacRegisters>, 
+        BorrowedMappedPages<IntelIxgbeRegisters1, Mutable>, 
+        BorrowedMappedPages<IntelIxgbeRegisters2, Mutable>, 
+        BorrowedMappedPages<IntelIxgbeRegisters3, Mutable>, 
+        BorrowedMappedPages<IntelIxgbeMacRegisters, Mutable>, 
         Vec<RxQueueRegisters>, 
         Vec<TxQueueRegisters>
     ), &'static str> {
@@ -473,10 +473,10 @@ impl IxgbeNic {
         let nic_regs3_mapped_page = allocate_memory(offset, GENERAL_REGISTERS_3_SIZE_BYTES, NIC_MAPPING_FLAGS_NO_CACHE)?;
 
         // Map the memory as the register struct and tie the lifetime of the struct with its backing mapped pages
-        let regs1 = BoxRefMut::new(Box::new(nic_regs1_mapped_page)).try_map_mut(|mp| mp.as_type_mut::<IntelIxgbeRegisters1>(0))?;
-        let regs2 = BoxRefMut::new(Box::new(nic_regs2_mapped_page)).try_map_mut(|mp| mp.as_type_mut::<IntelIxgbeRegisters2>(0))?;
-        let regs3 = BoxRefMut::new(Box::new(nic_regs3_mapped_page)).try_map_mut(|mp| mp.as_type_mut::<IntelIxgbeRegisters3>(0))?;
-        let mac_regs = BoxRefMut::new(Box::new(nic_mac_regs_mapped_page)).try_map_mut(|mp| mp.as_type_mut::<IntelIxgbeMacRegisters>(0))?;
+        let regs1 = nic_regs1_mapped_page.into_borrowed_mut(0).map_err(|(_mp, err)| err)?;
+        let regs2 = nic_regs2_mapped_page.into_borrowed_mut(0).map_err(|(_mp, err)| err)?;
+        let regs3 = nic_regs3_mapped_page.into_borrowed_mut(0).map_err(|(_mp, err)| err)?;
+        let mac_regs = nic_mac_regs_mapped_page.into_borrowed_mut(0).map_err(|(_mp, err)| err)?;
         
         // Divide the pages of the Rx queue registers into multiple 64B regions
         let mut regs_rx = Self::mapped_regs_from_rx_memory(MappedPagesFragments::new(nic_rx_regs1_mapped_page))?;

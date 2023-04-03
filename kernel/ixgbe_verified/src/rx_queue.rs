@@ -1,4 +1,4 @@
-use memory::{MappedPages};
+use memory::{MappedPages, BorrowedSliceMappedPages, Mutable};
 use crate::{hal::{*, descriptors::LegacyRxDescriptor}, packet_buffers::{MTU, PacketBufferS}, RxBufferSizeKiB, DEFAULT_RX_BUFFER_SIZE_2KB, L5FilterID, regs::*, FilterParameters, FilterError};
 // use crate::vec_wrapper::VecWrapper;
 use crate::queue_registers::RxQueueRegisters;
@@ -22,7 +22,7 @@ pub struct RxQueue<const S: RxState> {
     /// Registers for this receive queue
     pub regs: RxQueueRegisters,
     /// Receive descriptors
-    pub rx_descs: BoxRefMut<MappedPages, [LegacyRxDescriptor]>,
+    pub rx_descs: BorrowedSliceMappedPages<LegacyRxDescriptor, Mutable>,
     /// The number of receive descriptors in the descriptor ring
     pub num_rx_descs: u16,
     /// Current receive descriptor index
@@ -158,7 +158,7 @@ impl RxQueue<{RxState::Enabled}> {
 }
 
 impl Deref for RxQueue<{RxState::Enabled}> {
-    type Target = BoxRefMut<MappedPages, [LegacyRxDescriptor]>;
+    type Target = BorrowedSliceMappedPages<LegacyRxDescriptor, Mutable>;
 
     fn deref(&self) -> &Self::Target {
         &self.rx_descs

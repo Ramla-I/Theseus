@@ -1,4 +1,4 @@
-use memory::{MappedPages, create_contiguous_mapping};
+use memory::{MappedPages, create_contiguous_mapping, BorrowedSliceMappedPages, Mutable};
 use zerocopy::FromBytes;
 use crate::regs::ReportStatusBit;
 use crate::{hal::descriptors::LegacyTxDescriptor};
@@ -27,7 +27,7 @@ pub struct TxQueue<const S: TxState> {
     /// Registers for this transmit queue
     pub(crate) regs: TxQueueRegisters,
     /// Transmit descriptors 
-    pub(crate) tx_descs: BoxRefMut<MappedPages, [LegacyTxDescriptor]>,
+    pub(crate) tx_descs: BorrowedSliceMappedPages<LegacyTxDescriptor, Mutable>,
     /// The number of transmit descriptors in the descriptor ring
     num_tx_descs: u16,
     /// Current transmit descriptor index (first desc that can be used)
@@ -56,7 +56,7 @@ pub struct TransmitHead {
 
 impl TxQueue<{TxState::Enabled}> {
     pub(crate) fn new(mut regs: TxQueueRegisters, num_desc: NumDesc, cpu_id: Option<u8>, rs_bit: ReportStatusBit) -> Result<(TxQueue<{TxState::Enabled}>, TDHSet), &'static str> {
-        let (tx_descs, paddr) = create_desc_ring(num_desc)?;
+        let (tx_descs, paddr) = create_desc_ring::<LegacyTxDescriptor>(num_desc)?;
         let num_tx_descs = tx_descs.len();
 
         // write the physical address of the tx descs array
@@ -250,7 +250,7 @@ impl TxQueue<{TxState::Enabled}> {
 
 
 impl Deref for TxQueue<{TxState::Enabled}> {
-    type Target = BoxRefMut<MappedPages, [LegacyTxDescriptor]>;
+    type Target = BorrowedSliceMappedPages<LegacyTxDescriptor, Mutable>;
 
     fn deref(&self) -> &Self::Target {
         &self.tx_descs
