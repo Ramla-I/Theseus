@@ -125,9 +125,13 @@ impl<const N: MTU> PacketBuffer<N> {
 /// A struct that makes it easy to access different fields of an ethernet frame
 /// Note: Tried to use const generics for the payload, but it fails when trying to derive FromBytes, works otherwise.
 #[derive(FromBytes)]
+#[repr(C)]
 pub struct EthernetFrame {
     pub dest_addr:  [u8; MAC_ADDR_LEN_IN_BYTES as usize],
     pub src_addr:   [u8; MAC_ADDR_LEN_IN_BYTES as usize],
     pub length:     u16,
     pub payload:    [u8; MAX_STANDARD_PAYLOAD_LEN_IN_BYTES as usize],
+    _padding: [u8; 2048 - 1514]
 }
+
+const_assert_eq!(core::mem::size_of::<EthernetFrame>(), 2048);

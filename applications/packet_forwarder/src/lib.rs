@@ -40,9 +40,10 @@ use alloc::vec::Vec;
 use alloc::string::String;
 use ixgbe_verified::{
     get_ixgbe_nics_list, IxgbeStats,
-    allocator::{init_rx_buf_pool, Packet},
+    allocator::{init_rx_buf_pool},
+    mempool::*
 };
-use packet_buffers::{PacketBufferS, EthernetFrame};
+// use packet_buffers::{PacketBufferS, EthernetFrame};
 use getopts::{Matches, Options};
 use hpet::get_hpet;
 use pmu_x86::EventType;
@@ -141,15 +142,16 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
 
     // create the buffers to store packets. 
     // They should have a large capacity so that no heap allocation is done during the benchmark
-    let mut received_buffers0: Vec<PacketBufferS> = Vec::with_capacity(DESC_RING_SIZE * 2);
-    let mut received_buffers1: Vec<PacketBufferS> = Vec::with_capacity(DESC_RING_SIZE * 2);
+    let mut received_buffers0: Vec<PacketBuffer> = Vec::with_capacity(DESC_RING_SIZE * 2);
+    let mut received_buffers1: Vec<PacketBuffer> = Vec::with_capacity(DESC_RING_SIZE * 2);
     
     // // Create a pool of unused packet buffers
-    let mut pool0 = init_rx_buf_pool(DESC_RING_SIZE * 2).expect("failed to init buf pool");
-    let mut pool1 = init_rx_buf_pool(DESC_RING_SIZE * 2).expect("failed to init buf pool");
+    // let mut pool0 = init_rx_buf_pool(DESC_RING_SIZE * 2).expect("failed to init buf pool");
+    // let mut pool1 = init_rx_buf_pool(DESC_RING_SIZE * 2).expect("failed to init buf pool");
 
-    // let mut pool0 = dev0.get_mempool(0);
-    // let mut pool1 = dev1.get_mempool(0);
+    // bad hack, should separate mempool from rx queue
+    let mut pool0 = dev0.get_mempool(0);
+    let mut pool1 = dev1.get_mempool(0);
 
 
     // clear the stats registers, and create an object to store the NIC stats during the benchmark
@@ -328,16 +330,16 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
         let mut length =60;
         rx_packets_dev0 += dev0.rx_batch(0, &mut received_buffers0, batch_size, &mut pool0) as usize;
         for p in &mut received_buffers0 {
-                p.buffer.dest_addr = [0,0,0,0,0,1];
-                p.buffer.src_addr = src_addr;
+                p.dest_addr = [0,0,0,0,0,1];
+                p.src_addr = src_addr;
         }
         tx_packets_dev1 += dev1.tx_batch(0, batch_size, &mut received_buffers0, &mut pool0) as usize;   
         pool0.append(&mut received_buffers0);
 
         rx_packets_dev1 += dev1.rx_batch(0, &mut received_buffers1, batch_size, &mut pool1) as usize;
-        for p in &mut received_buffers0 {
-                p.buffer.dest_addr = [0,0,0,0,0,1];
-                p.buffer.src_addr = src_addr;
+        for p in &mut received_buffers1 {
+                p.dest_addr = [0,0,0,0,0,1];
+                p.src_addr = src_addr;
         }
         tx_packets_dev0 += dev0.tx_batch(0, batch_size, &mut received_buffers1, &mut pool1) as usize;   
         pool1.append(&mut received_buffers1);

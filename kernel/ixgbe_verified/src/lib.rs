@@ -12,7 +12,7 @@
 #![feature(adt_const_params)]
 #![feature(array_zip)]
 #![feature(rustc_private)]
-
+#![feature(ptr_internals)]
 
 #[macro_use] extern crate prusti_contracts;
 extern crate cfg_if;
@@ -20,6 +20,7 @@ extern crate alloc;
 
 pub mod hal;
 mod queue_registers;
+pub mod mempool;
 
 pub use hal::*;
 
@@ -53,7 +54,8 @@ use mapped_pages_fragments::MappedPagesFragments;
 use rx_queue::{RxQueueE, RxQueueD, RxQueueL5, RxQueueRSS};
 use tx_queue::{TxQueueE, TxQueueD};
 use allocator::*;
-use packet_buffers::*;
+// use packet_buffers::*;
+use mempool::*;
 
 use spin::Once;
 use alloc::{
@@ -311,10 +313,10 @@ impl IxgbeNic {
         Ok(&mut self.tx_queues[idx])
     }
 
-    // pub fn get_mempool(&mut self, idx: usize) -> mempool {
-    //     let mempool = allocator::init_mempool(512).unwrap();
-    //     core::mem::replace(&mut self.rx_queues[idx].rx_buffer_pool, mempool)
-    // }
+    pub fn get_mempool(&mut self, idx: usize) -> Mempool {
+        let mempool = Mempool::new(2).unwrap();
+        core::mem::replace(&mut self.rx_queues[idx].rx_buffer_pool, mempool)
+    }
 
     /// Returns the Tx queue located at this index. 
     /// This doesn't have to match the queue ID.
@@ -327,16 +329,16 @@ impl IxgbeNic {
     }
     
     #[inline(always)]
-    pub fn tx_batch(&mut self, qid: usize, batch_size: usize,  buffers: &mut Vec<PacketBufferS>, used_buffers: &mut Vec<PacketBufferS>) -> u16 {
+    pub fn tx_batch(&mut self, qid: usize, batch_size: usize,  buffers: &mut Vec<PacketBuffer>, pool: &mut Vec<PacketBuffer>) -> u16 {
         // if qid >= self.tx_queues.len() {
         //     return Err("Queue index is out of range");
         // }
 
-        self.tx_queues[qid].tx_batch(batch_size, buffers, used_buffers)
+        self.tx_queues[qid].tx_batch(batch_size, buffers, pool)
     }
 
     #[inline(always)]
-    pub fn rx_batch(&mut self, qid: usize, buffers: &mut Vec<PacketBufferS>, batch_size: usize, pool: &mut Vec<PacketBufferS>) -> u16 {
+    pub fn rx_batch(&mut self, qid: usize, buffers: &mut Vec<PacketBuffer>, batch_size: usize, pool: &mut Vec<PacketBuffer>) -> u16 {
         // if qid >= self.rx_queues.len() {
         //     error!("Queue index is out of range");
         //     return Err(());
