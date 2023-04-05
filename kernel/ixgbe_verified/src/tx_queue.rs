@@ -86,7 +86,7 @@ impl TxQueue<{TxState::Enabled}> {
     /// 
     /// I don't think this code is very stable, if the TX_CLEAN_THRESHOLD is less than the number of descriptors, and divisor, then we should be good.
     #[inline(always)]
-    pub fn tx_batch(&mut self, batch_size: usize,  buffers: &mut Vec<PacketBuffer>, pool: &mut Vec<PacketBuffer>) -> u16 {
+    pub fn tx_batch(&mut self, batch_size: usize,  buffers: &mut Vec<PacketBuffer>, pool: &mut Mempool) -> u16 {
         const TX_CLEAN_THRESHOLD: u16 = 32; // make sure this is less than and an even divisor fo the queue size
         // error!("before cleaning: tx_cur = {}, tx_clean ={}", self.tx_cur, self.tx_clean);
 
@@ -128,7 +128,7 @@ impl TxQueue<{TxState::Enabled}> {
                 // }
                 let rs_bit = if (self.tx_cur % TX_CLEAN_THRESHOLD) == TX_CLEAN_THRESHOLD - 1 { self.rs_bit } else { 0 };
                 // error!("rs_bit = {}", rs_bit);
-                self.tx_descs[self.tx_cur as usize].send(packet.paddr, packet.length, rs_bit);
+                self.tx_descs[self.tx_cur as usize].send(pool.paddr(&packet), packet.get_length(), rs_bit);
                 self.tx_bufs_in_use.push(packet);
     
                 self.tx_cur = tx_next;
@@ -207,7 +207,7 @@ impl TxQueue<{TxState::Enabled}> {
 
     /// Removes multiples of `TX_CLEAN_BATCH` packets from `queue`.    
     /// (code taken from https://github.com/ixy-languages/ixy.rs/blob/master/src/ixgbe.rs#L1016)
-    fn tx_clean(&mut self, used_buffers: &mut Vec<PacketBuffer>)  {
+    fn tx_clean(&mut self, used_buffers: &mut Mempool)  {
         const TX_CLEAN_BATCH: usize = 32;
 
         let mut tx_clean = self.tx_clean as usize;

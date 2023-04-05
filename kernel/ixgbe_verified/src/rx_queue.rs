@@ -59,7 +59,7 @@ impl RxQueue<{RxState::Enabled}> {
             let rx_buf = rx_buffer_pool.pop()
                 .ok_or("Couldn't obtain a ReceiveBuffer from the pool")?; 
             
-            rd.init(rx_buf.paddr); 
+            rd.init(rx_buffer_pool.paddr(&rx_buf)); 
             rx_bufs_in_use.push(rx_buf); 
         }
 
@@ -94,7 +94,7 @@ impl RxQueue<{RxState::Enabled}> {
     /// Retrieves a maximum of `batch_size` number of packets and stores them in `buffers`.
     /// Returns the total number of received packets.
     #[inline(always)]
-    pub fn rx_batch(&mut self, buffers: &mut Vec<PacketBuffer>, batch_size: usize, pool: &mut Vec<PacketBuffer>) -> u16 {
+    pub fn rx_batch(&mut self, buffers: &mut Vec<PacketBuffer>, batch_size: usize, pool: &mut Mempool) -> u16 {
         // verified_functions::rx_batch(
         //     &mut self.rx_descs, 
         //     &mut self.rx_cur, 
@@ -131,13 +131,13 @@ impl RxQueue<{RxState::Enabled}> {
             // we need to obtain a new `ReceiveBuffer` and set it up such that the NIC will use it for future receivals.
             if let Some(new_receive_buf) = pool.pop() {
                 // actually tell the NIC about the new receive buffer, and that it's ready for use now
-                desc.set_packet_address(new_receive_buf.paddr);
+                desc.set_packet_address(pool.paddr(&new_receive_buf));
                 desc.reset_status();
                 
                 let mut current_rx_buf = core::mem::replace(&mut self.rx_bufs_in_use[rx_cur as usize], new_receive_buf);
                 // current_rx_buf.length = length as u16; // set the ReceiveBuffer's length to the size of the actual packet received
                 // unsafe{ core::arch::x86_64::_mm_prefetch(current_rx_buf.buffer.as_ptr() as *const i8, _MM_HINT_ET0);}
-                current_rx_buf.length = length as u16; // set the ReceiveBuffer's length to the size of the actual packet received
+                current_rx_buf.set_length(length as u16); // set the ReceiveBuffer's length to the size of the actual packet received
                 buffers.push(current_rx_buf);
 
                 rcvd_pkts += 1;
