@@ -63,6 +63,9 @@ path = "../ethernet_smoltcp_device"
 [dependencies.ixgbe_verified]
 path = "../ixgbe_verified"
 
+[dependencies.ixgbe_restricted]
+path = "../ixgbe_restricted"
+
 [dependencies.io]
 path = "../io"
 

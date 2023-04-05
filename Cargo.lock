@@ -776,6 +776,7 @@ dependencies = [
  "fatfs",
  "io",
  "iommu",
+ "ixgbe_restricted",
  "ixgbe_verified",
  "keyboard",
  "log",
@@ -1419,6 +1420,35 @@ dependencies = [
  "virtual_nic",
  "volatile 0.2.7",
  "x86_64",
+ "zerocopy",
+]
+
+[[package]]
+name = "ixgbe_restricted"
+version = "0.1.0"
+dependencies = [
+ "bit_field 0.7.0",
+ "bitflags",
+ "cfg-if 1.0.0",
+ "hpet",
+ "irq_safety",
+ "kernel_config",
+ "log",
+ "mapped_pages_fragments",
+ "memory",
+ "mpmc",
+ "num_enum",
+ "owning_ref",
+ "packet_buffers",
+ "pci",
+ "physical_nic",
+ "pit_clock",
+ "prusti-contracts",
+ "rand",
+ "spin 0.9.0",
+ "static_assertions",
+ "virtual_nic",
+ "volatile 0.2.7",
  "zerocopy",
 ]
 
@@ -2374,6 +2404,22 @@ dependencies = [
 [[package]]
 name = "percent-encoding"
 version = "1.0.2"
+
+[[package]]
+name = "pfr"
+version = "0.1.0"
+dependencies = [
+ "getopts",
+ "hpet",
+ "irq_safety",
+ "ixgbe_restricted",
+ "libtest",
+ "log",
+ "network_interface_card",
+ "pmu_x86",
+ "spawn",
+ "terminal_print",
+]
 
 [[package]]
 name = "physical_nic"
