@@ -89,7 +89,7 @@ const_assert_eq!(core::mem::size_of::<IntelIxgbeRegisters1>(), 4096);
 impl IntelIxgbeRegisters1 {
     pub fn ctrl_reset(&mut self) {
         let val = self.ctrl.read();
-        self.ctrl.write(val | CTRL_RST | CTRL_LRST);
+        self.ctrl.write(val | CTRL_RST | CTRL_LRST); // TinyNF didn't do LRST
     }
 
     // Prevents DPDK bug 23
@@ -175,7 +175,11 @@ pub struct IntelIxgbeRegisters2 {
 
     /// MAC Core Control 0 Register 
     hlreg0:                             Volatile<u32>,          // 0x4240;
-    _padding13:                         [u8; 92],               // 0x4244 - 0x429F
+    _padding13:                         [u8; 80],               // 0x4244 - 0x4293
+
+    /// MAC Flow Control Register
+    mflcn:                              Volatile<u32>,          // 0x4294;
+    _padding13a:                        [u8; 8],                // 0x4298 - 0x429F
 
     /// Auto-Negotiation Control Register
     autoc:                              Volatile<u32>,          // 0x42A0;
@@ -193,7 +197,16 @@ pub struct IntelIxgbeRegisters2 {
 
     /// DCB Transmit Descriptor Plane Control and Status
     rttdcs:                             Volatile<u32>,          // 0x4900;
-    _padding16:                         [u8; 380],              // 0x4904 - 0x4A7F
+
+    /// DCB Transmit Descriptor Plane Queue Select
+    rttdqsel:                          Volatile<u32>,           // 0x4904;  
+
+    /// DCB Transmit Descriptor Plane T1 Config
+    rttdt1c:                            Volatile<u32>,          // 0x4908 
+    _padding16:                         [u8; 68],               // 0x490C - 0x494F
+
+    txpbthresh:                         [Volatile<u32>; 8],     // 0x4950;
+    _padding16a:                        [u8; 272],              // 0x4970 - 0x4A7F
 
     /// DMA Tx Control
     dmatxctl:                           Volatile<u32>,          // 0x4A80;
@@ -257,6 +270,13 @@ const_assert_eq!(FilterCtrlFlags::all().bits() & 0xFFFF_F8FD, 0);
 pub struct FCTRLSet(bool);
 pub struct RXCTRLDisabled(bool);
 
+/// Enable CRC strip by HW
+pub const HLREG0_CRC_STRIP:             u32 = 1 << 1;
+/// Enable CRC strip by HW
+pub const RDRXCTL_CRC_STRIP:            u32 = 1;
+/// These 5 bits have to be cleared by software
+pub const RDRXCTL_RSCFRSTSIZE:          u32 = 0x1F << 17;
+
 impl IntelIxgbeRegisters2 {
     // Any function that writes to rdrxcrtl must make sure these bits are set
     const RDRXCTL_BASE_VAL: u32 = (1 << 26) | (1 << 25);
@@ -274,8 +294,12 @@ impl IntelIxgbeRegisters2 {
         self.hlreg0.write(self.hlreg0.read() | HLREG0_CRC_STRIP);
     }
 
-    pub fn rdrxctl_clear_rsc_frst_size_bits(&mut self) {
-        self.rdrxctl.write(self.rdrxctl.read() & !RDRXCTL_RSCFRSTSIZE);
+    /// Sets values of bits opposite to what the HW has set them to
+    /// RSCFRSTSIZE [21:17] should be set to 0
+    /// RSCACKC [25] should be set to 1
+    /// FCOE_WRFIX [26] should be set to 1
+    pub fn rdrxctl_set_reserved_bits(&mut self) {
+        self.rdrxctl.write((self.rdrxctl.read() | Self::RDRXCTL_BASE_VAL) & !RDRXCTL_RSCFRSTSIZE);
     }
 
     pub fn rdrxctl_dma_init_done(&self) -> bool {
@@ -307,12 +331,21 @@ impl IntelIxgbeRegisters2 {
         }
     } 
 
+    /// Sets the Receive Threshold High (RTH) bits [18:5] for reg 0
+    pub fn fcrth0_set_rth(&mut self, rth: u16) {
+        self.fcrth[0].write((rth as u32  & 0x3FFF) << 5);
+    }
+
     pub fn fcrtv_clear(&mut self) {
         self.fcrtv.write(0);
     }
 
     pub fn fccfg_clear(&mut self) {
         self.fccfg.write(0);
+    }
+
+    pub fn fccfg_enable_transmit_flow_control(&mut self) {
+        self.fccfg.write(self.fccfg.read() | (1 << 3));
     }
 
     // separate function because it can never be set to 0
@@ -360,6 +393,22 @@ impl IntelIxgbeRegisters2 {
 
     pub fn rxcsum_enable_rss_writeback(&mut self) {
         self.rxcsum.write(RXCSUM_PCSD);
+    }
+
+    pub fn mflcn_enable_receive_flow_control(&mut self) {
+        self.mflcn.write(self.mflcn.read() | (1 << 3));
+    }
+
+    pub fn rttdqsel_set_queue_id(&mut self, queue: u8) {
+        self.rttdqsel.write((queue & 0x7F) as u32);
+    }
+
+    pub fn rttdt1c_write(&mut self, credit_refill: u16) {
+        self.rttdt1c.write(credit_refill as u32 & 0x3FFF);
+    }
+
+    pub fn txpbthresh0_write(&mut self, thresh: u16) {
+        self.txpbthresh[0].write(thresh as u32 & 0x3FF);
     }
 }
 
@@ -473,8 +522,11 @@ pub struct IntelIxgbeRegisters3 {
     _padding3:                          [u8; 96],               // 0xEC20 - 0xEC7F
 
     /// Multiple Receive Queues Command Register
-    mrqc:                           Volatile<u32>,          // 0xEC80;
-    _padding4:                          [u8; 5004],             // 0xEC84 - 0x1000F
+    mrqc:                               Volatile<u32>,          // 0xEC80;
+    _padding4:                          [u8; 1916],             // 0xEC84 - 0xF3FF
+
+    pub pfuta:                              [Volatile<u32>;128],    // 0xF400 - 00xF5FF
+    _padding4a:                         [u8; 2576],             // 0xF600 - 0x1000F
 
     /// EEPROM/ Flash Control Register
     eec:                                Volatile<u32>,          // 0x10010
@@ -619,12 +671,7 @@ pub const LINKS_SPEED_MASK:             u32 = 0x3 << 28;
 pub const HLREG0_TXCRCEN:               u32 = 1;
 /// Tx Pad Frame Enable (bit 10)
 pub const HLREG0_TXPADEN:               u32 = 1 << 10;
-/// Enable CRC strip by HW
-pub const HLREG0_CRC_STRIP:             u32 = 1 << 1;
-/// Enable CRC strip by HW
-pub const RDRXCTL_CRC_STRIP:            u32 = 1;
-/// These 5 bits have to be cleared by software
-pub const RDRXCTL_RSCFRSTSIZE:          u32 = 0x1F << 17;
+
 
 /// DCB Arbiters Disable
 pub const RTTDCS_ARBDIS:                u32 = 1 << 6;

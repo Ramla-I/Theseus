@@ -20,7 +20,7 @@ extern crate alloc;
 
 pub mod hal;
 mod queue_registers;
-pub mod queue;
+pub mod agent;
 pub use hal::*;
 
 #[macro_use] extern crate log;
@@ -48,7 +48,6 @@ pub mod allocator;
 use hal::regs::*;
 use queue_registers::*;
 use mapped_pages_fragments::MappedPagesFragments;
-use queue::*;
 use allocator::*;
 
 use spin::Once;
@@ -134,7 +133,10 @@ pub struct IxgbeNic {
     regs3: BorrowedMappedPages<IntelIxgbeRegisters3, Mutable>,
     /// Memory-mapped control registers
     regs_mac: BorrowedMappedPages<IntelIxgbeMacRegisters, Mutable>,
-    pub queue: Queue,
+    /// Registers for the first rx queue. It's wrapped in an option because they can be taken and stored in an agent when the descriptors are initialized.
+    rxq_registers: Option<RxQueueRegisters>,
+    /// Registers for the first tx queue. It's wrapped in an option because they can be taken and stored in an agent when the descriptors are initialized.
+    txq_registers: Option<TxQueueRegisters>,
     /// Registers for the disabled queues
     rx_registers_unusable: Vec<RxQueueRegisters>,
     /// Registers for the disabled queues
@@ -166,11 +168,6 @@ impl IxgbeNic {
     pub fn init(
         ixgbe_pci_dev: &PciDevice,
     ) -> Result<MutexIrqSafe<IxgbeNic>, &'static str> {
-        // // Series of checks to determine if starting parameters are acceptable
-        // if (enable_virtualization && interrupts.is_some()) || (enable_virtualization && enable_rss) {
-        //     return Err("Cannot enable virtualization when interrupts or RSS are enabled");
-        // }
-
         let bar_type = ixgbe_pci_dev.determine_pci_space();
 
         // If the base address is not memory mapped then exit
@@ -205,18 +202,19 @@ impl IxgbeNic {
         // store the mac address of this device
         let mac_addr_hardware = Self::read_mac_address_from_nic(&mut mapped_registers_mac);
 
-        // create the rx descriptor queues
+        // separate off the queues registers for queue0, so that the remaining 127 can just be stored but not used
         let rx_registers_unusable = rx_mapped_registers.split_off(IXGBE_NUM_RX_QUEUES_ENABLED as usize);
-        // let rx_queues = Self::rx_init(&mut mapped_registers1, &mut mapped_registers2, rx_mapped_registers, num_rx_descriptors)?;
-        
-         // create the tx descriptor queues
         let tx_registers_unusable = tx_mapped_registers.split_off(IXGBE_NUM_TX_QUEUES_ENABLED as usize);
-        // let tx_queues = Self::tx_init(&mut mapped_registers2, &mut mapped_registers_mac, tx_mapped_registers, num_tx_descriptors)?;
         
-        let num_descs = NumDesc::Descs1k;
-        let mut queue = Queue::new(num_descs, tx_mapped_registers.pop().unwrap(), rx_mapped_registers.pop().unwrap())?;
-        Self::rx_init(&mut mapped_registers1, &mut mapped_registers2, num_descs, &mut queue)?;
-        Self::tx_init(&mut mapped_registers2, &mut mapped_registers_mac, num_descs, &mut queue)?;
+        // do the basic tx and rx init for the device (not the per queue initialization)
+        Self::rx_init_pre(&mut mapped_registers2)?;
+        Self::tx_init_pre(&mut mapped_registers2, &mut mapped_registers_mac)?;
+        Self::set_promiscuous(&mut mapped_registers2);
+
+        // let num_descs = NumDesc::Descs1k;
+        // let mut queue = Queue::new(num_descs, tx_mapped_registers.pop().unwrap(), rx_mapped_registers.pop().unwrap())?;
+        // Self::rx_init(&mut mapped_registers1, &mut mapped_registers2, num_descs, &mut queue)?;
+        // Self::tx_init(&mut mapped_registers2, &mut mapped_registers_mac, num_descs, &mut queue)?;
 
         // wait 10 seconds for the link to come up, as seen in other ixgbe drivers
         Self::wait_for_link(&mapped_registers2, 10_000_000);
@@ -230,7 +228,8 @@ impl IxgbeNic {
             regs2: mapped_registers2,
             regs3: mapped_registers3,
             regs_mac: mapped_registers_mac,
-            queue,
+            rxq_registers: rx_mapped_registers.pop(),
+            txq_registers: tx_mapped_registers.pop(),
             rx_registers_unusable,
             tx_registers_unusable
         };
@@ -365,6 +364,7 @@ impl IxgbeNic {
 
         // master disable algorithm (sec 5.2.5.3.2)
         // global reset = sw reset + link reset 
+        // We don't do a SW reset because device is only initialized at power up
         regs1.ctrl_reset();
 
         //wait 10 ms
@@ -376,10 +376,17 @@ impl IxgbeNic {
             fcttv.write(0);
         }
 
-        regs2.fcrtl_clear();
-        regs2.fcrth_clear();
-        regs2.fcrtv_clear();
-        regs2.fccfg_clear();
+        regs2.fcrtl_clear(); // TinyNF removes because already 0
+        regs2.fcrtv_clear(); // TinyNF removes because already 0
+        regs2.fccfg_clear(); // TinyNF removes because already 0
+        for r in &mut regs2.fcttv {
+            r.write(0); // TinyNF removes because already 0
+        }
+
+        // regs2.fcrth_clear(); // TInyNF actually writes to this
+        // Datasheet: Note that FCRTH[n].RTH fields must be set by default regardless if flow control is enabled or not
+        // should be set to RXPBSIZE[n]-0x6000 ... and RXPBSIZE[0] is 512KB by default
+        regs2.fcrth0_set_rth(((512u32 * 1024u32) - 0x6000) as u16);
 
         //disable interrupts
         regs1.eimc_disable_interrupts();
@@ -393,6 +400,18 @@ impl IxgbeNic {
 
         //wait for dma initialization done (RDRXCTL.DMAIDONE)
         while !regs2.rdrxctl_dma_init_done() {}
+
+        // clear unicast table array
+        for r in &mut regs3.pfuta {
+            r.write(0);
+        }
+
+        // The following should all be cleared as their initial state is unknown
+        // clear vlan filter table array
+        // clear MAC pool select array
+        // clear vlan pool filter bitmap
+        // clear multicast table array
+        // clear five tuple queue filter
 
         // debug!("STATUS: {:#X}", regs1.status.read()); 
         // debug!("CTRL: {:#X}", regs1.ctrl.read());
@@ -454,140 +473,196 @@ impl IxgbeNic {
         self.regs2.fctrl_read()
     }
 
-    /// Initializes the array of receive descriptors and their corresponding receive buffers,
-    /// and returns a tuple including both of them for all rx queues in use.
-    /// Also enables receive functionality for the NIC.
-    fn rx_init(
-        regs1: &mut IntelIxgbeRegisters1, 
-        regs: &mut IntelIxgbeRegisters2, 
-        num_rx_descs: NumDesc,
-        queue: &mut Queue,
-    ) -> Result<(), &'static str> {
-
-        let rxctrl_disabled = Self::disable_rx_function(regs);
-
+    fn rx_init_pre(regs2: &mut IntelIxgbeRegisters2) -> Result<(), &'static str> {
+        //CRC offloading
+        regs2.crc_strip();
+        // Set values of reserved bits opposite to what HW sets them to
+        regs2.rdrxctl_set_reserved_bits();
         // program RXPBSIZE according to DCB and virtualization modes (both off)
-        // regs.rxpbsize_set_buffer_size(0, RXPBSIZE_128KB)?;
         for i in 1..8 {
-            regs.rxpbsize_reg1_7_set_buffer_size(
+            regs2.rxpbsize_reg1_7_set_buffer_size(
                 RxPBReg::try_from(i).map_err(|_| "incorrect register ID for RxPBSize")?,
                 RxPBSizeReg1_7::Size0KiB 
             );
         }
-        //CRC offloading
-        regs.crc_strip();
-        
-        // Clear bits
-        regs.rdrxctl_clear_rsc_frst_size_bits();
-        
-        queue.rx_init(num_rx_descs);
-        // set the size of the packet buffers(leave default value) and the descriptor format used
-        queue.rx_regs.srrctl_write(DescType::Legacy, RxBufferSizeKiB::Buffer2KiB);
-        queue.rx_regs.srrctl_drop_enable();
-        // enable the rx queue
-        queue.rx_regs.rxdctl_rxq_enable();
-        // make sure queue is enabled
-        while queue.rx_regs.rxdctl_read() & RX_Q_ENABLE == 0 {}
-        // set bit 12 to 0
-        queue.rx_regs.dca_rxctrl_clear_bit_12();
-
-        // Write the tail index.
-        // Note that the 82599 datasheet (section 8.2.3.8.5) states that we should set the RDT (tail index) to the index *beyond* the last receive descriptor, 
-        // but we set it to the last receive descriptor for the same reason as the e1000 driver
-        queue.rx_regs.rdt_write(num_rx_descs as u16 - 1);
-        
-        Self::enable_rx_function(regs1,regs, rxctrl_disabled)?;
-
+        regs2.mflcn_enable_receive_flow_control();
         Ok(())
     }
 
-    /// disable receive functionality
-    fn disable_rx_function(regs: &mut IntelIxgbeRegisters2) -> RXCTRLDisabled {        
-        regs.rxctrl_rx_disable()
-    }
-
-    /// enable receive functionality
-    fn enable_rx_function(regs1: &mut IntelIxgbeRegisters1,regs: &mut IntelIxgbeRegisters2, rxctrl_disabled: RXCTRLDisabled) -> Result<(), &'static str> {
-        // set rx parameters of which type of packets are accepted by the nic
-        // right now we allow the nic to receive all types of packets, even incorrectly formed ones
-        let fctrl_set = regs.fctrl_write(FilterCtrlFlags::STORE_BAD_PACKETS | FilterCtrlFlags::MULTICAST_PROMISCUOUS_ENABLE | FilterCtrlFlags::UNICAST_PROMISCUOUS_ENABLE | FilterCtrlFlags::BROADCAST_ACCEPT_MODE, rxctrl_disabled); 
-
-        regs1.ctrl_ext_no_snoop_disable();
-
-        // enable receive functionality
-        regs.rxctrl_rx_enable(fctrl_set); 
-
-        Ok(())
-    }
-
-
-    /// Initialize the array of transmit descriptors for all queues and returns them.
-    /// Also enables transmit functionality for the NIC.
-    fn tx_init(
-        regs: &mut IntelIxgbeRegisters2, 
-        regs_mac: &mut IntelIxgbeMacRegisters, 
-        num_tx_descs: NumDesc,
-        queue: &mut Queue
-    ) -> Result<(), &'static str> {
-        // disable transmission
-        regs.dmatxctl_disable_tx();
-
-        // CRC offload and small packet padding enable
-        regs.hlreg0_crc_en();
-        regs.hlreg0_tx_pad_en();
-
+    fn tx_init_pre(regs2: &mut IntelIxgbeRegisters2, regs_mac: &mut IntelIxgbeMacRegisters) -> Result<(), &'static str> {
+        regs2.fccfg_enable_transmit_flow_control();
+        for i in 0..IXGBE_MAX_TX_QUEUES {
+            regs2.rttdqsel_set_queue_id(i);
+            regs2.rttdt1c_write(0);
+        }
         // Set RTTFCS.ARBDIS to 1
-        regs.rttdcs_set_arbdis();
-
-
-        // program DTXMXSZRQ and TXPBSIZE according to DCB and virtualization modes (both off)
-        regs_mac.txpbsize_write(
-            TxPBReg::R0, 
-            TxPBSize::Size160KiB
-        );
+        regs2.rttdcs_set_arbdis();
+        
         for i in 1..8 {
             regs_mac.txpbsize_write(
                 TxPBReg::try_from(i).map_err(|_| "incorrect reg idx for TXPBSIZE")?, 
                 TxPBSize::Size0KiB
             );
         }
+        // set to (packet buffer size / txpbsize) - MSS
+        regs2.txpbthresh0_write(0xA0 - (RxBufferSizeKiB::Buffer2KiB as u16));
         regs_mac.dtxmxszrq_allow_max_byte_requests(); 
+        regs2.rttdcs_clear_arbdis();
 
-        // Clear RTTFCS.ARBDIS
-        regs.rttdcs_clear_arbdis();
-
-        // enable transmit operation, only have to do this for the first queue
-        regs.dmatxctl_enable_tx();
-
-        // set buffer addresses
-        for i in 0..num_tx_descs as usize {
-            let packet_paddr = queue.buffers_paddr + (i * 2048);
-            queue.descs[i].phys_addr.write(packet_paddr.value() as u64);
-        }
-
-        // Set descriptor thresholds
-        // If we enable this then we need to change the packet send function to stop polling for a descriptor done on every packet sent
-        
-        // Tx descriptor pre-fetch threshold (value taken from DPDK)
-        let pthresh = U7::B5 | U7::B2; // b100100 = 36 (DPDK), TInyNF uses 60
-        // Tx descriptor host threshold (value taken from DPDK)
-        let hthresh = HThresh::B3; // b1000 = 8 (DPDK), TinyNF uses 4  
-        // Tx descriptor write-back threshold (value taken from DPDK)
-        let wthresh = U7::zero(); // b100 = 4 
-        
-        let _rs_bit = queue.tx_regs.txdctl_write_wthresh(wthresh); 
-        queue.tx_regs.txdctl_write_pthresh_hthresh(pthresh, hthresh); 
-        
-        let tdh_set = queue.tx_init(num_tx_descs);
-
-        //enable tx queue
-        queue.tx_regs.txdctl_txq_enable(tdh_set); 
-        
-        //make sure queue is enabled
-        while queue.tx_regs.txdctl_read() & TX_Q_ENABLE == 0 {} 
 
         Ok(())
-    }  
+    }   
+
+    fn set_promiscuous(regs2: &mut IntelIxgbeRegisters2) {
+        let rxctrl_disabled = regs2.rxctrl_rx_disable();
+        // set rx parameters of which type of packets are accepted by the nic
+        // right now we allow the nic to receive all types of packets, even incorrectly formed ones
+        let fctrl_set = regs2.fctrl_write(
+            FilterCtrlFlags::STORE_BAD_PACKETS | 
+            FilterCtrlFlags::MULTICAST_PROMISCUOUS_ENABLE | 
+            FilterCtrlFlags::UNICAST_PROMISCUOUS_ENABLE | 
+            FilterCtrlFlags::BROADCAST_ACCEPT_MODE, 
+            rxctrl_disabled
+        ); 
+        // enable receive functionality
+        regs2.rxctrl_rx_enable(fctrl_set); 
+    }
+    
+    // /// Initializes the array of receive descriptors and their corresponding receive buffers,
+    // /// and returns a tuple including both of them for all rx queues in use.
+    // /// Also enables receive functionality for the NIC.
+    // fn rx_init(
+    //     regs1: &mut IntelIxgbeRegisters1, 
+    //     regs: &mut IntelIxgbeRegisters2, 
+    //     num_rx_descs: NumDesc,
+    //     queue: &mut Queue,
+    // ) -> Result<(), &'static str> {
+
+    //     let rxctrl_disabled = Self::disable_rx_function(regs);
+
+    //     // program RXPBSIZE according to DCB and virtualization modes (both off)
+    //     // we leave it at the default which is 512 KiB
+    //     // regs.rxpbsize_set_buffer_size(0, RXPBSIZE_128KB)?;
+    //     for i in 1..8 {
+    //         regs.rxpbsize_reg1_7_set_buffer_size(
+    //             RxPBReg::try_from(i).map_err(|_| "incorrect register ID for RxPBSize")?,
+    //             RxPBSizeReg1_7::Size0KiB 
+    //         );
+    //     }
+    //     //CRC offloading
+    //     regs.crc_strip();
+        
+    //     // Clear bits
+    //     regs.rdrxctl_set_reserved_bits();
+        
+    //     queue.rx_init(num_rx_descs);
+    //     // set the size of the packet buffers(leave default value) and the descriptor format used
+    //     queue.rx_regs.srrctl_write(DescType::Legacy, RxBufferSizeKiB::Buffer2KiB);
+    //     queue.rx_regs.srrctl_drop_enable();
+    //     // enable the rx queue
+    //     queue.rx_regs.rxdctl_rxq_enable();
+    //     // make sure queue is enabled
+    //     while queue.rx_regs.rxdctl_read() & RX_Q_ENABLE == 0 {}
+    //     // set bit 12 to 0
+    //     queue.rx_regs.dca_rxctrl_clear_bit_12();
+
+    //     // Write the tail index.
+    //     // Note that the 82599 datasheet (section 8.2.3.8.5) states that we should set the RDT (tail index) to the index *beyond* the last receive descriptor, 
+    //     // but we set it to the last receive descriptor for the same reason as the e1000 driver
+    //     queue.rx_regs.rdt_write(num_rx_descs as u16 - 1);
+        
+    //     Self::enable_rx_function(regs1,regs, rxctrl_disabled)?;
+
+    //     Ok(())
+    // }
+
+    // /// disable receive functionality
+    // fn disable_rx_function(regs: &mut IntelIxgbeRegisters2) -> RXCTRLDisabled {        
+    //     regs.rxctrl_rx_disable()
+    // }
+
+    // /// enable receive functionality
+    // fn enable_rx_function(regs1: &mut IntelIxgbeRegisters1,regs: &mut IntelIxgbeRegisters2, rxctrl_disabled: RXCTRLDisabled) -> Result<(), &'static str> {
+    //     // set rx parameters of which type of packets are accepted by the nic
+    //     // right now we allow the nic to receive all types of packets, even incorrectly formed ones
+    //     let fctrl_set = regs.fctrl_write(FilterCtrlFlags::STORE_BAD_PACKETS | FilterCtrlFlags::MULTICAST_PROMISCUOUS_ENABLE | FilterCtrlFlags::UNICAST_PROMISCUOUS_ENABLE | FilterCtrlFlags::BROADCAST_ACCEPT_MODE, rxctrl_disabled); 
+
+    //     regs1.ctrl_ext_no_snoop_disable();
+
+    //     // enable receive functionality
+    //     regs.rxctrl_rx_enable(fctrl_set); 
+
+    //     Ok(())
+    // }
+
+
+    // /// Initialize the array of transmit descriptors for all queues and returns them.
+    // /// Also enables transmit functionality for the NIC.
+    // fn tx_init(
+    //     regs: &mut IntelIxgbeRegisters2, 
+    //     regs_mac: &mut IntelIxgbeMacRegisters, 
+    //     num_tx_descs: NumDesc,
+    //     queue: &mut Queue
+    // ) -> Result<(), &'static str> {
+    //     // disable transmission
+    //     regs.dmatxctl_disable_tx();
+
+    //     // CRC offload and small packet padding enable (these are enabled by default)
+    //     // regs.hlreg0_crc_en();
+    //     // regs.hlreg0_tx_pad_en();
+
+    //     // Set RTTFCS.ARBDIS to 1
+    //     regs.rttdcs_set_arbdis();
+
+
+    //     // program DTXMXSZRQ and TXPBSIZE according to DCB and virtualization modes (both off)
+    //     // regs_mac.txpbsize_write( // already set to default
+    //     //     TxPBReg::R0, 
+    //     //     TxPBSize::Size160KiB
+    //     // );
+    //     for i in 1..8 {
+    //         regs_mac.txpbsize_write(
+    //             TxPBReg::try_from(i).map_err(|_| "incorrect reg idx for TXPBSIZE")?, 
+    //             TxPBSize::Size0KiB
+    //         );
+    //     }
+    //     regs_mac.dtxmxszrq_allow_max_byte_requests(); 
+
+    //     // Clear RTTFCS.ARBDIS
+    //     regs.rttdcs_clear_arbdis();
+
+    //     // enable transmit operation, only have to do this for the first queue
+    //     regs.dmatxctl_enable_tx();
+
+    //     // set buffer addresses
+    //     for i in 0..num_tx_descs as usize {
+    //         let packet_paddr = queue.buffers_paddr + (i * 2048);
+    //         queue.descs[i].phys_addr.write(packet_paddr.value() as u64);
+    //     }
+
+    //     // Set descriptor thresholds
+    //     // If we enable this then we need to change the packet send function to stop polling for a descriptor done on every packet sent
+        
+    //     // Tx descriptor pre-fetch threshold (value taken from DPDK)
+    //     let pthresh = U7::B5 | U7::B2; // b100100 = 36 (DPDK), TInyNF uses 60
+    //     // Tx descriptor host threshold (value taken from DPDK)
+    //     let hthresh = HThresh::B3; // b1000 = 8 (DPDK), TinyNF uses 4  
+    //     // Tx descriptor write-back threshold (value taken from DPDK)
+    //     let wthresh = U7::zero(); // b100 = 4 
+        
+    //     let _rs_bit = queue.tx_regs.txdctl_write_wthresh(wthresh); 
+    //     queue.tx_regs.txdctl_write_pthresh_hthresh(pthresh, hthresh); 
+        
+    //     let tdh_set = queue.tx_init(num_tx_descs);
+
+    //     //enable tx queue
+    //     queue.tx_regs.txdctl_txq_enable(tdh_set); 
+        
+    //     //make sure queue is enabled
+    //     while queue.tx_regs.txdctl_read() & TX_Q_ENABLE == 0 {} 
+
+    //     Ok(())
+    // }  
 
 
     pub fn mac_addr(&self) -> [u8; 6] {

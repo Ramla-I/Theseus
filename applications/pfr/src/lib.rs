@@ -38,7 +38,7 @@ use alloc::vec::Vec;
 use alloc::string::String;
 use ixgbe_restricted::{
     get_ixgbe_nics_list,
-    IxgbeStats
+    IxgbeStats, agent::IxgbeAgent
 };
 // use packet_buffers::{PacketBufferS, EthernetFrame};
 use getopts::{Matches, Options};
@@ -202,6 +202,12 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
     let mut num_times_zero = 0;
     let mut print = false;
 
+    // let mut agent0 = IxgbeAgent::new(&mut dev0, &mut dev1).expect("failed to init agent 0");
+    // let mut agent1 = IxgbeAgent::new(&mut dev1, &mut dev0).expect("failed to init agent 1");
+
+    let mut agent0 = IxgbeAgent::new_single(&mut dev0).expect("failed to init agent 0");
+    let mut agent1 = IxgbeAgent::new_single(&mut dev1).expect("failed to init agent 1");
+
     loop {
 
         if collect_stats && (iterations & 0xFFF == 0){
@@ -289,16 +295,16 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
 
         /*** unidirectional forwarder 2 ports (tested till 8.8 Mpps)***/
 
-        rx_packets_dev0 += dev0.queue.run(&src_addr0, print);
-        rx_packets_dev1 += dev1.queue.run(&src_addr1, print);
-        print = false;
-        if rx_packets_dev0 == 0 {
-            num_times_zero += 1;
-            if num_times_zero == 1_000_000 {
-                print = true;
-                num_times_zero = 0;
-            }
-        }
+        rx_packets_dev0 += agent0.run();
+        rx_packets_dev1 += agent1.run();
+        // print = false;
+        // if rx_packets_dev0 == 0 {
+        //     num_times_zero += 1;
+        //     if num_times_zero == 1_000_000 {
+        //         print = true;
+        //         num_times_zero = 0;
+        //     }
+        // }
 
         // let mut length =60;
         // rx_packets_dev0 += dev0.rx_batch(0, &mut received_buffers0, batch_size, &mut pool0) as usize;
