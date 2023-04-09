@@ -207,6 +207,8 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
 
     let mut agent0 = IxgbeAgent::new_single(&mut dev0).expect("failed to init agent 0");
     let mut agent1 = IxgbeAgent::new_single(&mut dev1).expect("failed to init agent 1");
+    let mut length0 = 0;
+    let mut length1 = 0;
 
     loop {
 
@@ -293,10 +295,14 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
         }
 
 
-        /*** unidirectional forwarder 2 ports (tested till 8.8 Mpps)***/
+        /*** bidirectional forwarder 2 ports (tested till 8.8 Mpps)***/
 
-        rx_packets_dev0 += agent0.run();
-        rx_packets_dev1 += agent1.run();
+        // rx_packets_dev0 += agent0.rx(&mut length0);
+        // rx_packets_dev1 += agent1.rx(&mut length1);
+
+
+        tx_packets_dev0 += agent0.tx();
+        tx_packets_dev1 += agent1.tx();
         // print = false;
         // if rx_packets_dev0 == 0 {
         //     num_times_zero += 1;
@@ -306,23 +312,6 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
         //     }
         // }
 
-        // let mut length =60;
-        // rx_packets_dev0 += dev0.rx_batch(0, &mut received_buffers0, batch_size, &mut pool0) as usize;
-        // for p in &mut received_buffers0 {
-        //         p.dest_addr = [0,0,0,0,0,1];
-        //         p.src_addr = src_addr;
-        // }
-        // tx_packets_dev1 += dev1.tx_batch(0, batch_size, &mut received_buffers0, &mut pool0) as usize;   
-        // pool0.append(&mut received_buffers0);
-
-        // rx_packets_dev1 += dev1.rx_batch(0, &mut received_buffers1, batch_size, &mut pool1) as usize;
-        // for p in &mut received_buffers1 {
-        //         p.dest_addr = [0,0,0,0,0,1];
-        //         p.src_addr = src_addr;
-        // }
-        // tx_packets_dev0 += dev0.tx_batch(0, batch_size, &mut received_buffers1, &mut pool1) as usize;   
-        // pool1.append(&mut received_buffers1);
-        
         if collect_stats {
             iterations += 1;
         }

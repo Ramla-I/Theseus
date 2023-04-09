@@ -239,6 +239,59 @@ impl IxgbeAgent {
     // }
 
     #[inline(always)]
+    pub fn tx(&mut self) -> usize {
+        let rs_bit = if (self.processed_delimiter as u64 & (IXGBE_AGENT_RECYCLE_PERIOD - 1)) == (IXGBE_AGENT_RECYCLE_PERIOD - 1) { 1 << (24 + 3) } else { 0 };
+
+        if rs_bit != 0 {
+            self.tx_clean();
+            // self.rx_regs.rdt_write((self.tx_clean - 1) & (IXGBE_RING_SIZE - 1));
+            // error!("rs: {} {}", rs_bit, (self.tx_clean - 1) & (IXGBE_RING_SIZE - 1));
+        }
+        let next = (self.processed_delimiter + 1) & (IXGBE_RING_SIZE - 1);
+        if next == self.tx_clean {
+            return 0;
+        }
+        // let rs_bit = if (self.processed_delimiter as u64 & (IXGBE_AGENT_RECYCLE_PERIOD - 1)) == (IXGBE_AGENT_RECYCLE_PERIOD - 1) { 1 << (24 + 3) } else { 0 };
+        self.desc_ring[self.processed_delimiter as usize].other.write(60 | rs_bit | (1 << (24 + 1)) | (1 << 24));
+        self.processed_delimiter = (self.processed_delimiter + 1) & (IXGBE_RING_SIZE - 1);
+
+        self.flush_counter += 1;
+        if self.flush_counter == IXGBE_AGENT_FLUSH_PERIOD {
+            self.tx_regs.tdt_write(self.processed_delimiter);
+            self.flush_counter = 0;
+        }
+
+
+        1
+    }
+
+    #[inline(always)]
+    pub fn rx(&mut self, packet_length: &mut u16) -> usize {
+        // error!("rx: {}", self.processed_delimiter);
+
+        let rx_metadata = self.desc_ring[self.processed_delimiter as usize].other.read();
+        if rx_metadata & (1 << 32) == 0 {
+            // no packet
+            // if self.flush_counter != 0 {
+            //     self.tx_regs.tdt_write(self.processed_delimiter);
+            //     self.flush_counter = 0;
+            // }
+            return 0;
+        }
+        self.desc_ring[self.processed_delimiter as usize].other.write(0);
+        *packet_length = rx_metadata as u16 & 0xFFFF; 
+
+        // error!("rx pkt received: {} {}", self.processed_delimiter, packet_length);
+        self.flush_counter += 1;
+        if self.flush_counter == 32 {
+            self.rx_regs.rdt_write(self.processed_delimiter);
+            self.flush_counter = 0;
+        }
+        self.processed_delimiter = (self.processed_delimiter + 1) & (IXGBE_RING_SIZE - 1);
+        1
+    }   
+
+    #[inline(always)]
     pub fn run(&mut self) -> usize {
         let mut packet_length = 0;
         let mut received = 0;
