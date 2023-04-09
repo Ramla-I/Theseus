@@ -1,4 +1,4 @@
-use memory::{BorrowedSliceMappedPages, Mutable, PhysicalAddress, create_contiguous_mapping};
+use memory::{BorrowedSliceMappedPages, BorrowedMappedPages, Mutable, PhysicalAddress, create_contiguous_mapping};
 use crate::queue_registers::{RxQueueRegisters, TxQueueRegisters};
 use crate::{NumDesc, IxgbeNic, DescType, RxBufferSizeKiB, U7, HThresh};
 use crate::allocator::*;
@@ -11,17 +11,25 @@ const IXGBE_AGENT_RECYCLE_PERIOD: u64 = 32;
 const IXGBE_AGENT_FLUSH_PERIOD: u64 = 8;
 const IXGBE_RING_SIZE: u16 = 1024;
 
+#[derive(FromBytes)]
+#[repr(C)]
+pub struct TransmitHead {
+    pub value: Volatile<u32>,
+}
+
 pub struct IxgbeAgent {
     pub(crate) rx_regs: RxQueueRegisters,
     pub(crate) tx_regs: TxQueueRegisters,
     pub desc_ring: BorrowedSliceMappedPages<LegacyDescriptor, Mutable>,
     pub buffer: BorrowedSliceMappedPages<EthernetFrame, Mutable>,
+    pub head_wb: BorrowedMappedPages<TransmitHead, Mutable>,
     pub num_descs: u16,
     pub processed_delimiter: u16,
     pub flush_counter: u64,
     pub tx_clean: u16,
     pub descs_paddr: PhysicalAddress,
-    pub buffers_paddr: PhysicalAddress
+    pub buffers_paddr: PhysicalAddress,
+    pub head_wb_paddr: PhysicalAddress
 }
 
 impl IxgbeAgent {
@@ -30,24 +38,28 @@ impl IxgbeAgent {
         assert!(num_desc as u16 == IXGBE_RING_SIZE);
         let (buffers_mp, buffers_paddr) = create_contiguous_mapping(num_desc as usize * core::mem::size_of::<EthernetFrame>(), NIC_MAPPING_FLAGS_CACHED)?;
         let (descs_mp, descs_paddr) = create_contiguous_mapping(num_desc as usize * core::mem::size_of::<LegacyDescriptor>(), NIC_MAPPING_FLAGS_CACHED)?;
+        let (head_wb_mp, head_wb_paddr) = create_contiguous_mapping(core::mem::size_of::<TransmitHead>(), NIC_MAPPING_FLAGS_CACHED)?;
+
         let mut desc_ring = descs_mp.into_borrowed_slice_mut(0, num_desc as usize).map_err(|(_mp, err)| err)?;
 
         // should be impossible for the queues to be enabled at this point in our current design
         // later on we should check if the rxq registers are alreadyin use
         Self::rx_init(num_desc, descs_paddr, device_rx.rxq_registers.as_mut().unwrap(), &mut device_rx.regs1);
-        Self::tx_init(num_desc, buffers_paddr, descs_paddr, &mut desc_ring, device_tx.txq_registers.as_mut().unwrap(), &mut device_tx.regs2);
+        Self::tx_init(num_desc, buffers_paddr, descs_paddr, head_wb_paddr, &mut desc_ring, device_tx.txq_registers.as_mut().unwrap(), &mut device_tx.regs2);
 
         Ok(IxgbeAgent {
             rx_regs: device_rx.rxq_registers.take().unwrap(),
             tx_regs: device_tx.txq_registers.take().unwrap(),
             desc_ring,
             buffer: buffers_mp.into_borrowed_slice_mut(0, num_desc as usize).map_err(|(_mp, err)| err)?,
+            head_wb: head_wb_mp.into_borrowed_mut(0).map_err(|(_mp, err)| err)?,
             num_descs: num_desc as u16,
             processed_delimiter: 0,
             flush_counter: 0,
             tx_clean: 0,
             descs_paddr,
-            buffers_paddr
+            buffers_paddr,
+            head_wb_paddr
         })
     }
 
@@ -56,24 +68,28 @@ impl IxgbeAgent {
         assert!(num_desc as u16 == IXGBE_RING_SIZE);
         let (buffers_mp, buffers_paddr) = create_contiguous_mapping(num_desc as usize * core::mem::size_of::<EthernetFrame>(), NIC_MAPPING_FLAGS_CACHED)?;
         let (descs_mp, descs_paddr) = create_contiguous_mapping(num_desc as usize * core::mem::size_of::<LegacyDescriptor>(), NIC_MAPPING_FLAGS_CACHED)?;
+        let (head_wb_mp, head_wb_paddr) = create_contiguous_mapping(core::mem::size_of::<TransmitHead>(), NIC_MAPPING_FLAGS_CACHED)?;
+        
         let mut desc_ring = descs_mp.into_borrowed_slice_mut(0, num_desc as usize).map_err(|(_mp, err)| err)?;
 
         // should be impossible for the queues to be enabled at this point in our current design
         // later on we should check if the rxq registers are alreadyin use
         Self::rx_init(num_desc, descs_paddr, device.rxq_registers.as_mut().unwrap(), &mut device.regs1);
-        Self::tx_init(num_desc, buffers_paddr, descs_paddr, &mut desc_ring, device.txq_registers.as_mut().unwrap(), &mut device.regs2);
+        Self::tx_init(num_desc, buffers_paddr, descs_paddr, head_wb_paddr, &mut desc_ring, device.txq_registers.as_mut().unwrap(), &mut device.regs2);
 
         Ok(IxgbeAgent {
             rx_regs: device.rxq_registers.take().unwrap(),
             tx_regs: device.txq_registers.take().unwrap(),
             desc_ring,
             buffer: buffers_mp.into_borrowed_slice_mut(0, num_desc as usize).map_err(|(_mp, err)| err)?,
+            head_wb: head_wb_mp.into_borrowed_mut(0).map_err(|(_mp, err)| err)?,
             num_descs: num_desc as u16,
             processed_delimiter: 0,
             flush_counter: 0,
             tx_clean: 0,
             descs_paddr,
-            buffers_paddr
+            buffers_paddr,
+            head_wb_paddr
         })
     }
 
@@ -109,7 +125,7 @@ impl IxgbeAgent {
         rxq_regs.dca_rxctrl_clear_bit_12();
     }
 
-    fn tx_init(num_desc: NumDesc, buffers_paddr: PhysicalAddress, descs_paddr: PhysicalAddress, desc_ring: &mut [LegacyDescriptor], txq_regs: &mut TxQueueRegisters, regs2: &mut IntelIxgbeRegisters2) {
+    fn tx_init(num_desc: NumDesc, buffers_paddr: PhysicalAddress, descs_paddr: PhysicalAddress, head_wb_paddr: PhysicalAddress, desc_ring: &mut [LegacyDescriptor], txq_regs: &mut TxQueueRegisters, regs2: &mut IntelIxgbeRegisters2) {
         // set buffer addresses
         for i in 0..num_desc as usize {
             let packet_paddr = buffers_paddr + (i * core::mem::size_of::<EthernetFrame>());
@@ -125,6 +141,7 @@ impl IxgbeAgent {
         let hthresh = HThresh::B2; //HThresh::B3; // b1000 = 8 (DPDK), TinyNF uses 4  b100
         txq_regs.txdctl_write_pthresh_hthresh(pthresh, hthresh); 
         // here we should set the head writeback address
+        txq_regs.tdwba_set_and_enable(head_wb_paddr.value() as u64);
         {
             // *** Here we do the operations that should only be done once, not per transmit queue
             regs2.dmatxctl_enable_tx();
@@ -172,8 +189,9 @@ impl IxgbeAgent {
         }
 
         if rs_bit != 0 {
-            self.tx_clean();
-            self.rx_regs.rdt_write((self.tx_clean - 1) & (IXGBE_RING_SIZE - 1));
+            // self.tx_clean();
+            let head = self.head_wb.value.read() as u16;
+            self.rx_regs.rdt_write((head - 1) & (IXGBE_RING_SIZE - 1));
             // error!("rs: {} {}", rs_bit, (self.tx_clean - 1) & (IXGBE_RING_SIZE - 1));
         }
         // error!("tx: {} {} {}", self.processed_delimiter, self.tx_clean, self.flush_counter);
@@ -240,20 +258,21 @@ impl IxgbeAgent {
 
     #[inline(always)]
     pub fn tx(&mut self) -> usize {
-        let rs_bit = if (self.processed_delimiter as u64 & (IXGBE_AGENT_RECYCLE_PERIOD - 1)) == (IXGBE_AGENT_RECYCLE_PERIOD - 1) { 1 << (24 + 3) } else { 0 };
+        // let rs_bit = if (self.processed_delimiter as u64 & (IXGBE_AGENT_RECYCLE_PERIOD - 1)) == (IXGBE_AGENT_RECYCLE_PERIOD - 1) { 1 << (24 + 3) } else { 0 };
 
-        if rs_bit != 0 {
-            self.tx_clean();
-            // self.rx_regs.rdt_write((self.tx_clean - 1) & (IXGBE_RING_SIZE - 1));
-            // error!("rs: {} {}", rs_bit, (self.tx_clean - 1) & (IXGBE_RING_SIZE - 1));
-        }
+        // if rs_bit != 0 {
+        //     self.tx_clean();
+        //     // self.rx_regs.rdt_write((self.tx_clean - 1) & (IXGBE_RING_SIZE - 1));
+        //     // error!("rs: {} {}", rs_bit, (self.tx_clean - 1) & (IXGBE_RING_SIZE - 1));
+        // }
         let next = (self.processed_delimiter + 1) & (IXGBE_RING_SIZE - 1);
+        self.tx_clean = self.head_wb.value.read() as u16;
         if next == self.tx_clean {
             return 0;
         }
-        // let rs_bit = if (self.processed_delimiter as u64 & (IXGBE_AGENT_RECYCLE_PERIOD - 1)) == (IXGBE_AGENT_RECYCLE_PERIOD - 1) { 1 << (24 + 3) } else { 0 };
+        let rs_bit = if (self.processed_delimiter as u64 & (IXGBE_AGENT_RECYCLE_PERIOD - 1)) == (IXGBE_AGENT_RECYCLE_PERIOD - 1) { 1 << (24 + 3) } else { 0 };
         self.desc_ring[self.processed_delimiter as usize].other.write(60 | rs_bit | (1 << (24 + 1)) | (1 << 24));
-        self.processed_delimiter = (self.processed_delimiter + 1) & (IXGBE_RING_SIZE - 1);
+        self.processed_delimiter = next;
 
         self.flush_counter += 1;
         if self.flush_counter == IXGBE_AGENT_FLUSH_PERIOD {
@@ -261,7 +280,9 @@ impl IxgbeAgent {
             self.flush_counter = 0;
         }
 
-
+        // if rs_bit != 0 {
+        //     self.tx_clean = self.head_wb.value.read() as u16;
+        // }
         1
     }
 

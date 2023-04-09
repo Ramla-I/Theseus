@@ -300,9 +300,11 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
         // rx_packets_dev0 += agent0.rx(&mut length0);
         // rx_packets_dev1 += agent1.rx(&mut length1);
 
+        // tx_packets_dev0 += agent0.tx();
+        // tx_packets_dev1 += agent1.tx();
 
-        tx_packets_dev0 += agent0.tx();
-        tx_packets_dev1 += agent1.tx();
+        rx_packets_dev0 += agent0.run();
+        rx_packets_dev1 += agent1.run();
         // print = false;
         // if rx_packets_dev0 == 0 {
         //     num_times_zero += 1;
