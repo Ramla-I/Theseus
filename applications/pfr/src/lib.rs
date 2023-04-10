@@ -202,11 +202,11 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
     let mut num_times_zero = 0;
     let mut print = false;
 
-    // let mut agent0 = IxgbeAgent::new(&mut dev0, &mut dev1).expect("failed to init agent 0");
-    // let mut agent1 = IxgbeAgent::new(&mut dev1, &mut dev0).expect("failed to init agent 1");
+    let mut agent0 = IxgbeAgent::new(&mut dev0, &mut dev1).expect("failed to init agent 0");
+    let mut agent1 = IxgbeAgent::new(&mut dev1, &mut dev0).expect("failed to init agent 1");
 
-    let mut agent0 = IxgbeAgent::new_single(&mut dev0).expect("failed to init agent 0");
-    let mut agent1 = IxgbeAgent::new_single(&mut dev1).expect("failed to init agent 1");
+    // let mut agent0 = IxgbeAgent::new_single(&mut dev0).expect("failed to init agent 0");
+    // let mut agent1 = IxgbeAgent::new_single(&mut dev1).expect("failed to init agent 1");
     let mut length0 = 0;
     let mut length1 = 0;
 
@@ -225,74 +225,74 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
             }
         }
 
-        if pmu && rx_packets_dev0 >= 7_400_000 { // as 14.8 MPPS, should get around  7.4 M packets in 30 seconds
-            delta_hpet = hpet.get_counter() - start_hpet;
+        // if pmu && rx_packets_dev0 >= 7_400_000 { // as 14.8 MPPS, should get around  7.4 M packets in 30 seconds
+        //     delta_hpet = hpet.get_counter() - start_hpet;
 
-            if delta_hpet >= 60 * cycles_in_one_sec {
-                let seconds = delta_hpet as f64 / cycles_in_one_sec as f64;
+        //     if delta_hpet >= 60 * cycles_in_one_sec {
+        //         let seconds = delta_hpet as f64 / cycles_in_one_sec as f64;
 
-                if pmu_round == 0 {
-                    let new_counters = counters.unwrap().end().unwrap();
-                    let l2_miss_rate = new_counters.programmable_events[0] as f64 / new_counters.programmable_events[1] as f64;
-                    let l3_miss_rate = new_counters.programmable_events[2] as f64 / new_counters.programmable_events[3] as f64;
+        //         if pmu_round == 0 {
+        //             let new_counters = counters.unwrap().end().unwrap();
+        //             let l2_miss_rate = new_counters.programmable_events[0] as f64 / new_counters.programmable_events[1] as f64;
+        //             let l3_miss_rate = new_counters.programmable_events[2] as f64 / new_counters.programmable_events[3] as f64;
                     
-                    error!("l2 miss rate = {:.2}", l2_miss_rate);
-                    error!("l3 miss rate = {:.2}", l3_miss_rate);
-                    error!("inst retired = {}", new_counters.inst_retired);
-                    error!("core cycles = {}", new_counters.core_cycles);
-                    error!("ref cycles = {}", new_counters.ref_cycles);
-                    error!("l2 misses = {}",new_counters.programmable_events[0]);
-                    error!("l2 references = {}", new_counters.programmable_events[1]);
-                    error!("l3 misses = {}", new_counters.programmable_events[2]);
-                    error!("l3 references = {}", new_counters.programmable_events[3]);
+        //             error!("l2 miss rate = {:.2}", l2_miss_rate);
+        //             error!("l3 miss rate = {:.2}", l3_miss_rate);
+        //             error!("inst retired = {}", new_counters.inst_retired);
+        //             error!("core cycles = {}", new_counters.core_cycles);
+        //             error!("ref cycles = {}", new_counters.ref_cycles);
+        //             error!("l2 misses = {}",new_counters.programmable_events[0]);
+        //             error!("l2 references = {}", new_counters.programmable_events[1]);
+        //             error!("l3 misses = {}", new_counters.programmable_events[2]);
+        //             error!("l3 references = {}", new_counters.programmable_events[3]);
 
-                    error!("0: rx pkts = {}, tx pkts = {}", rx_packets_dev0, tx_packets_dev0);
-                    error!("1: rx pkts = {}, tx pkts = {}", rx_packets_dev1, tx_packets_dev1);
+        //             error!("0: rx pkts = {}, tx pkts = {}", rx_packets_dev0, tx_packets_dev0);
+        //             error!("1: rx pkts = {}, tx pkts = {}", rx_packets_dev1, tx_packets_dev1);
 
-                    let rate = (tx_packets_dev0 + tx_packets_dev1) as f64 / (1_000_000.0 * seconds);
-                    error!("rate = {:.2} Mpps", rate);
-                    error!("cycles / packet = {:.2}", new_counters.ref_cycles as f64 / (tx_packets_dev0 + tx_packets_dev1) as f64);
-                    error!("inst / packet = {:.2}", new_counters.inst_retired as f64 / (tx_packets_dev0 + tx_packets_dev1) as f64);
+        //             let rate = (tx_packets_dev0 + tx_packets_dev1) as f64 / (1_000_000.0 * seconds);
+        //             error!("rate = {:.2} Mpps", rate);
+        //             error!("cycles / packet = {:.2}", new_counters.ref_cycles as f64 / (tx_packets_dev0 + tx_packets_dev1) as f64);
+        //             error!("inst / packet = {:.2}", new_counters.inst_retired as f64 / (tx_packets_dev0 + tx_packets_dev1) as f64);
 
-                    pmu_round += 1;
-                    rx_packets_dev0 = 0; tx_packets_dev0 = 0; rx_packets_dev1 = 0; tx_packets_dev1 = 0;
-                    start_hpet = hpet.get_counter();
+        //             pmu_round += 1;
+        //             rx_packets_dev0 = 0; tx_packets_dev0 = 0; rx_packets_dev1 = 0; tx_packets_dev1 = 0;
+        //             start_hpet = hpet.get_counter();
 
-                    counters = Some(pmu_x86::variable_stat::PerformanceCounters::new(
-                        [
-                            EventType::MemInstRetiredSTLBMissLoads, EventType::MemInstRetiredSTLBMissStores,
-                            EventType::MemInstRetiredAllLoads, EventType::MemInstRetiredAllStores,
-                            EventType::L2RqstsMiss, EventType::L2RqstsReferences,
-                            EventType::LastLevelCacheMisses, EventType::LastLevelCacheReferences,
-                        ]
-                    ).expect("Couldn't get performance counters"));
-                    counters.as_mut().unwrap().start().expect("failed to start counters");
+        //             counters = Some(pmu_x86::variable_stat::PerformanceCounters::new(
+        //                 [
+        //                     EventType::MemInstRetiredSTLBMissLoads, EventType::MemInstRetiredSTLBMissStores,
+        //                     EventType::MemInstRetiredAllLoads, EventType::MemInstRetiredAllStores,
+        //                     EventType::L2RqstsMiss, EventType::L2RqstsReferences,
+        //                     EventType::LastLevelCacheMisses, EventType::LastLevelCacheReferences,
+        //                 ]
+        //             ).expect("Couldn't get performance counters"));
+        //             counters.as_mut().unwrap().start().expect("failed to start counters");
 
-                } else {
+        //         } else {
 
-                    let new_counters = counters.unwrap().end().unwrap();
-                    let tlb_miss_rate = (new_counters.programmable_events[0] as f64 + new_counters.programmable_events[1] as f64) / (new_counters.programmable_events[2] as f64 + new_counters.programmable_events[3] as f64);
+        //             let new_counters = counters.unwrap().end().unwrap();
+        //             let tlb_miss_rate = (new_counters.programmable_events[0] as f64 + new_counters.programmable_events[1] as f64) / (new_counters.programmable_events[2] as f64 + new_counters.programmable_events[3] as f64);
                     
-                    error!("tlb miss rate = {:.2}", tlb_miss_rate);
-                    error!("inst retired = {}", new_counters.inst_retired);
-                    error!("core cycles = {}", new_counters.core_cycles);
-                    error!("ref cycles = {}", new_counters.ref_cycles);
-                    error!("stlb miss loads = {}", new_counters.programmable_events[0]);
-                    error!("stlb miss stores = {}", new_counters.programmable_events[1]);
-                    error!("loads = {}", new_counters.programmable_events[2]);
-                    error!("stores = {}", new_counters.programmable_events[3]);
-                    error!("0: rx pkts = {}, tx pkts = {}", rx_packets_dev0, tx_packets_dev0);
-                    error!("1: rx pkts = {}, tx pkts = {}", rx_packets_dev1, tx_packets_dev1);
+        //             error!("tlb miss rate = {:.2}", tlb_miss_rate);
+        //             error!("inst retired = {}", new_counters.inst_retired);
+        //             error!("core cycles = {}", new_counters.core_cycles);
+        //             error!("ref cycles = {}", new_counters.ref_cycles);
+        //             error!("stlb miss loads = {}", new_counters.programmable_events[0]);
+        //             error!("stlb miss stores = {}", new_counters.programmable_events[1]);
+        //             error!("loads = {}", new_counters.programmable_events[2]);
+        //             error!("stores = {}", new_counters.programmable_events[3]);
+        //             error!("0: rx pkts = {}, tx pkts = {}", rx_packets_dev0, tx_packets_dev0);
+        //             error!("1: rx pkts = {}, tx pkts = {}", rx_packets_dev1, tx_packets_dev1);
 
-                    let rate = (tx_packets_dev0 + tx_packets_dev1) as f64 / (1_000_000.0 * seconds);
-                    error!("rate = {:.2} Mpps", rate);
-                    error!("cycles / packet = {:.2}", new_counters.ref_cycles as f64 / (tx_packets_dev0 + tx_packets_dev1) as f64);
-                    error!("inst / packet = {:.2}", new_counters.inst_retired as f64 / (tx_packets_dev0 + tx_packets_dev1) as f64);
+        //             let rate = (tx_packets_dev0 + tx_packets_dev1) as f64 / (1_000_000.0 * seconds);
+        //             error!("rate = {:.2} Mpps", rate);
+        //             error!("cycles / packet = {:.2}", new_counters.ref_cycles as f64 / (tx_packets_dev0 + tx_packets_dev1) as f64);
+        //             error!("inst / packet = {:.2}", new_counters.inst_retired as f64 / (tx_packets_dev0 + tx_packets_dev1) as f64);
 
-                    break;
-                }
-            }
-        }
+        //             break;
+        //         }
+        //     }
+        // }
 
 
         /*** bidirectional forwarder 2 ports (tested till 8.8 Mpps)***/
@@ -303,8 +303,12 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
         // tx_packets_dev0 += agent0.tx();
         // tx_packets_dev1 += agent1.tx();
 
-        rx_packets_dev0 += agent0.run();
-        rx_packets_dev1 += agent1.run();
+        // rx_packets_dev0 += agent0.run(print);
+        // rx_packets_dev1 += agent1.run(print);
+
+        agent0.run();
+        agent1.run();
+        
         // print = false;
         // if rx_packets_dev0 == 0 {
         //     num_times_zero += 1;
@@ -314,9 +318,9 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
         //     }
         // }
 
-        if collect_stats {
-            iterations += 1;
-        }
+        // if collect_stats {
+        //     iterations += 1;
+        // }
 
     }
 }

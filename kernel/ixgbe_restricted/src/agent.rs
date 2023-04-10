@@ -142,6 +142,7 @@ impl IxgbeAgent {
         txq_regs.txdctl_write_pthresh_hthresh(pthresh, hthresh); 
         // here we should set the head writeback address
         txq_regs.tdwba_set_and_enable(head_wb_paddr.value() as u64);
+        txq_regs.dca_txctrl_disable_relaxed_ordering_head_wb();
         {
             // *** Here we do the operations that should only be done once, not per transmit queue
             regs2.dmatxctl_enable_tx();
@@ -191,7 +192,11 @@ impl IxgbeAgent {
         if rs_bit != 0 {
             // self.tx_clean();
             let head = self.head_wb.value.read() as u16;
-            self.rx_regs.rdt_write((head - 1) & (IXGBE_RING_SIZE - 1));
+            // if head == 0 { 
+            //     self.rx_regs.rdt_write(IXGBE_RING_SIZE - 1);
+            // } else {
+                self.rx_regs.rdt_write((head - 1) & (IXGBE_RING_SIZE - 1));
+            // }
             // error!("rs: {} {}", rs_bit, (self.tx_clean - 1) & (IXGBE_RING_SIZE - 1));
         }
         // error!("tx: {} {} {}", self.processed_delimiter, self.tx_clean, self.flush_counter);
@@ -313,21 +318,24 @@ impl IxgbeAgent {
     }   
 
     #[inline(always)]
-    pub fn run(&mut self) -> usize {
+    pub fn run(&mut self){
         let mut packet_length = 0;
-        let mut received = 0;
+        // let mut received = 0;
 
         for i in 0.. IXGBE_AGENT_FLUSH_PERIOD {
             if let Some(pkt) = self.receive(&mut packet_length) {
                 pkt.src_addr = [0,0,0,0,0,0];
                 pkt.dest_addr = [0,0,0,0,0,1];
                 self.transmit(packet_length);
-                received += 1;
+                // received += 1;
             } else {
                 break;
             }
         }
-        received
+        // if print{
+        //     error!("no packet received: {} {} {} {} {} {}", self.processed_delimiter, self.tx_clean, self.flush_counter, self.tx_regs.tdt_read(), self.rx_regs.rdt_read(), self.head_wb.value.read());
+        // }
+        // received
     }
 }
 
