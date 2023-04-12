@@ -540,7 +540,7 @@ impl PciDevice {
 
     /// Returns the size in bytes of the memory region specified by the given `BAR` 
     /// (Base Address Register) for this PCI device.
-    pub fn determine_pci_mem_size(&self, bar_index: BAR) -> u32 {
+    pub fn determine_pci_mem_size(&self, bar_index: BAR) -> PciMemSize {
         // Here's what we do: 
         // (1) Write all `1`s to the specified BAR
         // (2) Read that BAR value again
@@ -557,7 +557,7 @@ impl PciDevice {
         mem_size = !(mem_size);                           // Step 4
         mem_size += 1;                                    // Step 4
         self.pci_write(bar_offset, original_value);       // Step 5
-        mem_size
+        PciMemSize(mem_size)
     }
     /// Enable MSI interrupts for a PCI device.
     /// We assume the device only supports one MSI vector 

@@ -234,11 +234,6 @@ pub struct IntelIxgbeRegisters2 {
 
 const_assert_eq!(core::mem::size_of::<IntelIxgbeRegisters2>(), 4 * 4096);
 
-pub enum RxPBSizeReg0 {
-    /// For DCB and VT disabled, set RXPBSIZE.SIZE to 512KB
-    Size512KiB = 0x200,
-}
-
 pub enum RxPBSizeReg1_7 {
     Size0KiB = 0,
 }
@@ -281,9 +276,9 @@ impl IntelIxgbeRegisters2 {
     // Any function that writes to rdrxcrtl must make sure these bits are set
     const RDRXCTL_BASE_VAL: u32 = (1 << 26) | (1 << 25);
 
-    pub fn rdrxctl_read(&self) -> u32 {
-        self.rdrxctl.read()
-    }
+    // pub fn rdrxctl_read(&self) -> u32 {
+    //     self.rdrxctl.read()
+    // }
 
     // According to the datasheet, these two registers must match
     // prevents DPDK Bug 22
@@ -325,11 +320,11 @@ impl IntelIxgbeRegisters2 {
         }
     } 
     
-    pub fn fcrth_clear(&mut self) {
-        for fcrth in self.fcrth.iter_mut() {
-            fcrth.write(0);
-        }
-    } 
+    // pub fn fcrth_clear(&mut self) {
+    //     for fcrth in self.fcrth.iter_mut() {
+    //         fcrth.write(0);
+    //     }
+    // } 
 
     /// Sets the Receive Threshold High (RTH) bits [18:5] for reg 0
     pub fn fcrth0_set_rth(&mut self, rth: u16) {
@@ -348,31 +343,22 @@ impl IntelIxgbeRegisters2 {
         self.fccfg.write(self.fccfg.read() | (1 << 3));
     }
 
-    // separate function because it can never be set to 0
-    pub fn rxpbsize_reg0_set_buffer_size(&mut self, size: RxPBSizeReg0) {
-        self.rxpbsize[0].write((size as u32) << 10);
-    }
-
     pub fn rxpbsize_reg1_7_set_buffer_size(&mut self, reg_idx: RxPBReg, size: RxPBSizeReg1_7) {
         self.rxpbsize[reg_idx as usize].write((size as u32) << 10);
     }
 
-    pub fn hlreg0_crc_en(&mut self) {
-        self.hlreg0.write(self.hlreg0.read() | HLREG0_TXCRCEN);
-    }
+    // pub fn hlreg0_crc_en(&mut self) {
+    //     self.hlreg0.write(self.hlreg0.read() | HLREG0_TXCRCEN);
+    // }
 
-    pub fn hlreg0_tx_pad_en(&mut self) {
-        self.hlreg0.write(self.hlreg0.read() | HLREG0_TXPADEN);
-    }
+    // pub fn hlreg0_tx_pad_en(&mut self) {
+    //     self.hlreg0.write(self.hlreg0.read() | HLREG0_TXPADEN);
+    // }
 
     // Resolves DPDK Bug 21
     pub fn fctrl_write(&mut self, val: FilterCtrlFlags, _rx_disabled: RXCTRLDisabled) -> FCTRLSet {
         self.fctrl.write(val.bits());
         FCTRLSet(true)
-    }
-
-    pub fn fctrl_read(&self) -> u32 {
-        self.fctrl.read()
     }
 
     pub fn rttdcs_set_arbdis(&mut self) {
@@ -383,17 +369,17 @@ impl IntelIxgbeRegisters2 {
         self.rttdcs.write(self.rttdcs.read() & !RTTDCS_ARBDIS);
     }
 
-    pub fn dmatxctl_disable_tx(&mut self) {
-        self.dmatxctl.write(self.dmatxctl.read() & !TE); 
-    }
+    // pub fn dmatxctl_disable_tx(&mut self) {
+    //     self.dmatxctl.write(self.dmatxctl.read() & !TE); 
+    // }
 
     pub fn dmatxctl_enable_tx(&mut self) {
         self.dmatxctl.write(self.dmatxctl.read() | TE); 
     }
 
-    pub fn rxcsum_enable_rss_writeback(&mut self) {
-        self.rxcsum.write(RXCSUM_PCSD);
-    }
+    // pub fn rxcsum_enable_rss_writeback(&mut self) {
+    //     self.rxcsum.write(RXCSUM_PCSD);
+    // }
 
     pub fn mflcn_enable_receive_flow_control(&mut self) {
         self.mflcn.write(self.mflcn.read() | (1 << 3));
@@ -574,41 +560,6 @@ impl IntelIxgbeRegisters3 {
         (self.fwsm.read() >> 1) & 0x7
     }
 
-    const FTQF_Q_ENABLE: u32 = 1 << 31;
-
-    pub fn ftqf_set_filter_and_enable(&mut self, filter_num: L5FilterID, priority: L5FilterPriority, protocol: L5FilterProtocol, mask_flags: L5FilterMaskFlags) {
-        self.ftqf[filter_num as usize].write(protocol as u32 | (priority as u32) << 2 | mask_flags.bits() | Self::FTQF_Q_ENABLE);
-    }
-
-    pub fn ftqf_disable_filter(&mut self, filter_num: L5FilterID) {
-        let val = self.ftqf[filter_num as usize].read();
-        self.ftqf[filter_num as usize].write(val & !Self::FTQF_Q_ENABLE);
-    }   
-
-    pub fn l34timir_write(&mut self, filter_num: L5FilterID, queue_id: QueueID) {
-        const L34TIMIR_BYPASS_SIZE_CHECK:   u32 = 1 << 12;
-        const L34TIMIR_RESERVED:            u32 = 0x40 << 13;
-        const L34TIMIR_RX_Q_SHIFT:          u32 = 21;
-
-        self.l34timir[filter_num as usize].write(L34TIMIR_BYPASS_SIZE_CHECK | L34TIMIR_RESERVED | ((queue_id as u32) << L34TIMIR_RX_Q_SHIFT));
-    }
-
-    pub fn reta_write(&mut self, reg_idx: RedirectionTableReg, qid: &[RSSQueueID; 4]) {
-        const RETA_ENTRY_0_OFFSET:          u32 = 0;
-        const RETA_ENTRY_1_OFFSET:          u32 = 8;
-        const RETA_ENTRY_2_OFFSET:          u32 = 16;
-        const RETA_ENTRY_3_OFFSET:          u32 = 24;
-        
-        self.reta[reg_idx as usize].write((qid[0] as u32) << RETA_ENTRY_0_OFFSET | (qid[1] as u32) << RETA_ENTRY_1_OFFSET | (qid[2] as u32) << RETA_ENTRY_2_OFFSET | (qid[3] as u32) << RETA_ENTRY_3_OFFSET);
-    }
-
-    /// Currently we only enable basic RSS mode (no virtualization or DCB)
-    pub fn mrqc_enable_rss(&mut self, rss_fields: RSSFieldFlags) {
-        const MRQC_MRQE_RSS: u32 = 1; // set bits 0..3 in MRQC
-
-        self.mrqc.write(MRQC_MRQE_RSS | rss_fields.bits())
-    }
-
     pub fn eec_auto_read(&self) -> bool {
         self.eec.read().get_bit(EEC_AUTO_RD as u8)
     }
@@ -621,43 +572,10 @@ const_assert_eq!(core::mem::size_of::<IntelIxgbeRegisters1>() + core::mem::size_
     core::mem::size_of::<IntelIxgbeRegisters3>(), 0x20000);
 
 
-/// Offset where the RDT register starts for the first 64 rx queues
-pub const RDT_1:                        usize = 0x1018;
-/// Offset where the RDT register starts for the second set of 64 rx queues
-pub const RDT_2:                        usize = 0xD018;
-/// Number of bytes between consecutive RDT registers
-pub const RDT_DIST:                     usize = 0x40;
-/// Offset where the TDT register starts for the first 64 queues
-pub const TDT:                          usize = 0x6018;
-/// Number of bytes between consecutive TDT registers
-pub const TDT_DIST:                     usize = 0x40;
-
-// Link set up commands
-pub const AUTOC_LMS_CLEAR:              u32 = 0x0000_E000; 
-pub const AUTOC_LMS_1_GB:               u32 = 0x0000_E000;
-pub const AUTOC_LMS_10_GBE_P:           u32 = 1 << 13;
-pub const AUTOC_LMS_10_GBE_S:           u32 = 3 << 13;
-pub const AUTOC_LMS_KX_KX4_AUTONEG:     u32 = 6<<13; //KX/KX4//KR
-pub const AUTOC_FLU:                    u32 = 1;
-pub const AUTOC_RESTART_AN:             u32 = 1<<12;
-pub const AUTOC_1G_PMA_PMD:             u32 = 0x0000_0200; //clear bit 9
-pub const AUTOC_10G_PMA_PMD_CLEAR:      u32 = 0x0000_0180; 
-pub const AUTOC_10G_PMA_PMD_XAUI:       u32 = 0 << 7; 
-pub const AUTOC2_10G_PMA_PMD_S_CLEAR:   u32 = 0x0003_0000; //clear bits 16 and 17 
-pub const AUTOC2_10G_PMA_PMD_S_SFI:     u32 = 1 << 17;
 
 // CTRL commands
 pub const CTRL_LRST:                    u32 = 1<<3; 
 pub const CTRL_RST:                     u32 = 1<<26;
-
-// semaphore commands
-pub const SWSM_SMBI:                    u32 = 1 << 0;
-pub const SWSM_SWESMBI:                 u32 = 1 << 1;
-pub const SW_FW_SYNC_SMBITS_MASK:       u32 = 0x3FF;
-pub const SW_FW_SYNC_SMBITS_SW:         u32 = 0x1F;
-pub const SW_FW_SYNC_SMBITS_FW:         u32 = 0x3E0;
-pub const SW_FW_SYNC_SW_MAC:            u32 = 1 << 3;
-pub const SW_FW_SYNC_FW_MAC:            u32 = 1 << 8;
 
 // EEPROM Commands
 /// Bit which indicates that auto-read by hardware from EEPROM is done
@@ -665,13 +583,6 @@ pub const EEC_AUTO_RD:                  u32 = 9;
 
 // Link Commands
 pub const LINKS_SPEED_MASK:             u32 = 0x3 << 28;
-
-// MAC Control Commands
-/// Tx CRC Enable by HW (bit 0)
-pub const HLREG0_TXCRCEN:               u32 = 1;
-/// Tx Pad Frame Enable (bit 10)
-pub const HLREG0_TXPADEN:               u32 = 1 << 10;
-
 
 /// DCB Arbiters Disable
 pub const RTTDCS_ARBDIS:                u32 = 1 << 6;
@@ -700,36 +611,36 @@ pub const DCA_RXCTRL_CLEAR_BIT_12:      u32 = 1 << 12;
 pub const CTRL_EXT_NO_SNOOP_DIS:        u32 = 1 << 16;
 
 // RSS commands
-pub const RXCSUM_PCSD:                  u32 = 1 << 13; 
+// pub const RXCSUM_PCSD:                  u32 = 1 << 13; 
 
-// DCA commands
-pub const RX_DESC_DCA_ENABLE:           u32 = 1 << 5;
-pub const RX_HEADER_DCA_ENABLE:         u32 = 1 << 6;
-pub const RX_PAYLOAD_DCA_ENABLE:        u32 = 1 << 7;
-pub const RX_DESC_R_RELAX_ORDER_EN:     u32 = 1 << 9;
-pub const RX_DATA_W_RELAX_ORDER_EN:     u32 = 1 << 13;
-pub const RX_SP_HEAD_RELAX_ORDER_EN:    u32 = 1 << 15;
-pub const DCA_CPUID_SHIFT:              u32 = 24;
-pub const DCA_CTRL_ENABLE:              u32 = 0;
-pub const DCA_MODE_1:                   u32 = 0 << 1;  
-pub const DCA_MODE_2:                   u32 = 1 << 1;
+// // DCA commands
+// pub const RX_DESC_DCA_ENABLE:           u32 = 1 << 5;
+// pub const RX_HEADER_DCA_ENABLE:         u32 = 1 << 6;
+// pub const RX_PAYLOAD_DCA_ENABLE:        u32 = 1 << 7;
+// pub const RX_DESC_R_RELAX_ORDER_EN:     u32 = 1 << 9;
+// pub const RX_DATA_W_RELAX_ORDER_EN:     u32 = 1 << 13;
+// pub const RX_SP_HEAD_RELAX_ORDER_EN:    u32 = 1 << 15;
+// pub const DCA_CPUID_SHIFT:              u32 = 24;
+// pub const DCA_CTRL_ENABLE:              u32 = 0;
+// pub const DCA_MODE_1:                   u32 = 0 << 1;  
+// pub const DCA_MODE_2:                   u32 = 1 << 1;
 
-// 5-tuple Queue Filter commands
-pub const SPDQF_SOURCE_SHIFT:           u32 = 0;
-pub const SPDQF_DEST_SHIFT:             u32 = 16;
-pub const FTQF_PROTOCOL:                u32 = 3;
-pub const FTQF_PROTOCOL_TCP:            u32 = 0;
-pub const FTQF_PROTOCOL_UDP:            u32 = 1;
-pub const FTQF_PROTOCOL_SCTP:           u32 = 2;
-pub const FTQF_PRIORITY:                u32 = 7;
-pub const FTQF_PRIORITY_SHIFT:          u32 = 2;
-pub const FTQF_SOURCE_ADDRESS_MASK:     u32 = 1 << 25;
-pub const FTQF_DEST_ADDRESS_MASK:       u32 = 1 << 26;
-pub const FTQF_SOURCE_PORT_MASK:        u32 = 1 << 27;
-pub const FTQF_DEST_PORT_MASK:          u32 = 1 << 28;
-pub const FTQF_PROTOCOL_MASK:           u32 = 1 << 29;
-pub const FTQF_POOL_MASK:               u32 = 1 << 30;
-pub const L34TIMIR_LLI_ENABLE:          u32 = 1 << 20;
+// // 5-tuple Queue Filter commands
+// pub const SPDQF_SOURCE_SHIFT:           u32 = 0;
+// pub const SPDQF_DEST_SHIFT:             u32 = 16;
+// pub const FTQF_PROTOCOL:                u32 = 3;
+// pub const FTQF_PROTOCOL_TCP:            u32 = 0;
+// pub const FTQF_PROTOCOL_UDP:            u32 = 1;
+// pub const FTQF_PROTOCOL_SCTP:           u32 = 2;
+// pub const FTQF_PRIORITY:                u32 = 7;
+// pub const FTQF_PRIORITY_SHIFT:          u32 = 2;
+// pub const FTQF_SOURCE_ADDRESS_MASK:     u32 = 1 << 25;
+// pub const FTQF_DEST_ADDRESS_MASK:       u32 = 1 << 26;
+// pub const FTQF_SOURCE_PORT_MASK:        u32 = 1 << 27;
+// pub const FTQF_DEST_PORT_MASK:          u32 = 1 << 28;
+// pub const FTQF_PROTOCOL_MASK:           u32 = 1 << 29;
+// pub const FTQF_POOL_MASK:               u32 = 1 << 30;
+// pub const L34TIMIR_LLI_ENABLE:          u32 = 1 << 20;
 
 /// Enable a transmit queue
 pub const TX_Q_ENABLE:                  u32 = 1 << 25;
@@ -745,55 +656,6 @@ pub const TE:                           u32  = 1;
 
 // Interrupt Register Commands 
 pub const DISABLE_INTERRUPTS:           u32 = 0x7FFFFFFF; 
-/// MSI-X Mode
-pub const GPIE_MULTIPLE_MSIX:           u32 = 1 << 4;
-/// EICS Immediate Interrupt Enable
-pub const GPIE_EIMEN:                   u32 = 1 << 6;
-/// Should be set in MSIX mode and cleared in legacy/msi mode
-pub const GPIE_PBA_SUPPORT:             u32 = 1 << 31;
-/// Each bit enables auto clear of the corresponding RTxQ bit in the EICR register following interrupt assertion
-pub const EIAC_RTXQ_AUTO_CLEAR:         u32 = 0xFFFF;
-/// Bit position where the throttling interval is written
-pub const EITR_ITR_INTERVAL_SHIFT:      u32 = 3;
-/// Enables the corresponding interrupt in the EICR register by setting the bit
-pub const EIMS_INTERRUPT_ENABLE:        u32 = 1;
-
-/// The number of msi-x vectors this device can have. 
-/// It can be set from PCI space, but we took the value from the data sheet.
-pub const IXGBE_MAX_MSIX_VECTORS:     usize = 64;
-
-/// Table that contains msi-x vector entries. 
-/// It is mapped to a physical memory region specified by the BAR from the PCI space.
-#[derive(FromBytes)]
-#[repr(C)]
-pub struct MsixVectorTable {
-    pub msi_vector:     [MsixVectorEntry; IXGBE_MAX_MSIX_VECTORS],
-}
-
-/// A single Message Signaled Interrupt entry.
-/// It contains the interrupt number for this vector and the core this interrupt is redirected to.
-#[derive(FromBytes)]
-#[repr(C)]
-pub struct MsixVectorEntry {
-    /// The lower portion of the address for the memory write transaction.
-    /// This part contains the apic id which the interrupt will be redirected to.
-    pub msg_lower_addr:         Volatile<u32>,
-    /// The upper portion of the address for the memory write transaction.
-    pub msg_upper_addr:         Volatile<u32>,
-    /// The data portion of the msi vector which contains the interrupt number.
-    pub msg_data:               Volatile<u32>,
-    /// The control portion which contains the interrupt mask bit.
-    pub vector_control:         Volatile<u32>,
-}
-
-/// A constant which indicates the region that is reserved for interrupt messages
-pub const MSIX_INTERRUPT_REGION:    u32 = 0xFEE << 20;
-/// The location in the lower address register where the destination core id is written
-pub const MSIX_DEST_ID_SHIFT:       u32 = 12;
-/// The bits in the lower address register that need to be cleared and set
-pub const MSIX_ADDRESS_BITS:        u32 = 0xFFFF_FFF0;
-/// Clear the vector control field to unmask the interrupt
-pub const MSIX_UNMASK_INT:          u32 = 0;
 
 const_assert_eq!(core::mem::size_of::<RegistersTx>(), 64);
 
@@ -867,9 +729,9 @@ impl RegistersTx {
         self.tdwbal.write(addr as u32 | 0x1);
     }
 
-    pub fn tdwbal_read(&self) -> u32 {
-        self.tdwbal.read()
-    }
+    // pub fn tdwbal_read(&self) -> u32 {
+    //     self.tdwbal.read()
+    // }
 
     pub fn dca_txctrl_disable_relaxed_ordering_head_wb(&mut self){
         const TX_DESC_WBRO_EN_BIT: u32 = 1 << 11;
@@ -887,10 +749,10 @@ impl RegistersRx {
         self.rdlen.write((num_descs as u32) * 16 as u32)
     }
 
-    // gate access so that the upper 16 bits are always set to 0
-    pub fn rdh_write(&mut self, val: u16) {
-        self.rdh.write(val as u32);
-    }
+    // // gate access so that the upper 16 bits are always set to 0
+    // pub fn rdh_write(&mut self, val: u16) {
+    //     self.rdh.write(val as u32);
+    // }
 
     pub fn dca_rxctrl_clear_bit_12(&mut self) {
         let val = self.dca_rxctrl.read();
@@ -961,10 +823,10 @@ impl RegistersTx {
         self.tdt.write(val as u32);
     }
 
-    #[inline(always)]
-    pub fn tdt_read(&mut self) -> u32 {
-        self.tdt.read()
-    }
+    // #[inline(always)]
+    // pub fn tdt_read(&mut self) -> u32 {
+    //     self.tdt.read()
+    // }
 }
 
 /// Set of registers associated with one receive descriptor queue.
@@ -1005,8 +867,8 @@ impl RegistersRx {
         self.rdt.write(val as u32);
     }
 
-    #[inline(always)]
-    pub fn rdt_read(&mut self) -> u32 {
-        self.rdt.read()
-    }
+    // #[inline(always)]
+    // pub fn rdt_read(&mut self) -> u32 {
+    //     self.rdt.read()
+    // }
 }

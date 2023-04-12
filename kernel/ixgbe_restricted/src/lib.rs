@@ -6,7 +6,7 @@
 //! We also disable interrupts when using virtualization, since we do not yet have support for allowing applications to register their own interrupt handlers.
 
 #![no_std]
-#![allow(dead_code)] //  to suppress warnings for unused functions/methods
+// #![allow(dead_code)] //  to suppress warnings for unused functions/methods
 #![allow(unaligned_references)] // temporary, just to suppress unsafe packed borrows 
 #![allow(incomplete_features)] // to allow adt_const_params without a warning
 #![feature(adt_const_params)]
@@ -14,10 +14,7 @@
 #![feature(rustc_private)]
 #![feature(ptr_internals)]
 
-#[macro_use] extern crate prusti_contracts;
-extern crate cfg_if;
 extern crate alloc;
-
 pub mod hal;
 mod queue_registers;
 pub mod agent;
@@ -53,16 +50,10 @@ use allocator::*;
 use spin::Once;
 use alloc::{
     vec::Vec,
-    boxed::Box,
 };
 use irq_safety::MutexIrqSafe;
-use memory::{MappedPages, BorrowedMappedPages, Mutable};
+use memory::{BorrowedMappedPages, Mutable};
 use pci::{PciDevice, PciConfigSpaceAccessMechanism, PciLocation, BAR, PciBaseAddr, PciMemSize};
-use owning_ref::BoxRefMut;
-use core::num;
-// use bit_field::BitField;
-// use hpet::get_hpet;
-// use rand::{SeedableRng, RngCore};
 use core::ops::{Deref};
 use core::convert::{TryFrom};
 
@@ -178,7 +169,7 @@ impl IxgbeNic {
 
         // 16-byte aligned memory mapped base address
         let mem_base =  ixgbe_pci_dev.determine_pci_base_addr(BAR::BAR0)?;
-        let _mem_size = ixgbe_pci_dev.determine_pci_mem_size(BAR::BAR0);
+        let mem_size = ixgbe_pci_dev.determine_pci_mem_size(BAR::BAR0);
 
         // set the bus mastering bit for this PciDevice, which allows it to use DMA
         ixgbe_pci_dev.pci_set_command_bus_master_bit();
@@ -191,13 +182,13 @@ impl IxgbeNic {
             mut mapped_registers_mac, 
             mut rx_mapped_registers, 
             mut tx_mapped_registers
-        ) = Self::mapped_reg(&mem_base)?;
+        ) = Self::mapped_reg(&mem_base, &mem_size)?;
 
         // link initialization
         Self::start_link(&mut mapped_registers1, &mut mapped_registers2, &mut mapped_registers3, &mut mapped_registers_mac)?;
 
-        // clear stats registers
-        Self::clear_stats_internal(&mapped_registers2);
+        // // clear stats registers
+        // Self::clear_stats_internal(&mapped_registers2);
 
         // store the mac address of this device
         let mac_addr_hardware = Self::read_mac_address_from_nic(&mut mapped_registers_mac);
@@ -210,11 +201,6 @@ impl IxgbeNic {
         Self::rx_init_pre(&mut mapped_registers2)?;
         Self::tx_init_pre(&mut mapped_registers2, &mut mapped_registers_mac)?;
         Self::set_promiscuous(&mut mapped_registers2);
-
-        // let num_descs = NumDesc::Descs1k;
-        // let mut queue = Queue::new(num_descs, tx_mapped_registers.pop().unwrap(), rx_mapped_registers.pop().unwrap())?;
-        // Self::rx_init(&mut mapped_registers1, &mut mapped_registers2, num_descs, &mut queue)?;
-        // Self::tx_init(&mut mapped_registers2, &mut mapped_registers_mac, num_descs, &mut queue)?;
 
         // wait 10 seconds for the link to come up, as seen in other ixgbe drivers
         Self::wait_for_link(&mapped_registers2, 10_000_000);
@@ -239,15 +225,15 @@ impl IxgbeNic {
         Ok(MutexIrqSafe::new(ixgbe_nic))
     }
 
-    /// Returns the device id of the PCI device.
-    pub fn device_id(&self) -> PciLocation {
-        self.dev_id
-    }
-
+    // /// Returns the device id of the PCI device.
+    // pub fn device_id(&self) -> PciLocation {
+    //     self.dev_id
+    // }
 
     /// Returns the memory-mapped control registers of the nic and the rx/tx queue registers.
     fn mapped_reg(
-        mem_base: &PciBaseAddr
+        mem_base: &PciBaseAddr,
+        mem_size_in_bytes: &PciMemSize
     ) -> Result<(
         BorrowedMappedPages<IntelIxgbeRegisters1, Mutable>, 
         BorrowedMappedPages<IntelIxgbeRegisters2, Mutable>, 
@@ -256,36 +242,36 @@ impl IxgbeNic {
         Vec<RxQueueRegisters>, 
         Vec<TxQueueRegisters>
     ), &'static str> {
+
+        let mapped_pages = allocator::allocate_device_register_memory(mem_base, mem_size_in_bytes, NIC_MAPPING_FLAGS_NO_CACHE)?;
+
         // We've divided the memory-mapped registers into multiple regions.
         // The size of each region is found from the data sheet, but it always lies on a page boundary.
-        const GENERAL_REGISTERS_1_SIZE_BYTES:   usize = 4096;
-        const RX_REGISTERS_SIZE_BYTES:          usize = 4096;
-        const GENERAL_REGISTERS_2_SIZE_BYTES:   usize = 4 * 4096;
-        const TX_REGISTERS_SIZE_BYTES:          usize = 2 * 4096;
-        const MAC_REGISTERS_SIZE_BYTES:         usize = 5 * 4096;
-        const GENERAL_REGISTERS_3_SIZE_BYTES:   usize = 18 * 4096;
+        const GENERAL_REGISTERS_1_SIZE:   usize = 4096 / 4096;
+        const RX_REGISTERS_SIZE:          usize = 4096 / 4096;
+        const GENERAL_REGISTERS_2_SIZE:   usize = 4 * 4096 / 4096;
+        const TX_REGISTERS_SIZE:          usize = 2 * 4096 / 4096;
+        const MAC_REGISTERS_SIZE:         usize = 5 * 4096 / 4096;
+        const GENERAL_REGISTERS_3_SIZE:   usize = 18 * 4096 / 4096;
 
         // Allocate memory for the registers, making sure each successive memory region begins where the previous region ended.
-        let mut offset = *mem_base.deref();
-        let nic_regs1_mapped_page = allocate_memory(offset, GENERAL_REGISTERS_1_SIZE_BYTES, NIC_MAPPING_FLAGS_NO_CACHE)?;
+        let mut offset_page = *mapped_pages.deref().start() + GENERAL_REGISTERS_1_SIZE;
+        let (nic_regs1_mapped_page, mapped_pages) = mapped_pages.split(offset_page).unwrap();
 
-        offset += GENERAL_REGISTERS_1_SIZE_BYTES;
-        let nic_rx_regs1_mapped_page = allocate_memory(offset, RX_REGISTERS_SIZE_BYTES, NIC_MAPPING_FLAGS_NO_CACHE)?;
+        offset_page = *mapped_pages.deref().start() + RX_REGISTERS_SIZE;
+        let (nic_rx_regs1_mapped_page, mapped_pages) = mapped_pages.split(offset_page).unwrap();
 
-        offset += RX_REGISTERS_SIZE_BYTES;
-        let nic_regs2_mapped_page = allocate_memory(offset, GENERAL_REGISTERS_2_SIZE_BYTES, NIC_MAPPING_FLAGS_NO_CACHE)?;  
+        offset_page = *mapped_pages.deref().start() + GENERAL_REGISTERS_2_SIZE;
+        let (nic_regs2_mapped_page, mapped_pages) = mapped_pages.split(offset_page).unwrap();
 
-        offset += GENERAL_REGISTERS_2_SIZE_BYTES;
-        let nic_tx_regs_mapped_page = allocate_memory(offset, TX_REGISTERS_SIZE_BYTES, NIC_MAPPING_FLAGS_NO_CACHE)?;
+        offset_page = *mapped_pages.deref().start() + TX_REGISTERS_SIZE;
+        let (nic_tx_regs_mapped_page, mapped_pages) = mapped_pages.split(offset_page).unwrap();
 
-        offset += TX_REGISTERS_SIZE_BYTES;
-        let nic_mac_regs_mapped_page = allocate_memory(offset, MAC_REGISTERS_SIZE_BYTES, NIC_MAPPING_FLAGS_NO_CACHE)?;
+        offset_page = *mapped_pages.deref().start() + MAC_REGISTERS_SIZE;
+        let (nic_mac_regs_mapped_page, mapped_pages) = mapped_pages.split(offset_page).unwrap();
 
-        offset += MAC_REGISTERS_SIZE_BYTES;
-        let nic_rx_regs2_mapped_page = allocate_memory(offset, RX_REGISTERS_SIZE_BYTES, NIC_MAPPING_FLAGS_NO_CACHE)?;   
-
-        offset += RX_REGISTERS_SIZE_BYTES;
-        let nic_regs3_mapped_page = allocate_memory(offset, GENERAL_REGISTERS_3_SIZE_BYTES, NIC_MAPPING_FLAGS_NO_CACHE)?;
+        offset_page = *mapped_pages.deref().start() + RX_REGISTERS_SIZE;
+        let (nic_rx_regs2_mapped_page, nic_regs3_mapped_page) = mapped_pages.split(offset_page).unwrap();  
 
         // Map the memory as the register struct and tie the lifetime of the struct with its backing mapped pages
         let regs1 = nic_regs1_mapped_page.into_borrowed_mut(0).map_err(|(_mp, err)| err)?;
@@ -302,6 +288,64 @@ impl IxgbeNic {
             
         Ok((regs1, regs2, regs3, mac_regs, regs_rx, regs_tx))
     }
+
+    // /// Returns the memory-mapped control registers of the nic and the rx/tx queue registers.
+    // fn mapped_reg(
+    //     mem_base: &PciBaseAddr
+    // ) -> Result<(
+    //     BorrowedMappedPages<IntelIxgbeRegisters1, Mutable>, 
+    //     BorrowedMappedPages<IntelIxgbeRegisters2, Mutable>, 
+    //     BorrowedMappedPages<IntelIxgbeRegisters3, Mutable>, 
+    //     BorrowedMappedPages<IntelIxgbeMacRegisters, Mutable>, 
+    //     Vec<RxQueueRegisters>, 
+    //     Vec<TxQueueRegisters>
+    // ), &'static str> {
+    //     // We've divided the memory-mapped registers into multiple regions.
+    //     // The size of each region is found from the data sheet, but it always lies on a page boundary.
+    //     const GENERAL_REGISTERS_1_SIZE_BYTES:   usize = 4096;
+    //     const RX_REGISTERS_SIZE_BYTES:          usize = 4096;
+    //     const GENERAL_REGISTERS_2_SIZE_BYTES:   usize = 4 * 4096;
+    //     const TX_REGISTERS_SIZE_BYTES:          usize = 2 * 4096;
+    //     const MAC_REGISTERS_SIZE_BYTES:         usize = 5 * 4096;
+    //     const GENERAL_REGISTERS_3_SIZE_BYTES:   usize = 18 * 4096;
+
+    //     // Allocate memory for the registers, making sure each successive memory region begins where the previous region ended.
+    //     let mut offset = *mem_base.deref();
+    //     let nic_regs1_mapped_page = allocate_memory(offset, GENERAL_REGISTERS_1_SIZE_BYTES, NIC_MAPPING_FLAGS_NO_CACHE)?;
+
+    //     offset += GENERAL_REGISTERS_1_SIZE_BYTES;
+    //     let nic_rx_regs1_mapped_page = allocate_memory(offset, RX_REGISTERS_SIZE_BYTES, NIC_MAPPING_FLAGS_NO_CACHE)?;
+
+    //     offset += RX_REGISTERS_SIZE_BYTES;
+    //     let nic_regs2_mapped_page = allocate_memory(offset, GENERAL_REGISTERS_2_SIZE_BYTES, NIC_MAPPING_FLAGS_NO_CACHE)?;  
+
+    //     offset += GENERAL_REGISTERS_2_SIZE_BYTES;
+    //     let nic_tx_regs_mapped_page = allocate_memory(offset, TX_REGISTERS_SIZE_BYTES, NIC_MAPPING_FLAGS_NO_CACHE)?;
+
+    //     offset += TX_REGISTERS_SIZE_BYTES;
+    //     let nic_mac_regs_mapped_page = allocate_memory(offset, MAC_REGISTERS_SIZE_BYTES, NIC_MAPPING_FLAGS_NO_CACHE)?;
+
+    //     offset += MAC_REGISTERS_SIZE_BYTES;
+    //     let nic_rx_regs2_mapped_page = allocate_memory(offset, RX_REGISTERS_SIZE_BYTES, NIC_MAPPING_FLAGS_NO_CACHE)?;   
+
+    //     offset += RX_REGISTERS_SIZE_BYTES;
+    //     let nic_regs3_mapped_page = allocate_memory(offset, GENERAL_REGISTERS_3_SIZE_BYTES, NIC_MAPPING_FLAGS_NO_CACHE)?;
+
+    //     // Map the memory as the register struct and tie the lifetime of the struct with its backing mapped pages
+    //     let regs1 = nic_regs1_mapped_page.into_borrowed_mut(0).map_err(|(_mp, err)| err)?;
+    //     let regs2 = nic_regs2_mapped_page.into_borrowed_mut(0).map_err(|(_mp, err)| err)?;
+    //     let regs3 = nic_regs3_mapped_page.into_borrowed_mut(0).map_err(|(_mp, err)| err)?;
+    //     let mac_regs = nic_mac_regs_mapped_page.into_borrowed_mut(0).map_err(|(_mp, err)| err)?;
+        
+    //     // Divide the pages of the Rx queue registers into multiple 64B regions
+    //     let mut regs_rx = Self::mapped_regs_from_rx_memory(MappedPagesFragments::new(nic_rx_regs1_mapped_page))?;
+    //     regs_rx.append(&mut Self::mapped_regs_from_rx_memory(MappedPagesFragments::new(nic_rx_regs2_mapped_page))?);
+        
+    //     // Divide the pages of the Tx queue registers into multiple 64B regions
+    //     let regs_tx = Self::mapped_regs_from_tx_memory(MappedPagesFragments::new(nic_tx_regs_mapped_page))?;
+            
+    //     Ok((regs1, regs2, regs3, mac_regs, regs_rx, regs_tx))
+    // }
 
     /// Split the pages where rx queue registers are mapped into multiple smaller memory regions.
     /// One region contains all the registers for a single queue.
@@ -442,36 +486,32 @@ impl IxgbeNic {
         }
     }
 
-    /// Clear the statistic registers by reading from them.
-    fn clear_stats_internal(regs: &IntelIxgbeRegisters2) {
-        regs.gprc.read();
-        regs.gptc.read();
-        regs.gorcl.read();
-        regs.gorch.read();
-        regs.gotcl.read();
-        regs.gotch.read();
-    }
+    // /// Clear the statistic registers by reading from them.
+    // fn clear_stats_internal(regs: &IntelIxgbeRegisters2) {
+    //     regs.gprc.read();
+    //     regs.gptc.read();
+    //     regs.gorcl.read();
+    //     regs.gorch.read();
+    //     regs.gotcl.read();
+    //     regs.gotch.read();
+    // }
 
-    /// Clear the statistic registers by reading from them.
-    pub fn clear_stats(&self) {
-        Self::clear_stats_internal(&self.regs2);
-    }
+    // /// Clear the statistic registers by reading from them.
+    // pub fn clear_stats(&self) {
+    //     Self::clear_stats_internal(&self.regs2);
+    // }
 
-    /// Returns the Rx and Tx statistics for good packets.
-    /// A good packet is one that is >= 64 bytes including ethernet header and CRC
-    pub fn get_stats(&self, stats: &mut IxgbeStats) {
-        let rx_bytes =  ((self.regs2.gorch.read() as u64 & 0xF) << 32) | self.regs2.gorcl.read() as u64;
-        let tx_bytes =  ((self.regs2.gotch.read() as u64 & 0xF) << 32) | self.regs2.gotcl.read() as u64;
+    // /// Returns the Rx and Tx statistics for good packets.
+    // /// A good packet is one that is >= 64 bytes including ethernet header and CRC
+    // pub fn get_stats(&self, stats: &mut IxgbeStats) {
+    //     let rx_bytes =  ((self.regs2.gorch.read() as u64 & 0xF) << 32) | self.regs2.gorcl.read() as u64;
+    //     let tx_bytes =  ((self.regs2.gotch.read() as u64 & 0xF) << 32) | self.regs2.gotcl.read() as u64;
 
-        stats.rx_bytes = rx_bytes;
-        stats.tx_bytes = tx_bytes;
-        stats.rx_packets = self.regs2.gprc.read();
-        stats.tx_packets = self.regs2.gptc.read();
-    }
-
-    pub fn fctrl_flags(&self) -> u32 {
-        self.regs2.fctrl_read()
-    }
+    //     stats.rx_bytes = rx_bytes;
+    //     stats.tx_bytes = tx_bytes;
+    //     stats.rx_packets = self.regs2.gprc.read();
+    //     stats.tx_packets = self.regs2.gptc.read();
+    // }
 
     fn rx_init_pre(regs2: &mut IntelIxgbeRegisters2) -> Result<(), &'static str> {
         //CRC offloading
@@ -528,184 +568,17 @@ impl IxgbeNic {
         regs2.rxctrl_rx_enable(fctrl_set); 
     }
     
-    // /// Initializes the array of receive descriptors and their corresponding receive buffers,
-    // /// and returns a tuple including both of them for all rx queues in use.
-    // /// Also enables receive functionality for the NIC.
-    // fn rx_init(
-    //     regs1: &mut IntelIxgbeRegisters1, 
-    //     regs: &mut IntelIxgbeRegisters2, 
-    //     num_rx_descs: NumDesc,
-    //     queue: &mut Queue,
-    // ) -> Result<(), &'static str> {
-
-    //     let rxctrl_disabled = Self::disable_rx_function(regs);
-
-    //     // program RXPBSIZE according to DCB and virtualization modes (both off)
-    //     // we leave it at the default which is 512 KiB
-    //     // regs.rxpbsize_set_buffer_size(0, RXPBSIZE_128KB)?;
-    //     for i in 1..8 {
-    //         regs.rxpbsize_reg1_7_set_buffer_size(
-    //             RxPBReg::try_from(i).map_err(|_| "incorrect register ID for RxPBSize")?,
-    //             RxPBSizeReg1_7::Size0KiB 
-    //         );
-    //     }
-    //     //CRC offloading
-    //     regs.crc_strip();
-        
-    //     // Clear bits
-    //     regs.rdrxctl_set_reserved_bits();
-        
-    //     queue.rx_init(num_rx_descs);
-    //     // set the size of the packet buffers(leave default value) and the descriptor format used
-    //     queue.rx_regs.srrctl_write(DescType::Legacy, RxBufferSizeKiB::Buffer2KiB);
-    //     queue.rx_regs.srrctl_drop_enable();
-    //     // enable the rx queue
-    //     queue.rx_regs.rxdctl_rxq_enable();
-    //     // make sure queue is enabled
-    //     while queue.rx_regs.rxdctl_read() & RX_Q_ENABLE == 0 {}
-    //     // set bit 12 to 0
-    //     queue.rx_regs.dca_rxctrl_clear_bit_12();
-
-    //     // Write the tail index.
-    //     // Note that the 82599 datasheet (section 8.2.3.8.5) states that we should set the RDT (tail index) to the index *beyond* the last receive descriptor, 
-    //     // but we set it to the last receive descriptor for the same reason as the e1000 driver
-    //     queue.rx_regs.rdt_write(num_rx_descs as u16 - 1);
-        
-    //     Self::enable_rx_function(regs1,regs, rxctrl_disabled)?;
-
-    //     Ok(())
+    // pub fn mac_addr(&self) -> [u8; 6] {
+    //     self.mac_hardware
     // }
 
-    // /// disable receive functionality
-    // fn disable_rx_function(regs: &mut IntelIxgbeRegisters2) -> RXCTRLDisabled {        
-    //     regs.rxctrl_rx_disable()
-    // }
-
-    // /// enable receive functionality
-    // fn enable_rx_function(regs1: &mut IntelIxgbeRegisters1,regs: &mut IntelIxgbeRegisters2, rxctrl_disabled: RXCTRLDisabled) -> Result<(), &'static str> {
-    //     // set rx parameters of which type of packets are accepted by the nic
-    //     // right now we allow the nic to receive all types of packets, even incorrectly formed ones
-    //     let fctrl_set = regs.fctrl_write(FilterCtrlFlags::STORE_BAD_PACKETS | FilterCtrlFlags::MULTICAST_PROMISCUOUS_ENABLE | FilterCtrlFlags::UNICAST_PROMISCUOUS_ENABLE | FilterCtrlFlags::BROADCAST_ACCEPT_MODE, rxctrl_disabled); 
-
-    //     regs1.ctrl_ext_no_snoop_disable();
-
-    //     // enable receive functionality
-    //     regs.rxctrl_rx_enable(fctrl_set); 
-
-    //     Ok(())
-    // }
-
-
-    // /// Initialize the array of transmit descriptors for all queues and returns them.
-    // /// Also enables transmit functionality for the NIC.
-    // fn tx_init(
-    //     regs: &mut IntelIxgbeRegisters2, 
-    //     regs_mac: &mut IntelIxgbeMacRegisters, 
-    //     num_tx_descs: NumDesc,
-    //     queue: &mut Queue
-    // ) -> Result<(), &'static str> {
-    //     // disable transmission
-    //     regs.dmatxctl_disable_tx();
-
-    //     // CRC offload and small packet padding enable (these are enabled by default)
-    //     // regs.hlreg0_crc_en();
-    //     // regs.hlreg0_tx_pad_en();
-
-    //     // Set RTTFCS.ARBDIS to 1
-    //     regs.rttdcs_set_arbdis();
-
-
-    //     // program DTXMXSZRQ and TXPBSIZE according to DCB and virtualization modes (both off)
-    //     // regs_mac.txpbsize_write( // already set to default
-    //     //     TxPBReg::R0, 
-    //     //     TxPBSize::Size160KiB
-    //     // );
-    //     for i in 1..8 {
-    //         regs_mac.txpbsize_write(
-    //             TxPBReg::try_from(i).map_err(|_| "incorrect reg idx for TXPBSIZE")?, 
-    //             TxPBSize::Size0KiB
-    //         );
-    //     }
-    //     regs_mac.dtxmxszrq_allow_max_byte_requests(); 
-
-    //     // Clear RTTFCS.ARBDIS
-    //     regs.rttdcs_clear_arbdis();
-
-    //     // enable transmit operation, only have to do this for the first queue
-    //     regs.dmatxctl_enable_tx();
-
-    //     // set buffer addresses
-    //     for i in 0..num_tx_descs as usize {
-    //         let packet_paddr = queue.buffers_paddr + (i * 2048);
-    //         queue.descs[i].phys_addr.write(packet_paddr.value() as u64);
-    //     }
-
-    //     // Set descriptor thresholds
-    //     // If we enable this then we need to change the packet send function to stop polling for a descriptor done on every packet sent
-        
-    //     // Tx descriptor pre-fetch threshold (value taken from DPDK)
-    //     let pthresh = U7::B5 | U7::B2; // b100100 = 36 (DPDK), TInyNF uses 60
-    //     // Tx descriptor host threshold (value taken from DPDK)
-    //     let hthresh = HThresh::B3; // b1000 = 8 (DPDK), TinyNF uses 4  
-    //     // Tx descriptor write-back threshold (value taken from DPDK)
-    //     let wthresh = U7::zero(); // b100 = 4 
-        
-    //     let _rs_bit = queue.tx_regs.txdctl_write_wthresh(wthresh); 
-    //     queue.tx_regs.txdctl_write_pthresh_hthresh(pthresh, hthresh); 
-        
-    //     let tdh_set = queue.tx_init(num_tx_descs);
-
-    //     //enable tx queue
-    //     queue.tx_regs.txdctl_txq_enable(tdh_set); 
-        
-    //     //make sure queue is enabled
-    //     while queue.tx_regs.txdctl_read() & TX_Q_ENABLE == 0 {} 
-
-    //     Ok(())
-    // }  
-
-
-    pub fn mac_addr(&self) -> [u8; 6] {
-        self.mac_hardware
-    }
-
 }
 
 
-#[derive(Default, Debug)]
-pub struct IxgbeStats{
-    pub rx_bytes: u64,
-    pub tx_bytes: u64,
-    pub rx_packets: u32,
-    pub tx_packets: u32,
-}
-
-
-#[derive(PartialEq, Eq, Clone, Copy)]
-pub struct FilterParameters {
-    pub source_ip: Option<[u8; 4]>,
-    pub dest_ip: Option<[u8; 4]>,
-    pub source_port: Option<u16>,
-    pub dest_port: Option<u16>,
-    pub protocol: Option<L5FilterProtocol>,
-    pub priority: L5FilterPriority,
-    pub qid: QueueID
-}
-
-impl FilterParameters {
-    #[pure]
-    pub fn parameters_equal(&self, other: &Self) -> bool {
-        self.source_ip == other.source_ip &&
-        self.dest_ip == other.dest_ip &&
-        self.source_port == other.source_port &&
-        self.dest_port == other.dest_port &&
-        self.protocol == other.protocol &&
-        self.priority == other.priority
-    }
-}
-
-#[derive(PartialEq, Eq, Clone, Copy)]
-pub enum FilterError {
-    NoneAvailable,
-    IdenticalFilter(usize)
-}
+// #[derive(Default, Debug)]
+// pub struct IxgbeStats{
+//     pub rx_bytes: u64,
+//     pub tx_bytes: u64,
+//     pub rx_packets: u32,
+//     pub tx_packets: u32,
+// }

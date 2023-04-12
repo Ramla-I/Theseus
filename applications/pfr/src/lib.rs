@@ -38,7 +38,8 @@ use alloc::vec::Vec;
 use alloc::string::String;
 use ixgbe_restricted::{
     get_ixgbe_nics_list,
-    IxgbeStats, agent::IxgbeAgent
+    // IxgbeStats, 
+    agent::IxgbeAgent
 };
 // use packet_buffers::{PacketBufferS, EthernetFrame};
 use getopts::{Matches, Options};
@@ -136,14 +137,14 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
     let mut dev1 = ixgbe_devs[2].lock();
 
 
-    let src_addr0 = dev0.mac_addr();
-    let src_addr1 = dev1.mac_addr();
+    // let src_addr0 = dev0.mac_addr();
+    // let src_addr1 = dev1.mac_addr();
 
-    // clear the stats registers, and create an object to store the NIC stats during the benchmark
-    dev0.clear_stats();
-    dev1.clear_stats();
-    let mut dev0_stats = IxgbeStats::default();
-    let mut dev1_stats = IxgbeStats::default();
+    // // clear the stats registers, and create an object to store the NIC stats during the benchmark
+    // dev0.clear_stats();
+    // dev1.clear_stats();
+    // let mut dev0_stats = IxgbeStats::default();
+    // let mut dev1_stats = IxgbeStats::default();
 
     // variables to store the total number of RX and TX packets in each interval
     // these should match what is returned from the NIC stat regsiters.
@@ -170,8 +171,6 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
 
     error!("Link speed: {} Mbps", dev0.link_speed() as usize);
     error!("Link speed: {} Mbps", dev1.link_speed() as usize);
-    error!("dev0 fctrl: {:#X} Mbps", dev0.fctrl_flags());
-    error!("dev1 fctrl: {:#X} Mbps", dev1.fctrl_flags());
 
     // start the PMU if enabled
     let mut counters = None;
@@ -188,7 +187,7 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
         counters.as_mut().unwrap().start().expect("failed to start counters");
     }
 
-    let src_addr = dev0.mac_addr();
+    // let src_addr = dev0.mac_addr();
     let mut old_counters = pmu_x86::variable_stat::PMUResults::default();
 
     // for _ in 0..(DESC_RING_SIZE* 2) / batch_size {
@@ -212,18 +211,18 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
 
     loop {
 
-        if collect_stats && (iterations & 0xFFF == 0){
-            delta_hpet = hpet.get_counter() - start_hpet;
+        // if collect_stats && (iterations & 0xFFF == 0){
+        //     delta_hpet = hpet.get_counter() - start_hpet;
 
-            if delta_hpet >= cycles_in_one_sec {
-                dev0.get_stats(&mut dev0_stats);
-                dev1.get_stats(&mut dev1_stats);
-                print_stats(0, &dev0_stats,  rx_packets_dev0, tx_packets_dev0);
-                print_stats(1, &dev1_stats, rx_packets_dev1, tx_packets_dev1);
-                rx_packets_dev0 = 0; tx_packets_dev0 = 0; rx_packets_dev1 = 0; tx_packets_dev1 = 0;
-                start_hpet = hpet.get_counter();
-            }
-        }
+        //     if delta_hpet >= cycles_in_one_sec {
+        //         dev0.get_stats(&mut dev0_stats);
+        //         dev1.get_stats(&mut dev1_stats);
+        //         print_stats(0, &dev0_stats,  rx_packets_dev0, tx_packets_dev0);
+        //         print_stats(1, &dev1_stats, rx_packets_dev1, tx_packets_dev1);
+        //         rx_packets_dev0 = 0; tx_packets_dev0 = 0; rx_packets_dev1 = 0; tx_packets_dev1 = 0;
+        //         start_hpet = hpet.get_counter();
+        //     }
+        // }
 
         // if pmu && rx_packets_dev0 >= 7_400_000 { // as 14.8 MPPS, should get around  7.4 M packets in 30 seconds
         //     delta_hpet = hpet.get_counter() - start_hpet;
@@ -326,12 +325,12 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
 }
 
 
-fn print_stats(device_id: usize, dev_stats: &IxgbeStats, rx_packets: usize, tx_packets: usize) {
-    error!("DEV{}: RX reg: {} Gb/s | {} Mpps all | {} Mpps", 
-        device_id, (dev_stats.rx_bytes  as f32 * 8.0) / (1_000_000_000.0), dev_stats.rx_packets as f32/ (1_000_000.0), rx_packets as f32/ (1_000_000.0));
-    error!("DEV{}: TX reg: {} Gb/s | {} Mpps all | {} Mpps", 
-        device_id, (dev_stats.tx_bytes  as f32 * 8.0) / (1_000_000_000.0), dev_stats.tx_packets as f32/ (1_000_000.0), tx_packets as f32/ (1_000_000.0));
-}
+// fn print_stats(device_id: usize, dev_stats: &IxgbeStats, rx_packets: usize, tx_packets: usize) {
+//     error!("DEV{}: RX reg: {} Gb/s | {} Mpps all | {} Mpps", 
+//         device_id, (dev_stats.rx_bytes  as f32 * 8.0) / (1_000_000_000.0), dev_stats.rx_packets as f32/ (1_000_000.0), rx_packets as f32/ (1_000_000.0));
+//     error!("DEV{}: TX reg: {} Gb/s | {} Mpps all | {} Mpps", 
+//         device_id, (dev_stats.tx_bytes  as f32 * 8.0) / (1_000_000_000.0), dev_stats.tx_packets as f32/ (1_000_000.0), tx_packets as f32/ (1_000_000.0));
+// }
 
 fn print_usage(opts: &Options) {
     println!("{}", opts.usage(USAGE));
