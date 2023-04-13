@@ -1462,6 +1462,7 @@ dependencies = [
  "hpet",
  "irq_safety",
  "kernel_config",
+ "lazy_static",
  "log",
  "mapped_pages_fragments",
  "memory",

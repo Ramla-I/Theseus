@@ -59,5 +59,9 @@ path = "../packet_buffers"
 version = "0.5.2"
 default-features = false
 
+[dependencies.lazy_static]
+features = ["spin_no_std"]
+version = "1.4.0"
+
 [lib]
 crate-type = ["rlib"] # "lib" does the same thing I think

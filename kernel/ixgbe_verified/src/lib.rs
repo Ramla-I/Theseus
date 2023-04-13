@@ -20,7 +20,7 @@ extern crate alloc;
 
 pub mod hal;
 mod queue_registers;
-// pub mod mempool;
+pub mod mempool;
 
 pub use hal::*;
 
@@ -43,6 +43,7 @@ extern crate mapped_pages_fragments;
 extern crate packet_buffers;
 extern crate num_enum;
 #[macro_use] extern crate bitflags;
+#[macro_use] extern crate lazy_static;
 
 pub mod rx_queue;
 pub mod tx_queue;
@@ -54,8 +55,8 @@ use mapped_pages_fragments::MappedPagesFragments;
 use rx_queue::{RxQueueE, RxQueueD, RxQueueL5, RxQueueRSS};
 use tx_queue::{TxQueueE, TxQueueD};
 use allocator::*;
-use packet_buffers::*;
-// use mempool::*;
+// use packet_buffers::*;
+use mempool::*;
 
 use spin::Once;
 use alloc::{
@@ -118,7 +119,15 @@ pub fn get_ixgbe_nics_list() -> Option<&'static Vec<MutexIrqSafe<IxgbeNic>>> {
     IXGBE_NICS.get()
 }
 
+// /// How many ReceiveBuffers are preallocated for this driver to use. 
+// const RX_BUFFER_POOL_SIZE: usize = 512 * 5; 
 
+pub static MEMPOOL: Once<MutexIrqSafe<Mempool>> = Once::new();
+
+/// Returns a reference to the list of all initialized ixgbe NICs
+pub fn get_mempool() -> Option<&'static MutexIrqSafe<Mempool>> {
+    MEMPOOL.get()
+}
 
 /// A struct representing an ixgbe network interface card.
 pub struct IxgbeNic {
@@ -230,9 +239,16 @@ impl IxgbeNic {
         // store the mac address of this device
         let mac_addr_hardware = Self::read_mac_address_from_nic(&mut mapped_registers_mac);
 
+        let mut mempool = get_mempool().unwrap_or_else(||
+        {
+            let pool = Mempool::new(num_rx_descriptors as usize * 6).expect("couldn't create mempool");
+            MEMPOOL.call_once(|| MutexIrqSafe::new(pool));
+            get_mempool().unwrap()
+        }).lock();
+
         // create the rx descriptor queues
         let rx_registers_unusable = rx_mapped_registers.split_off(IXGBE_NUM_RX_QUEUES_ENABLED as usize);
-        let rx_queues = Self::rx_init(&mut mapped_registers1, &mut mapped_registers2, rx_mapped_registers, num_rx_descriptors)?;
+        let rx_queues = Self::rx_init(&mut mapped_registers1, &mut mapped_registers2, rx_mapped_registers, num_rx_descriptors, &mut mempool)?;
         
          // create the tx descriptor queues
         let tx_registers_unusable = tx_mapped_registers.split_off(IXGBE_NUM_TX_QUEUES_ENABLED as usize);
@@ -269,7 +285,6 @@ impl IxgbeNic {
         };
 
         info!("Link is up with speed: {} Mb/s", ixgbe_nic.link_speed() as u32);
-
         Ok(MutexIrqSafe::new(ixgbe_nic))
     }
 
@@ -288,7 +303,7 @@ impl IxgbeNic {
 
     
     #[inline(always)]
-    pub fn tx_batch(&mut self, qid: usize, batch_size: usize,  buffers: &mut Vec<PacketBufferS>, pool: &mut Vec<PacketBufferS>) -> u16 {
+    pub fn tx_batch(&mut self, qid: usize, batch_size: usize,  buffers: &mut Vec<PacketBuffer>, pool: &mut Mempool) -> u16 {
         // if qid >= self.tx_queues.len() {
         //     return Err("Queue index is out of range");
         // }
@@ -297,7 +312,7 @@ impl IxgbeNic {
     }
 
     #[inline(always)]
-    pub fn rx_batch(&mut self, qid: usize, buffers: &mut Vec<PacketBufferS>, batch_size: usize, pool: &mut Vec<PacketBufferS>) -> u16 {
+    pub fn rx_batch(&mut self, qid: usize, buffers: &mut Vec<PacketBuffer>, batch_size: usize, pool: &mut Mempool) -> u16 {
         // if qid >= self.rx_queues.len() {
         //     error!("Queue index is out of range");
         //     return Err(());
@@ -567,7 +582,8 @@ impl IxgbeNic {
         regs1: &mut IntelIxgbeRegisters1, 
         regs2: &mut IntelIxgbeRegisters2, 
         rx_regs: Vec<RxQueueRegisters>,
-        num_rx_descs: NumDesc
+        num_rx_descs: NumDesc,
+        mempool: &mut Mempool
     ) -> Result<Vec<RxQueueE>, &'static str> {
 
         //CRC offloading
@@ -598,7 +614,7 @@ impl IxgbeNic {
 
         let mut rx_all_queues = Vec::new();
         for rxq_reg in rx_regs {      
-            let mut rxq = RxQueueE::new(rxq_reg, num_rx_descs, None)?;           
+            let mut rxq = RxQueueE::new(rxq_reg, num_rx_descs, None, mempool)?;           
             rx_all_queues.push(rxq);
         }
         regs1.ctrl_ext_no_snoop_disable();        

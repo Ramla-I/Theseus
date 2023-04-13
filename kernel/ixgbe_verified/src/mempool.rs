@@ -1,108 +1,107 @@
 use core::ops::{Deref, DerefMut};
-
 use memory::{PhysicalAddress, BorrowedSliceMappedPages, Mutable, MappedPages, create_contiguous_mapping, VirtualAddress};
-use packet_buffers::*;
+use packet_buffers::EthernetFrame;
 use alloc::vec::Vec;
 use zerocopy::FromBytes;
-
+use core::ptr::Unique;
 use crate::allocator::NIC_MAPPING_FLAGS_CACHED;
 
-// #[derive(FromBytes)]
-// pub struct Buffer {
-//     index: usize,
-// }
-// const_assert_eq!(core::mem::size_of::<Buffer>(), 8);
+#[derive(FromBytes)]
+pub struct PacketBuffer(usize);
+const_assert_eq!(core::mem::size_of::<PacketBuffer>(), 8);
 
+struct BufferMetadata {
+    frame: Unique<EthernetFrame>,
+    paddr: PhysicalAddress,
+    length: u16
+}
 
-// pub type PacketBuffer = Buffer;
+impl Deref for BufferMetadata {
+    type Target = EthernetFrame;
 
-// pub type PacketBuffer = OwnedPtr<Buffer>;
-// const_assert_eq!(core::mem::size_of::<PacketBuffer>(), 8);
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.frame.as_ref()}
+    }
+}
 
-// pub struct OwnedPtr<T>(Unique<T>);
+impl DerefMut for BufferMetadata {
 
-// impl Deref for PacketBuffer {
-//     type Target = Buffer;
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { self.frame.as_mut()}
+    }
+}
 
-//     #[inline(always)]
-//     fn deref(&self) -> &Self::Target {
-//         unsafe { self.0.as_ref()}
-//     }
-// }
-
-// impl DerefMut for PacketBuffer {
-
-//     #[inline(always)]
-//     fn deref_mut(&mut self) -> &mut Self::Target {
-//         unsafe { self.0.as_mut()}
-//     }
-// }
-
-// pub struct Mempool {
-//     buffers: Vec<PacketBuffer>,
-//     buffers_paddr: PhysicalAddress,
-//     buffers_vaddr: VirtualAddress,
-//     buffers_mp: MappedPages,
-// }
+pub struct Mempool {
+    // buffers: BorrowedSliceMappedPages<EthernetFrame, Mutable>,
+    pub buffer_indices: Vec<PacketBuffer>,
+    buffers: Vec<BufferMetadata>,
+    buffers_mp: MappedPages,
+}
 // const_assert_eq!(core::mem::size_of::<MappedPages>(), 40);
 // const_assert_eq!(core::mem::size_of::<Mempool>(), 80);
 
 
-// impl Mempool {
-//     pub fn new(num_buffers: usize) -> Result<Mempool, &'static str> {
-//         let (buffers_mp, buffers_paddr) = create_contiguous_mapping(num_buffers * core::mem::size_of::<EthernetFrame>(), NIC_MAPPING_FLAGS_CACHED)?;
-//         // let (pool_mp, pool_paddr) = create_contiguous_mapping(num_buffers * core::mem::size_of::<Buffer>(), NIC_MAPPING_FLAGS_CACHED)?;
-
-//         // let pool_start_addr = pool_mp.start_address();
-//         let mut buffers = Vec::with_capacity(num_buffers);
-
-//         for i in 0..num_buffers {
-//             // let mut pool_elem = Unique::new((pool_start_addr + i * core::mem::size_of::<Buffer>()).value() as *mut Buffer).ok_or("failed to create a Unique")?;
-//             // unsafe{
-//                 let buffer = Buffer {
-//                     vaddr: (buffers_mp.start_address() + (i * core::mem::size_of::<EthernetFrame>())).value(),
-//                     // buffer: Unique::new((buffers_mp.start_address() + (i * core::mem::size_of::<EthernetFrame>())).value() as *mut EthernetFrame).ok_or("pointer passed to Unique was invalid")?,
-//                     // length: 0,
-//                     // paddr: buffers_paddr + (i * core::mem::size_of::<EthernetFrame>())
-//                 };
-//             // }
-//             buffers.push(buffer);
-//         }
-
-//         Ok(Mempool{ buffers, buffers_paddr, buffers_vaddr: buffers_mp.start_address(), buffers_mp})
-//     }
-
-//     pub fn get_buffer(&mut self) -> Option<PacketBuffer> {
-//         self.buffers.pop()
-//     }
-
-//     pub fn return_buffer(&mut self, buffer: PacketBuffer) {
-//         self.buffers.push(buffer);
-//     }
-
-//     #[inline(always)]
-//     pub fn paddr(&self, buffer: &Buffer) -> PhysicalAddress {
-//         self.buffers_paddr + (buffer.vaddr - self.buffers_vaddr.value()) / core::mem::size_of::<EthernetFrame>()
-//     }
-// }
+impl Mempool {
+    pub(crate) fn new(num_buffers: usize) -> Result<Mempool, &'static str> {
+        let (buffers_mp, buffers_paddr) = create_contiguous_mapping(num_buffers * core::mem::size_of::<EthernetFrame>(), NIC_MAPPING_FLAGS_CACHED)?;
+        let mut buffers = Vec::with_capacity(num_buffers);
+        let mut buffer_indices = Vec::with_capacity(num_buffers);
 
 
-// impl Deref for Mempool {
-//     type Target = Vec<PacketBuffer>;
+        for i in 0..num_buffers {
+            let buffer = BufferMetadata {
+                frame: Unique::new((buffers_mp.start_address() + (i * core::mem::size_of::<EthernetFrame>())).value() as *mut EthernetFrame).ok_or("pointer passed to Unique was invalid")?,
+                paddr: buffers_paddr + (i * core::mem::size_of::<EthernetFrame>()),
+                length: 0,
+            };
+            buffers.push(buffer);
+            buffer_indices.push(PacketBuffer(i));
+        }
 
-//     #[inline(always)]
-//     fn deref(&self) -> &Self::Target {
-//         &self.buffers
-//     }
-// }
+        Ok(Mempool{ buffer_indices, buffers, buffers_mp })
+    }
 
-// impl DerefMut for Mempool {
-//     #[inline(always)]
-//     fn deref_mut(&mut self) -> &mut Self::Target {
-//         &mut self.buffers
-//     }
-// }
+    #[inline(always)]
+    pub fn phys_addr(&self, buffer: &PacketBuffer) -> PhysicalAddress {
+        self.buffers[buffer.0].paddr
+    }
 
-pub struct Mempool {
-    buffers: Vec<PacketBufferS>,
+    #[inline(always)]
+    pub fn buffer_metadata(&self, buffer: &PacketBuffer) -> (PhysicalAddress, u16) {
+        (self.buffers[buffer.0].paddr, self.buffers[buffer.0].length)
+    }
+
+    #[inline(always)]
+    pub fn set_length(&mut self, buffer: &PacketBuffer, length: u16) {
+        self.buffers[buffer.0].length = length;
+    }
+
+    #[inline(always)]
+    pub fn get_length(&mut self, buffer: &PacketBuffer) -> u16 {
+        self.buffers[buffer.0].length
+    }
+
+    #[inline(always)]
+    pub fn frame(&mut self, buffer: &PacketBuffer) -> &mut EthernetFrame {
+        &mut self.buffers[buffer.0]
+    }
+}
+
+impl Deref for Mempool {
+    type Target = Vec<PacketBuffer>;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.buffer_indices
+    }
+}
+
+impl DerefMut for Mempool {
+
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.buffer_indices
+    }
 }

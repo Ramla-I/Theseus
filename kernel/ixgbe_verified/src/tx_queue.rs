@@ -1,6 +1,7 @@
 use memory::{MappedPages, create_contiguous_mapping, BorrowedSliceMappedPages, Mutable, BorrowedMappedPages};
 use packet_buffers::PacketBufferS;
 use zerocopy::FromBytes;
+use crate::mempool::{Mempool, PacketBuffer};
 use crate::regs::{ReportStatusBit, TDHSet};
 use crate::{hal::descriptors::LegacyTxDescriptor};
 use crate::hal::{U7, HThresh};
@@ -34,7 +35,7 @@ pub struct TxQueue<const S: TxState> {
     /// Current transmit descriptor index (first desc that can be used)
     tx_cur: u16,
     /// The packet buffers that descriptors have stored information of
-    tx_bufs_in_use: Vec<PacketBufferS>,
+    tx_bufs_in_use: Vec<PacketBuffer>,
     /// first descriptor that has been used but not checked for transmit completion
     /// or in some cases, it hasn't been used like when we start out and right after clean
     tx_clean: u16,
@@ -98,8 +99,8 @@ impl TxQueue<{TxState::Enabled}> {
     /// 
     /// I don't think this code is very stable, if the TX_CLEAN_THRESHOLD is less than the number of descriptors, and divisor, then we should be good.
     #[inline(always)]
-    pub fn tx_batch(&mut self, batch_size: usize,  buffers: &mut Vec<PacketBufferS>, pool: &mut Vec<PacketBufferS>) -> u16 {
-        const TX_CLEAN_THRESHOLD: u16 = 32; // make sure this is less than and an even divisor fo the queue size
+    pub fn tx_batch(&mut self, batch_size: usize,  buffers: &mut Vec<PacketBuffer>, pool: &mut Mempool) -> u16 {
+        const TX_CLEAN_THRESHOLD: u16 = 64; // make sure this is less than and an even divisor fo the queue size
         // error!("before cleaning: tx_cur = {}, tx_clean ={}", self.tx_cur, self.tx_clean);
 
         // let mut descs_to_clean = self.tx_cur as i32 - self.tx_clean as i32;
@@ -139,7 +140,8 @@ impl TxQueue<{TxState::Enabled}> {
                 // }
                 let rs_bit = if (self.tx_cur % TX_CLEAN_THRESHOLD) == TX_CLEAN_THRESHOLD - 1 { self.rs_bit.value() } else { 0 };
                 // error!("rs_bit = {}", rs_bit);
-                self.tx_descs[self.tx_cur as usize].send(packet.phys_addr(), packet.length, rs_bit);
+                let (paddr, length) = pool.buffer_metadata(&packet);
+                self.tx_descs[self.tx_cur as usize].send(paddr, length, rs_bit);
                 self.tx_bufs_in_use.push(packet);
     
                 self.tx_cur = tx_next;
@@ -220,8 +222,8 @@ impl TxQueue<{TxState::Enabled}> {
     /// Removes multiples of `TX_CLEAN_BATCH` packets from `queue`.    
     /// (code taken from https://github.com/ixy-languages/ixy.rs/blob/master/src/ixgbe.rs#L1016)
     #[inline(always)]
-    fn tx_clean(&mut self, used_buffers: &mut Vec<PacketBufferS>)  {
-        const TX_CLEAN_BATCH: u16 = 32;
+    fn tx_clean(&mut self, used_buffers: &mut Mempool)  {
+        const TX_CLEAN_BATCH: u16 = 64;
         let head = self.head_wb.value.read() as u16;
         // error!("head = {}", head);
 

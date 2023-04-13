@@ -171,12 +171,14 @@ impl LegacyRxDescriptor {
         self.other.write(0);
     }
 
+    #[inline(always)]
     pub fn set_packet_address(&mut self, packet_buffer_address: PhysicalAddress) {
         self.phys_addr.write(packet_buffer_address.value() as u64);
         self.other.write(0);
     }
 
     /// Returns (descriptor done bit, packet length)
+    #[inline(always)]
     pub fn rx_metadata(&self) -> (bool, u16) {
         let metadata = self.other.read();
         ((metadata & (1 << 32)) == (1 << 32), metadata as u16 & 0xFFFF)
