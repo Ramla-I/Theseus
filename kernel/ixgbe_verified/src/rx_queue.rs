@@ -1,6 +1,6 @@
 use memory::{BorrowedSliceMappedPages, Mutable};
 // use packet_buffers::PacketBufferS;
-use crate::{hal::{*, descriptors::LegacyRxDescriptor}, RxBufferSizeKiB, DEFAULT_RX_BUFFER_SIZE_2KB, L5FilterID, regs::*, FilterParameters, FilterError, mempool::{Mempool, PacketBuffer}};
+use crate::{hal::{*, descriptors::LegacyRxDescriptor}, RxBufferSizeKiB, DEFAULT_RX_BUFFER_SIZE_2KB, L5FilterID, regs::*, FilterParameters, FilterError, mempool::{Mempool, PacketBuffer}, descriptors::AdvancedRxDescriptor};
 // use crate::vec_wrapper::VecWrapper;
 use crate::queue_registers::RxQueueRegisters;
 use crate::NumDesc;
@@ -22,7 +22,7 @@ pub struct RxQueue<const S: RxState> {
     /// Registers for this receive queue
     pub regs: RxQueueRegisters,
     /// Receive descriptors
-    pub rx_descs: BorrowedSliceMappedPages<LegacyRxDescriptor, Mutable>,
+    pub rx_descs: BorrowedSliceMappedPages<AdvancedRxDescriptor, Mutable>,
     /// The number of receive descriptors in the descriptor ring
     pub num_rx_descs: u16,
     /// Current receive descriptor index
@@ -44,7 +44,7 @@ pub struct RxQueue<const S: RxState> {
 impl RxQueue<{RxState::Enabled}> {
     pub(crate) fn new(mut regs: RxQueueRegisters, num_desc: NumDesc, cpu_id: Option<u8>, mempool: &mut Mempool) -> Result<RxQueue<{RxState::Enabled}>, &'static str> {
         // create the descriptor ring
-        let (mut rx_descs, descs_paddr) = create_desc_ring::<LegacyRxDescriptor>(num_desc)?;
+        let (mut rx_descs, descs_paddr) = create_desc_ring::<AdvancedRxDescriptor>(num_desc)?;
         let num_rx_descs = rx_descs.len();
 
         // // create a buffer pool with 2KiB size buffers. This ensures that 1 ethernet frame (which can be 1.5KiB) will always fit in one buffer
@@ -72,7 +72,7 @@ impl RxQueue<{RxState::Enabled}> {
         // regs.rdh_write(0);
         // regs.rdt_write(0);   
         // set the size of the packet buffers(leave default value) and the descriptor format used
-        regs.srrctl_write(DescType::Legacy, RxBufferSizeKiB::Buffer2KiB);
+        regs.srrctl_write(DescType::AdvDesc1Buf, RxBufferSizeKiB::Buffer2KiB);
         regs.srrctl_drop_enable();
         // enable the rx queue and make sure it's enabled
         regs.rxdctl_rxq_enable();
@@ -167,7 +167,7 @@ impl RxQueue<{RxState::Enabled}> {
 }
 
 impl Deref for RxQueue<{RxState::Enabled}> {
-    type Target = BorrowedSliceMappedPages<LegacyRxDescriptor, Mutable>;
+    type Target = BorrowedSliceMappedPages<AdvancedRxDescriptor, Mutable>;
 
     fn deref(&self) -> &Self::Target {
         &self.rx_descs

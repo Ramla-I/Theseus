@@ -91,43 +91,52 @@ impl Descriptor for LegacyTxDescriptor {
 pub struct AdvancedTxDescriptor {
     /// Starting physical address of the receive buffer for the packet.
     pub packet_buffer_address:  Volatile<u64>,
-    /// Length of data buffer
-    pub data_len: Volatile<u16>,
-    /// A multi-part field:
-    /// * `dtyp`: Descriptor Type, occupies bits `[7:4]`,
-    /// * `mac`: options to apply LinkSec and time stamp, occupies bits `[3:2]`.
-    pub dtyp_mac_rsv : Volatile<u8>,
-    /// Command bits
-    pub dcmd:  Volatile<u8>,
-    /// A multi-part field:
-    /// * `paylen`: the size in bytes of the data buffer in host memory.
-    ///   not including the fields that the hardware adds), occupies bits `[31:14]`.
-    /// * `popts`: options to offload checksum calculation, occupies bits `[13:8]`.
-    /// * `sta`: status of the descriptor (whether it's in use or not), occupies bits `[3:0]`.
-    pub paylen_popts_cc_idx_sta: Volatile<u32>,
+    pub other:  Volatile<u64>,
+
+//     /// Length of data buffer
+//     pub data_len: Volatile<u16>,
+//     /// A multi-part field:
+//     /// * `dtyp`: Descriptor Type, occupies bits `[7:4]`,
+//     /// * `mac`: options to apply LinkSec and time stamp, occupies bits `[3:2]`.
+//     pub dtyp_mac_rsv : Volatile<u8>,
+//     /// Command bits
+//     pub dcmd:  Volatile<u8>,
+//     /// A multi-part field:
+//     /// * `paylen`: the size in bytes of the data buffer in host memory.
+//     ///   not including the fields that the hardware adds), occupies bits `[31:14]`.
+//     /// * `popts`: options to offload checksum calculation, occupies bits `[13:8]`.
+//     /// * `sta`: status of the descriptor (whether it's in use or not), occupies bits `[3:0]`.
+//     pub paylen_popts_cc_idx_sta: Volatile<u32>,
 }
 
 impl AdvancedTxDescriptor {
     #[inline(always)]
     pub(crate) fn send(&mut self, transmit_buffer_addr: PhysicalAddress, transmit_buffer_length: u16, rs_bit: u8) {
         self.packet_buffer_address.write(transmit_buffer_addr.value() as u64);
-        self.data_len.write(transmit_buffer_length);
-        self.dtyp_mac_rsv.write(TX_DTYP_ADV);
-        self.paylen_popts_cc_idx_sta.write((transmit_buffer_length as u32) << TX_PAYLEN_SHIFT);
-        self.dcmd.write(TX_CMD_DEXT | TX_CMD_IFCS | TX_CMD_EOP | rs_bit); // ToDo:: REmove RS field because we've set the thresholds
+        self.other.write(
+            (((transmit_buffer_length as u64) << TX_PAYLEN_SHIFT) << 32) | 
+            (((TX_CMD_DEXT | TX_CMD_IFCS | TX_CMD_EOP | rs_bit) as u64) << 24) |
+            ((TX_DTYP_ADV as u64) << 16) | 
+            transmit_buffer_length as u64
+        );
+
+        // self.data_len.write(transmit_buffer_length);
+        // self.dtyp_mac_rsv.write(TX_DTYP_ADV);
+        // self.paylen_popts_cc_idx_sta.write((transmit_buffer_length as u32) << TX_PAYLEN_SHIFT);
+        // self.dcmd.write(TX_CMD_DEXT | TX_CMD_IFCS | TX_CMD_EOP | rs_bit); // ToDo:: REmove RS field because we've set the thresholds
     }
 
-    #[inline(always)]
-    pub fn wait_for_packet_tx(&self) {
-        while (self.paylen_popts_cc_idx_sta.read() as u8 & TX_STATUS_DD) == 0 {
-            // error!("tx desc status: {:#X}", self.desc.read());
-        } 
-    }
+    // #[inline(always)]
+    // pub fn wait_for_packet_tx(&self) {
+    //     while (self.paylen_popts_cc_idx_sta.read() as u8 & TX_STATUS_DD) == 0 {
+    //         // error!("tx desc status: {:#X}", self.desc.read());
+    //     } 
+    // }
 
-    #[inline(always)]
-    pub fn desc_done(&self) -> bool {
-        (self.paylen_popts_cc_idx_sta.read() as u8 & TX_STATUS_DD) == TX_STATUS_DD
-    }
+    // #[inline(always)]
+    // pub fn desc_done(&self) -> bool {
+    //     (self.paylen_popts_cc_idx_sta.read() as u8 & TX_STATUS_DD) == TX_STATUS_DD
+    // }
 
 }
 
@@ -135,10 +144,11 @@ impl Descriptor for AdvancedTxDescriptor {
     /// Set all fields to 0
     fn clear(&mut self) {
         self.packet_buffer_address.write(0);
-        self.paylen_popts_cc_idx_sta.write(0);
-        self.dcmd.write(0);
-        self.dtyp_mac_rsv.write(0);
-        self.data_len.write(0);
+        self.other.write(0);
+        // self.paylen_popts_cc_idx_sta.write(0);
+        // self.dcmd.write(0);
+        // self.dtyp_mac_rsv.write(0);
+        // self.data_len.write(0);
     }
 }
 
@@ -231,15 +241,20 @@ pub struct AdvancedRxDescriptor {
     pub header_buffer_address:  Volatile<u64>,
 }
 
+
+
 impl AdvancedRxDescriptor {
     #[inline(always)]
     pub(crate) fn set_packet_address(&mut self, packet_buffer_address: PhysicalAddress) {
         self.packet_buffer_address.write(packet_buffer_address.value() as u64);
+        self.header_buffer_address.write(0);
     }
 
+    /// Returns (descriptor done bit, packet length)
     #[inline(always)]
-    pub(crate) fn reset_status(&mut self) {
-        self.header_buffer_address.write(0);
+    pub fn rx_metadata(&self) -> (bool, u16) {
+        let metadata = self.header_buffer_address.read();
+        ((metadata & RX_STATUS_DD as u64) == RX_STATUS_DD as u64, (metadata >> 32) as u16 & 0xFFFF)
     }
 
     #[inline(always)]

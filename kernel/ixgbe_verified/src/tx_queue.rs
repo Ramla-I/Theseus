@@ -3,7 +3,7 @@ use packet_buffers::PacketBufferS;
 use zerocopy::FromBytes;
 use crate::mempool::{Mempool, PacketBuffer};
 use crate::regs::{ReportStatusBit, TDHSet};
-use crate::{hal::descriptors::LegacyTxDescriptor};
+use crate::{hal::descriptors::AdvancedTxDescriptor};
 use crate::hal::{U7, HThresh};
 use crate::queue_registers::TxQueueRegisters;
 use crate::{NumDesc};
@@ -29,7 +29,7 @@ pub struct TxQueue<const S: TxState> {
     /// Registers for this transmit queue
     pub(crate) regs: TxQueueRegisters,
     /// Transmit descriptors 
-    pub(crate) tx_descs: BorrowedSliceMappedPages<LegacyTxDescriptor, Mutable>,
+    pub(crate) tx_descs: BorrowedSliceMappedPages<AdvancedTxDescriptor, Mutable>,
     /// The number of transmit descriptors in the descriptor ring
     num_tx_descs: u16,
     /// Current transmit descriptor index (first desc that can be used)
@@ -56,7 +56,7 @@ pub struct TransmitHead {
 
 impl TxQueue<{TxState::Enabled}> {
     pub(crate) fn new(mut regs: TxQueueRegisters, num_desc: NumDesc, cpu_id: Option<u8>) -> Result<(TxQueue<{TxState::Enabled}>, TDHSet), &'static str> {
-        let (tx_descs, paddr) = create_desc_ring::<LegacyTxDescriptor>(num_desc)?;
+        let (tx_descs, paddr) = create_desc_ring::<AdvancedTxDescriptor>(num_desc)?;
         let num_tx_descs = tx_descs.len();
         let (head_wb_mp, head_wb_paddr) = create_contiguous_mapping(core::mem::size_of::<TransmitHead>(), NIC_MAPPING_FLAGS_CACHED)?;
 
@@ -258,7 +258,7 @@ impl TxQueue<{TxState::Enabled}> {
 
 
 impl Deref for TxQueue<{TxState::Enabled}> {
-    type Target = BorrowedSliceMappedPages<LegacyTxDescriptor, Mutable>;
+    type Target = BorrowedSliceMappedPages<AdvancedTxDescriptor, Mutable>;
 
     fn deref(&self) -> &Self::Target {
         &self.tx_descs
@@ -319,36 +319,36 @@ impl TxQueue<{TxState::Enabled}> {
     //     pkts_sent
     // }
 
-    fn tx_clean_pseudo(&mut self) {
-        const TX_CLEAN_BATCH: usize = 32;
-        let mut tx_clean = self.tx_clean as usize;
-        let tx_cur = self.tx_cur;
+    // fn tx_clean_pseudo(&mut self) {
+    //     const TX_CLEAN_BATCH: usize = 32;
+    //     let mut tx_clean = self.tx_clean as usize;
+    //     let tx_cur = self.tx_cur;
 
-        loop {
-            let mut cleanable = tx_cur as i32 - tx_clean as i32;
+    //     loop {
+    //         let mut cleanable = tx_cur as i32 - tx_clean as i32;
 
-            if cleanable < 0 {
-                cleanable += self.num_tx_descs as i32;
-            }
+    //         if cleanable < 0 {
+    //             cleanable += self.num_tx_descs as i32;
+    //         }
     
-            if cleanable < TX_CLEAN_BATCH as i32 {
-                break;
-            }
+    //         if cleanable < TX_CLEAN_BATCH as i32 {
+    //             break;
+    //         }
     
-            let mut cleanup_to = tx_clean + TX_CLEAN_BATCH - 1;
+    //         let mut cleanup_to = tx_clean + TX_CLEAN_BATCH - 1;
 
-            if cleanup_to >= self.num_tx_descs as usize {
-                cleanup_to -= self.num_tx_descs as usize;
-            }
+    //         if cleanup_to >= self.num_tx_descs as usize {
+    //             cleanup_to -= self.num_tx_descs as usize;
+    //         }
 
-            if self.tx_descs[cleanup_to].desc_done() {
-                tx_clean = (cleanup_to + 1) % self.num_tx_descs as usize;
-            } else {
-                break;
-            }
-        }
-        self.tx_clean = tx_clean as u16;
-    }
+    //         if self.tx_descs[cleanup_to].desc_done() {
+    //             tx_clean = (cleanup_to + 1) % self.num_tx_descs as usize;
+    //         } else {
+    //             break;
+    //         }
+    //     }
+    //     self.tx_clean = tx_clean as u16;
+    // }
 }
 
 #[derive(PartialEq, Eq)]
