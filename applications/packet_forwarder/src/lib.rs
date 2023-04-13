@@ -41,11 +41,11 @@ use alloc::string::String;
 use ixgbe_verified::{
     get_ixgbe_nics_list, IxgbeStats,
     allocator::{init_rx_buf_pool},
-    mempool::*
 };
 // use packet_buffers::{PacketBufferS, EthernetFrame};
 use getopts::{Matches, Options};
 use hpet::get_hpet;
+use packet_buffers::PacketBufferS;
 use pmu_x86::EventType;
 
 // const DEST_MAC_ADDR: [u8; 6] = [0xa0, 0x36, 0x9f, 0x1d, 0x94, 0x4c];
@@ -142,16 +142,16 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
 
     // create the buffers to store packets. 
     // They should have a large capacity so that no heap allocation is done during the benchmark
-    let mut received_buffers0: Vec<PacketBuffer> = Vec::with_capacity(DESC_RING_SIZE * 2);
-    let mut received_buffers1: Vec<PacketBuffer> = Vec::with_capacity(DESC_RING_SIZE * 2);
+    let mut received_buffers0: Vec<PacketBufferS> = Vec::with_capacity(DESC_RING_SIZE * 2);
+    let mut received_buffers1: Vec<PacketBufferS> = Vec::with_capacity(DESC_RING_SIZE * 2);
     
     // // Create a pool of unused packet buffers
     // let mut pool0 = init_rx_buf_pool(DESC_RING_SIZE * 2).expect("failed to init buf pool");
     // let mut pool1 = init_rx_buf_pool(DESC_RING_SIZE * 2).expect("failed to init buf pool");
 
     // bad hack, should separate mempool from rx queue
-    let mut pool0 = dev0.get_mempool(0);
-    let mut pool1 = dev1.get_mempool(0);
+    let mut pool0 = init_rx_buf_pool(DESC_RING_SIZE * 2).expect("failed to init buf pool");
+    let mut pool1 = init_rx_buf_pool(DESC_RING_SIZE * 2).expect("failed to init buf pool");
 
 
     // clear the stats registers, and create an object to store the NIC stats during the benchmark

@@ -2,28 +2,6 @@ pub(crate) mod descriptors;
 pub(crate) mod regs;
 
 
-/// The list of valid filter priority levels that can be used for the L5 filters. They range from (0,7).
-#[repr(u8)]
-#[derive(PartialEq, Eq, Clone, Copy)]
-pub enum L5FilterPriority {
-    P0,
-    P1,
-    P2,
-    P3,
-    P4,
-    P5,
-    P6,
-    P7
-}
-
-/// Options for the filter protocol used in the 5-tuple filters.
-#[derive(PartialEq, Eq, Clone, Copy)]
-pub enum L5FilterProtocol {
-    Tcp = 0,
-    Udp = 1,
-    Sctp = 2,
-    Other = 3
-}
 
 use num_enum::TryFromPrimitive;
 
@@ -284,4 +262,28 @@ pub enum DescType {
     // AdvDesc1Buf = 1,
     // AdvDescHeadSplit = 2,
     // AdvDescHeadSplitAlways = 5,
+}
+
+
+/// The list of valid filter priority levels that can be used for the L5 filters. They range from (0,7).
+#[repr(u8)]
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum L5FilterPriority {
+    P0,
+    P1,
+    P2,
+    P3,
+    P4,
+    P5,
+    P6,
+    P7
+}
+
+/// Options for the filter protocol used in the 5-tuple filters.
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum L5FilterProtocol {
+    Tcp = 0,
+    Udp = 1,
+    Sctp = 2,
+    Other = 3
 }

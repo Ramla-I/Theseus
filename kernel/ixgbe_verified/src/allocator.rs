@@ -29,30 +29,8 @@ pub const NIC_MAPPING_FLAGS_CACHED: EntryFlags = EntryFlags::from_bits_truncate(
 
 
 pub fn allocate_device_register_memory(base_addr: &PciBaseAddr, mem_size_in_bytes: &PciMemSize, mapping_flags: EntryFlags) -> Result<MappedPages, &'static str> {
-    allocate_memory(*base_addr.deref(), *mem_size_in_bytes.deref() as usize, mapping_flags)
+    memory::allocate_memory(*base_addr.deref(), *mem_size_in_bytes.deref() as usize, mapping_flags)
 }
-
-/// Helper function to allocate memory at required address
-/// 
-/// # Arguments
-/// * `mem_base`: starting physical address of the region that need to be allocated
-/// * `mem_size_in_bytes`: size of the region that needs to be allocated 
-pub fn allocate_memory(mem_base: PhysicalAddress, mem_size_in_bytes: usize, mapping_flags: EntryFlags) -> Result<MappedPages, &'static str> {
-    // set up virtual pages and physical frames to be mapped
-    let pages_nic = allocate_pages_by_bytes(mem_size_in_bytes)
-        .ok_or("NicInit::mem_map(): couldn't allocate virtual page!")?;
-    let frames_nic = allocate_frames_by_bytes_at(mem_base, mem_size_in_bytes)
-        .map_err(|_e| "NicInit::mem_map(): couldn't allocate physical frames!")?;
-
-    // debug!("NicInit: memory base: {:#X}, memory size: {}", mem_base, mem_size_in_bytes);
-
-    let kernel_mmi_ref = get_kernel_mmi_ref().ok_or("NicInit::mem_map(): KERNEL_MMI was not yet initialized!")?;
-    let mut kernel_mmi = kernel_mmi_ref.lock();
-    let nic_mapped_page = kernel_mmi.page_table.map_allocated_pages_to(pages_nic, frames_nic, mapping_flags)?;
-
-    Ok(nic_mapped_page)
-}
-
 
 /// Returns a buffer pool from where packet buffers are taken and returned
 /// 

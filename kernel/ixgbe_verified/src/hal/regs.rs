@@ -176,7 +176,11 @@ pub struct IntelIxgbeRegisters2 {
 
     /// MAC Core Control 0 Register 
     hlreg0:                             Volatile<u32>,          // 0x4240;
-    _padding13:                         [u8; 92],               // 0x4244 - 0x429F
+    _padding13:                         [u8; 80],               // 0x4244 - 0x4293
+
+    /// MAC Flow Control Register
+    mflcn:                              Volatile<u32>,          // 0x4294;
+    _padding13a:                        [u8; 8],                // 0x4298 - 0x429F
 
     /// Auto-Negotiation Control Register
     autoc:                              Volatile<u32>,          // 0x42A0;
@@ -194,7 +198,16 @@ pub struct IntelIxgbeRegisters2 {
 
     /// DCB Transmit Descriptor Plane Control and Status
     rttdcs:                             Volatile<u32>,          // 0x4900;
-    _padding16:                         [u8; 380],              // 0x4904 - 0x4A7F
+    
+    /// DCB Transmit Descriptor Plane Queue Select
+    rttdqsel:                          Volatile<u32>,           // 0x4904;  
+
+    /// DCB Transmit Descriptor Plane T1 Config
+    rttdt1c:                            Volatile<u32>,          // 0x4908 
+    _padding16:                         [u8; 68],               // 0x490C - 0x494F
+
+    txpbthresh:                         [Volatile<u32>; 8],     // 0x4950;
+    _padding16a:                        [u8; 272],              // 0x4970 - 0x4A7F
 
     /// DMA Tx Control
     dmatxctl:                           Volatile<u32>,          // 0x4A80;
@@ -258,6 +271,13 @@ const_assert_eq!(FilterCtrlFlags::all().bits() & 0xFFFF_F8FD, 0);
 pub struct FCTRLSet(bool);
 pub struct RXCTRLDisabled(bool);
 
+/// Enable CRC strip by HW
+pub const HLREG0_CRC_STRIP:             u32 = 1 << 1;
+/// Enable CRC strip by HW
+pub const RDRXCTL_CRC_STRIP:            u32 = 1;
+/// These 5 bits have to be cleared by software
+pub const RDRXCTL_RSCFRSTSIZE:          u32 = 0x1F << 17;
+
 impl IntelIxgbeRegisters2 {
     // Any function that writes to rdrxcrtl must make sure these bits are set
     const RDRXCTL_BASE_VAL: u32 = (1 << 26) | (1 << 25);
@@ -277,6 +297,14 @@ impl IntelIxgbeRegisters2 {
 
     pub fn rdrxctl_clear_rsc_frst_size_bits(&mut self) {
         self.rdrxctl.write(self.rdrxctl.read() & !RDRXCTL_RSCFRSTSIZE);
+    }
+
+    /// Sets values of bits opposite to what the HW has set them to
+    /// RSCFRSTSIZE [21:17] should be set to 0
+    /// RSCACKC [25] should be set to 1
+    /// FCOE_WRFIX [26] should be set to 1
+    pub fn rdrxctl_set_reserved_bits(&mut self) {
+        self.rdrxctl.write((self.rdrxctl.read() | Self::RDRXCTL_BASE_VAL) & !RDRXCTL_RSCFRSTSIZE);
     }
 
     pub fn rdrxctl_dma_init_done(&self) -> bool {
@@ -301,12 +329,17 @@ impl IntelIxgbeRegisters2 {
             fcrtl.write(0);
         }
     } 
-    
+
     pub fn fcrth_clear(&mut self) {
         for fcrth in self.fcrth.iter_mut() {
             fcrth.write(0);
         }
     } 
+
+    /// Sets the Receive Threshold High (RTH) bits [18:5] for reg 0
+    pub fn fcrth0_set_rth(&mut self, rth: u16) {
+        self.fcrth[0].write((rth as u32  & 0x3FFF) << 5);
+    }
 
     pub fn fcrtv_clear(&mut self) {
         self.fcrtv.write(0);
@@ -314,6 +347,10 @@ impl IntelIxgbeRegisters2 {
 
     pub fn fccfg_clear(&mut self) {
         self.fccfg.write(0);
+    }
+
+    pub fn fccfg_enable_transmit_flow_control(&mut self) {
+        self.fccfg.write(self.fccfg.read() | (1 << 3));
     }
 
     // separate function because it can never be set to 0
@@ -325,13 +362,13 @@ impl IntelIxgbeRegisters2 {
         self.rxpbsize[reg_idx as usize].write((size as u32) << 10);
     }
 
-    pub fn hlreg0_crc_en(&mut self) {
-        self.hlreg0.write(self.hlreg0.read() | HLREG0_TXCRCEN);
-    }
+    // pub fn hlreg0_crc_en(&mut self) {
+    //     self.hlreg0.write(self.hlreg0.read() | HLREG0_TXCRCEN);
+    // }
 
-    pub fn hlreg0_tx_pad_en(&mut self) {
-        self.hlreg0.write(self.hlreg0.read() | HLREG0_TXPADEN);
-    }
+    // pub fn hlreg0_tx_pad_en(&mut self) {
+    //     self.hlreg0.write(self.hlreg0.read() | HLREG0_TXPADEN);
+    // }
 
     // Resolves DPDK Bug 21
     pub fn fctrl_write(&mut self, val: FilterCtrlFlags, _rx_disabled: RXCTRLDisabled) -> FCTRLSet {
@@ -361,6 +398,22 @@ impl IntelIxgbeRegisters2 {
 
     pub fn rxcsum_enable_rss_writeback(&mut self) {
         self.rxcsum.write(RXCSUM_PCSD);
+    }
+
+    pub fn mflcn_enable_receive_flow_control(&mut self) {
+        self.mflcn.write(self.mflcn.read() | (1 << 3));
+    }
+
+    pub fn rttdqsel_set_queue_id(&mut self, queue: u8) {
+        self.rttdqsel.write((queue & 0x7F) as u32);
+    }
+
+    pub fn rttdt1c_write(&mut self, credit_refill: u16) {
+        self.rttdt1c.write(credit_refill as u32 & 0x3FFF);
+    }
+
+    pub fn txpbthresh0_write(&mut self, thresh: u16) {
+        self.txpbthresh[0].write(thresh as u32 & 0x3FF);
     }
 }
 
@@ -474,8 +527,11 @@ pub struct IntelIxgbeRegisters3 {
     _padding3:                          [u8; 96],               // 0xEC20 - 0xEC7F
 
     /// Multiple Receive Queues Command Register
-    mrqc:                           Volatile<u32>,          // 0xEC80;
-    _padding4:                          [u8; 5004],             // 0xEC84 - 0x1000F
+    mrqc:                               Volatile<u32>,          // 0xEC80;
+    _padding4:                          [u8; 1916],             // 0xEC84 - 0xF3FF
+
+    pub pfuta:                          [Volatile<u32>;128],    // 0xF400 - 00xF5FF
+    _padding4a:                         [u8; 2576],             // 0xF600 - 0x1000F
 
     /// EEPROM/ Flash Control Register
     eec:                                Volatile<u32>,          // 0x10010
@@ -620,12 +676,6 @@ pub const LINKS_SPEED_MASK:             u32 = 0x3 << 28;
 pub const HLREG0_TXCRCEN:               u32 = 1;
 /// Tx Pad Frame Enable (bit 10)
 pub const HLREG0_TXPADEN:               u32 = 1 << 10;
-/// Enable CRC strip by HW
-pub const HLREG0_CRC_STRIP:             u32 = 1 << 1;
-/// Enable CRC strip by HW
-pub const RDRXCTL_CRC_STRIP:            u32 = 1;
-/// These 5 bits have to be cleared by software
-pub const RDRXCTL_RSCFRSTSIZE:          u32 = 0x1F << 17;
 
 /// DCB Arbiters Disable
 pub const RTTDCS_ARBDIS:                u32 = 1 << 6;
@@ -712,42 +762,42 @@ pub const EITR_ITR_INTERVAL_SHIFT:      u32 = 3;
 /// Enables the corresponding interrupt in the EICR register by setting the bit
 pub const EIMS_INTERRUPT_ENABLE:        u32 = 1;
 
-/// The number of msi-x vectors this device can have. 
-/// It can be set from PCI space, but we took the value from the data sheet.
-pub const IXGBE_MAX_MSIX_VECTORS:     usize = 64;
+// /// The number of msi-x vectors this device can have. 
+// /// It can be set from PCI space, but we took the value from the data sheet.
+// pub const IXGBE_MAX_MSIX_VECTORS:     usize = 64;
 
-/// Table that contains msi-x vector entries. 
-/// It is mapped to a physical memory region specified by the BAR from the PCI space.
-#[derive(FromBytes)]
-#[repr(C)]
-pub struct MsixVectorTable {
-    pub msi_vector:     [MsixVectorEntry; IXGBE_MAX_MSIX_VECTORS],
-}
+// /// Table that contains msi-x vector entries. 
+// /// It is mapped to a physical memory region specified by the BAR from the PCI space.
+// #[derive(FromBytes)]
+// #[repr(C)]
+// pub struct MsixVectorTable {
+//     pub msi_vector:     [MsixVectorEntry; IXGBE_MAX_MSIX_VECTORS],
+// }
 
-/// A single Message Signaled Interrupt entry.
-/// It contains the interrupt number for this vector and the core this interrupt is redirected to.
-#[derive(FromBytes)]
-#[repr(C)]
-pub struct MsixVectorEntry {
-    /// The lower portion of the address for the memory write transaction.
-    /// This part contains the apic id which the interrupt will be redirected to.
-    pub msg_lower_addr:         Volatile<u32>,
-    /// The upper portion of the address for the memory write transaction.
-    pub msg_upper_addr:         Volatile<u32>,
-    /// The data portion of the msi vector which contains the interrupt number.
-    pub msg_data:               Volatile<u32>,
-    /// The control portion which contains the interrupt mask bit.
-    pub vector_control:         Volatile<u32>,
-}
+// /// A single Message Signaled Interrupt entry.
+// /// It contains the interrupt number for this vector and the core this interrupt is redirected to.
+// #[derive(FromBytes)]
+// #[repr(C)]
+// pub struct MsixVectorEntry {
+//     /// The lower portion of the address for the memory write transaction.
+//     /// This part contains the apic id which the interrupt will be redirected to.
+//     pub msg_lower_addr:         Volatile<u32>,
+//     /// The upper portion of the address for the memory write transaction.
+//     pub msg_upper_addr:         Volatile<u32>,
+//     /// The data portion of the msi vector which contains the interrupt number.
+//     pub msg_data:               Volatile<u32>,
+//     /// The control portion which contains the interrupt mask bit.
+//     pub vector_control:         Volatile<u32>,
+// }
 
-/// A constant which indicates the region that is reserved for interrupt messages
-pub const MSIX_INTERRUPT_REGION:    u32 = 0xFEE << 20;
-/// The location in the lower address register where the destination core id is written
-pub const MSIX_DEST_ID_SHIFT:       u32 = 12;
-/// The bits in the lower address register that need to be cleared and set
-pub const MSIX_ADDRESS_BITS:        u32 = 0xFFFF_FFF0;
-/// Clear the vector control field to unmask the interrupt
-pub const MSIX_UNMASK_INT:          u32 = 0;
+// /// A constant which indicates the region that is reserved for interrupt messages
+// pub const MSIX_INTERRUPT_REGION:    u32 = 0xFEE << 20;
+// /// The location in the lower address register where the destination core id is written
+// pub const MSIX_DEST_ID_SHIFT:       u32 = 12;
+// /// The bits in the lower address register that need to be cleared and set
+// pub const MSIX_ADDRESS_BITS:        u32 = 0xFFFF_FFF0;
+// /// Clear the vector control field to unmask the interrupt
+// pub const MSIX_UNMASK_INT:          u32 = 0;
 
 const_assert_eq!(core::mem::size_of::<RegistersTx>(), 64);
 
@@ -816,6 +866,7 @@ impl RegistersTx {
         TDHSet(true)
     }
 
+    // make explicit the dependency with wthresh
     pub fn tdwba_set_and_enable(&mut self, addr: u64) {
         self.tdwbah.write((addr >> 32) as u32);
         self.tdwbal.write(addr as u32 | 0x1);

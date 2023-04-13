@@ -86,8 +86,6 @@ impl<const N: MTU> PacketBuffer<N> {
         )?;
         
         let buffer = mp.into_borrowed_mut(0).map_err(|(_mp, err)| err)?;
-        // let v_addr = mp.start_address().value() as u64;
-        // core::mem::forget(mp);
         Ok(PacketBuffer {
             phys_addr: starting_phys_addr,
             length: length_in_bytes,
@@ -99,27 +97,22 @@ impl<const N: MTU> PacketBuffer<N> {
     pub fn phys_addr(&self) -> PhysicalAddress {
         self.phys_addr
     }
-
-    // /// Returns the size of the buffer without the bytes used for the ethernet header and checksum
-    // pub fn ethernet_payload_len(&self) -> u16 {
-    //     self.length - ETHERNET_HEADER_LEN_IN_BYTES - CRC_CHECKSUM_LEN_IN_BYTES
-    // }
 }
 
-// impl<const N: MTU> Deref for PacketBuffer<N> {
-//     type Target = EthernetFrame;
-//     #[inline(always)]
-//     fn deref(&self) -> &EthernetFrame {
-//         &self.buffer
-//     }
-// }
+impl<const N: MTU> Deref for PacketBuffer<N> {
+    type Target = EthernetFrame;
+    #[inline(always)]
+    fn deref(&self) -> &EthernetFrame {
+        &self.buffer
+    }
+}
 
-// impl<const N: MTU> DerefMut for PacketBuffer<N> {
-//     #[inline(always)]
-//     fn deref_mut(&mut self) -> &mut EthernetFrame {
-//         &mut self.buffer
-//     }
-// }
+impl<const N: MTU> DerefMut for PacketBuffer<N> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut EthernetFrame {
+        &mut self.buffer
+    }
+}
 
 
 /// A struct that makes it easy to access different fields of an ethernet frame

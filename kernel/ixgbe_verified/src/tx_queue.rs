@@ -1,7 +1,9 @@
-use memory::{MappedPages, create_contiguous_mapping, BorrowedSliceMappedPages, Mutable};
+use memory::{MappedPages, create_contiguous_mapping, BorrowedSliceMappedPages, Mutable, BorrowedMappedPages};
+use packet_buffers::PacketBufferS;
 use zerocopy::FromBytes;
 use crate::regs::ReportStatusBit;
 use crate::{hal::descriptors::LegacyTxDescriptor};
+use crate::hal::{U7, HThresh};
 use crate::queue_registers::TxQueueRegisters;
 use crate::{NumDesc};
 use crate::allocator::*;
@@ -11,9 +13,8 @@ use core::{ops::{DerefMut, Deref}};
 use alloc::{
     vec::Vec,
 };
-use hal::regs::TDHSet;
 use volatile::Volatile;
-use mempool::*;
+// use mempool::*;
 
 pub type TxQueueE = TxQueue<{TxState::Enabled}>;
 pub type TxQueueD = TxQueue<{TxState::Disabled}>;
@@ -33,7 +34,7 @@ pub struct TxQueue<const S: TxState> {
     /// Current transmit descriptor index (first desc that can be used)
     tx_cur: u16,
     /// The packet buffers that descriptors have stored information of
-    tx_bufs_in_use: Vec<PacketBuffer>,
+    tx_bufs_in_use: Vec<PacketBufferS>,
     /// first descriptor that has been used but not checked for transmit completion
     /// or in some cases, it hasn't been used like when we start out and right after clean
     tx_clean: u16,
@@ -41,44 +42,55 @@ pub struct TxQueue<const S: TxState> {
     /// This in itself doesn't guarantee anything but we use this value when setting the cpu id for interrupts and DCA.
     cpu_id : Option<u8>,
     /// value of Report Status flag in the descriptors
-    rs_bit: u8,
+    rs_bit: ReportStatusBit,
     /// descriptor write back address
-    head_wb: BoxRefMut<MappedPages, TransmitHead>,
+    head_wb: BorrowedMappedPages<TransmitHead, Mutable>,
 }
 
 #[derive(FromBytes)]
-#[repr(C, align(64))]
+#[repr(C)]
 pub struct TransmitHead {
     pub value: Volatile<u32>,
-    pub value2: Volatile<u32>,
-    pub value3: Volatile<u32>,
 }
 
 impl TxQueue<{TxState::Enabled}> {
-    pub(crate) fn new(mut regs: TxQueueRegisters, num_desc: NumDesc, cpu_id: Option<u8>, rs_bit: ReportStatusBit) -> Result<(TxQueue<{TxState::Enabled}>, TDHSet), &'static str> {
+    pub(crate) fn new(mut regs: TxQueueRegisters, num_desc: NumDesc, cpu_id: Option<u8>) -> Result<TxQueue<{TxState::Enabled}>, &'static str> {
         let (tx_descs, paddr) = create_desc_ring::<LegacyTxDescriptor>(num_desc)?;
         let num_tx_descs = tx_descs.len();
+        let (head_wb_mp, head_wb_paddr) = create_contiguous_mapping(core::mem::size_of::<TransmitHead>(), NIC_MAPPING_FLAGS_CACHED)?;
 
         // write the physical address of the tx descs array
         regs.tdbal.write(paddr.value() as u32); 
         regs.tdbah.write((paddr.value() >> 32) as u32); 
-
         // write the length (in total bytes) of the tx descs array
         let tdlen_set = regs.tdlen_write(num_desc);               
+       
+        // Set tx descriptor pre-fetch threshold and host threshold 
+        let pthresh = U7::B5 | U7::B4 | U7::B3 | U7::B2;// U7::B5 | U7::B2; // b100100 = 36 (DPDK), TInyNF uses 60 b111100
+        let hthresh = HThresh::B2; //HThresh::B3; // b1000 = 8 (DPDK), TinyNF uses 4  b100
+        let wthresh = U7::zero(); // b100 = 4 
+        let rs_bit = regs.txdctl_write_wthresh(wthresh); 
+        regs.txdctl_write_pthresh_hthresh(pthresh, hthresh); 
         
+        // here we should set the head writeback address
+        regs.tdwba_set_and_enable(head_wb_paddr.value() as u64);
+        regs.dca_txctrl_disable_relaxed_ordering_head_wb();
         // write the head index and the tail index (both 0 initially because there are no tx requests yet)
         let tdh_set = regs.tdh_write(0, tdlen_set);
         regs.tdt_write(0);
+        
+        // enable tx queue and make sure it's enabled
+        regs.txdctl_txq_enable(tdh_set); 
+        const TX_Q_ENABLE: u32 = 1 << 25;
+        while regs.txdctl_read() & TX_Q_ENABLE == 0 {} 
 
-        let (head_wb, desc_wb_paddr) = create_descriptor_writeback_field()?;
-
-        // regs.tdwba_set_and_enable(desc_wb_paddr.value() as u64);
-
-        // Not sure why but listed in TinyNF as
-        //"INTERPRETATION-MISSING: We must disable relaxed ordering of head pointer write-back, since it could cause the head pointer to be updated backwards"
-        // regs.dca_txctrl_disable_relaxed_ordering_head_wb();
-
-        Ok((TxQueue { id: regs.id() as u8, regs, tx_descs, num_tx_descs: num_tx_descs as u16, tx_cur: 0, tx_bufs_in_use: Vec::with_capacity(num_tx_descs), tx_clean: 0, cpu_id, rs_bit: rs_bit.value(), head_wb }, tdh_set))
+        Ok(TxQueue { 
+            id: regs.id() as u8, 
+            regs, tx_descs, num_tx_descs: num_tx_descs as u16, 
+            tx_cur: 0, tx_bufs_in_use: Vec::with_capacity(num_tx_descs), 
+            tx_clean: 0, cpu_id, 
+            rs_bit: rs_bit, 
+            head_wb: head_wb_mp.into_borrowed_mut(0).map_err(|(_mp, err)| err)? })
     }
 
     /// Sends a maximum of `batch_size` number of packets from the stored `buffers`.
@@ -86,7 +98,7 @@ impl TxQueue<{TxState::Enabled}> {
     /// 
     /// I don't think this code is very stable, if the TX_CLEAN_THRESHOLD is less than the number of descriptors, and divisor, then we should be good.
     #[inline(always)]
-    pub fn tx_batch(&mut self, batch_size: usize,  buffers: &mut Vec<PacketBuffer>, pool: &mut Mempool) -> u16 {
+    pub fn tx_batch(&mut self, batch_size: usize,  buffers: &mut Vec<PacketBufferS>, pool: &mut Vec<PacketBufferS>) -> u16 {
         const TX_CLEAN_THRESHOLD: u16 = 32; // make sure this is less than and an even divisor fo the queue size
         // error!("before cleaning: tx_cur = {}, tx_clean ={}", self.tx_cur, self.tx_clean);
 
@@ -112,7 +124,6 @@ impl TxQueue<{TxState::Enabled}> {
         // }
 
         self.tx_clean(pool);
-
         let mut pkts_sent = 0;
 
         for _ in 0..batch_size {
@@ -126,9 +137,9 @@ impl TxQueue<{TxState::Enabled}> {
                 //     error!("zero sized packet!");
                 //     panic!();
                 // }
-                let rs_bit = if (self.tx_cur % TX_CLEAN_THRESHOLD) == TX_CLEAN_THRESHOLD - 1 { self.rs_bit } else { 0 };
+                let rs_bit = if (self.tx_cur % TX_CLEAN_THRESHOLD) == TX_CLEAN_THRESHOLD - 1 { self.rs_bit.value() } else { 0 };
                 // error!("rs_bit = {}", rs_bit);
-                self.tx_descs[self.tx_cur as usize].send(pool.paddr(&packet), packet.get_length(), rs_bit);
+                self.tx_descs[self.tx_cur as usize].send(packet.phys_addr(), packet.length, rs_bit);
                 self.tx_bufs_in_use.push(packet);
     
                 self.tx_cur = tx_next;
@@ -137,6 +148,7 @@ impl TxQueue<{TxState::Enabled}> {
                 break;
             }
         }
+
 
         // error!("sent {} packets", pkts_sent);
         // error!("end cleaning: tx_cur = {}, tx_clean ={}", self.tx_cur, self.tx_clean);
@@ -207,41 +219,33 @@ impl TxQueue<{TxState::Enabled}> {
 
     /// Removes multiples of `TX_CLEAN_BATCH` packets from `queue`.    
     /// (code taken from https://github.com/ixy-languages/ixy.rs/blob/master/src/ixgbe.rs#L1016)
-    fn tx_clean(&mut self, used_buffers: &mut Mempool)  {
+    fn tx_clean(&mut self, used_buffers: &mut Vec<PacketBufferS>)  {
         const TX_CLEAN_BATCH: usize = 32;
 
+        let head = self.head_wb.value.read() as u16;
         let mut tx_clean = self.tx_clean as usize;
-        let tx_cur = self.tx_cur;
 
-        loop {
-            let mut cleanable = tx_cur as i32 - tx_clean as i32;
-
-            if cleanable < 0 {
-                cleanable += self.num_tx_descs as i32;
-            }
-    
-            if cleanable < TX_CLEAN_BATCH as i32 {
-                break;
-            }
-    
-            let mut cleanup_to = tx_clean + TX_CLEAN_BATCH - 1;
-
-            if cleanup_to >= self.num_tx_descs as usize {
-                cleanup_to -= self.num_tx_descs as usize;
-            }
-
-            if self.tx_descs[cleanup_to].desc_done() {
-                if TX_CLEAN_BATCH >= self.tx_bufs_in_use.len() {
-                    used_buffers.extend(self.tx_bufs_in_use.drain(..))
-                } else {
-                    used_buffers.extend(self.tx_bufs_in_use.drain(..TX_CLEAN_BATCH))
-                };
-
-                tx_clean = (cleanup_to + 1) % self.num_tx_descs as usize;
-            } else {
-                break;
-            }
+        let mut cleanable = head as i32 - tx_clean as i32;
+        if cleanable < 0 {
+            cleanable += self.num_tx_descs as i32;
         }
+        if cleanable < TX_CLEAN_BATCH as i32 {
+            return;
+        }
+
+        let mut cleanup_to = tx_clean + cleanable as usize - 1;
+
+        if cleanup_to >= self.num_tx_descs as usize {
+            cleanup_to -= self.num_tx_descs as usize;
+        }
+
+        if cleanable as usize >= self.tx_bufs_in_use.len() {
+            used_buffers.extend(self.tx_bufs_in_use.drain(..))
+        } else {
+            used_buffers.extend(self.tx_bufs_in_use.drain(..cleanable as usize))
+        };
+
+        tx_clean = (cleanup_to + 1) % self.num_tx_descs as usize;
 
         self.tx_clean = tx_clean as u16;
     }
