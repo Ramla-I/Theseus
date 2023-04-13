@@ -1,7 +1,7 @@
 use memory::{MappedPages, create_contiguous_mapping, BorrowedSliceMappedPages, Mutable, BorrowedMappedPages};
 use packet_buffers::PacketBufferS;
 use zerocopy::FromBytes;
-use crate::regs::ReportStatusBit;
+use crate::regs::{ReportStatusBit, TDHSet};
 use crate::{hal::descriptors::LegacyTxDescriptor};
 use crate::hal::{U7, HThresh};
 use crate::queue_registers::TxQueueRegisters;
@@ -54,7 +54,7 @@ pub struct TransmitHead {
 }
 
 impl TxQueue<{TxState::Enabled}> {
-    pub(crate) fn new(mut regs: TxQueueRegisters, num_desc: NumDesc, cpu_id: Option<u8>) -> Result<TxQueue<{TxState::Enabled}>, &'static str> {
+    pub(crate) fn new(mut regs: TxQueueRegisters, num_desc: NumDesc, cpu_id: Option<u8>) -> Result<(TxQueue<{TxState::Enabled}>, TDHSet), &'static str> {
         let (tx_descs, paddr) = create_desc_ring::<LegacyTxDescriptor>(num_desc)?;
         let num_tx_descs = tx_descs.len();
         let (head_wb_mp, head_wb_paddr) = create_contiguous_mapping(core::mem::size_of::<TransmitHead>(), NIC_MAPPING_FLAGS_CACHED)?;
@@ -79,18 +79,18 @@ impl TxQueue<{TxState::Enabled}> {
         let tdh_set = regs.tdh_write(0, tdlen_set);
         regs.tdt_write(0);
         
-        // enable tx queue and make sure it's enabled
-        regs.txdctl_txq_enable(tdh_set); 
-        const TX_Q_ENABLE: u32 = 1 << 25;
-        while regs.txdctl_read() & TX_Q_ENABLE == 0 {} 
+        // // enable tx queue and make sure it's enabled
+        // regs.txdctl_txq_enable(tdh_set); 
+        // const TX_Q_ENABLE: u32 = 1 << 25;
+        // while regs.txdctl_read() & TX_Q_ENABLE == 0 {} 
 
-        Ok(TxQueue { 
+        Ok((TxQueue { 
             id: regs.id() as u8, 
             regs, tx_descs, num_tx_descs: num_tx_descs as u16, 
             tx_cur: 0, tx_bufs_in_use: Vec::with_capacity(num_tx_descs), 
             tx_clean: 0, cpu_id, 
             rs_bit: rs_bit, 
-            head_wb: head_wb_mp.into_borrowed_mut(0).map_err(|(_mp, err)| err)? })
+            head_wb: head_wb_mp.into_borrowed_mut(0).map_err(|(_mp, err)| err)? }, tdh_set))
     }
 
     /// Sends a maximum of `batch_size` number of packets from the stored `buffers`.
@@ -219,25 +219,26 @@ impl TxQueue<{TxState::Enabled}> {
 
     /// Removes multiples of `TX_CLEAN_BATCH` packets from `queue`.    
     /// (code taken from https://github.com/ixy-languages/ixy.rs/blob/master/src/ixgbe.rs#L1016)
+    #[inline(always)]
     fn tx_clean(&mut self, used_buffers: &mut Vec<PacketBufferS>)  {
-        const TX_CLEAN_BATCH: usize = 32;
-
+        const TX_CLEAN_BATCH: u16 = 32;
         let head = self.head_wb.value.read() as u16;
-        let mut tx_clean = self.tx_clean as usize;
+        // error!("head = {}", head);
 
-        let mut cleanable = head as i32 - tx_clean as i32;
-        if cleanable < 0 {
-            cleanable += self.num_tx_descs as i32;
-        }
-        if cleanable < TX_CLEAN_BATCH as i32 {
+        let cleanable = (head as i32 - self.tx_clean as i32) as u16 & (self.num_tx_descs - 1);
+        // error!("Cleanable = {}", cleanable);
+        // if cleanable < 0 {
+        //     cleanable += self.num_tx_descs as i32;
+        // }
+        if cleanable < TX_CLEAN_BATCH {
             return;
         }
 
-        let mut cleanup_to = tx_clean + cleanable as usize - 1;
+        // let cleanup_to = (tx_clean + cleanable - 1) & (self.num_tx_descs - 1);
 
-        if cleanup_to >= self.num_tx_descs as usize {
-            cleanup_to -= self.num_tx_descs as usize;
-        }
+        // if cleanup_to >= self.num_tx_descs as usize {
+        //     cleanup_to -= self.num_tx_descs as usize;
+        // }
 
         if cleanable as usize >= self.tx_bufs_in_use.len() {
             used_buffers.extend(self.tx_bufs_in_use.drain(..))
@@ -245,9 +246,10 @@ impl TxQueue<{TxState::Enabled}> {
             used_buffers.extend(self.tx_bufs_in_use.drain(..cleanable as usize))
         };
 
-        tx_clean = (cleanup_to + 1) % self.num_tx_descs as usize;
+        // tx_clean = (cleanup_to + 1) % self.num_tx_descs;
 
-        self.tx_clean = tx_clean as u16;
+        // self.tx_clean = tx_clean;
+        self.tx_clean = head;
     }
 
 }

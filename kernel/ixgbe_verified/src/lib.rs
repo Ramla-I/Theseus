@@ -225,7 +225,7 @@ impl IxgbeNic {
         Self::start_link(&mut mapped_registers1, &mut mapped_registers2, &mut mapped_registers3, &mut mapped_registers_mac)?;
 
         // clear stats registers
-        Self::clear_stats_internal(&mapped_registers2);
+        // Self::clear_stats_internal(&mapped_registers2);
 
         // store the mac address of this device
         let mac_addr_hardware = Self::read_mac_address_from_nic(&mut mapped_registers_mac);
@@ -634,11 +634,21 @@ impl IxgbeNic {
 
         let mut tx_all_queues = Vec::new();
 
-        // enable transmit operation, only have to do this for the first queue
-        regs2.dmatxctl_enable_tx();
-
+        let mut tx_enabled = false;
         for mut txq_reg in tx_regs {            
-            let mut txq= TxQueueE::new(txq_reg, num_tx_descs, None)?;
+            let (mut txq, tdh_set) = TxQueueE::new(txq_reg, num_tx_descs, None)?;
+            if !tx_enabled {
+                // enable transmit operation, only have to do this for the first queue
+                // The placement of this line is vvv important!
+                // Moving it before all the tx queue initialization will cause the TDWB to not work
+                regs2.dmatxctl_enable_tx();
+                tx_enabled = true;
+            }
+
+            // enable tx queue and make sure it's enabled
+            txq.regs.txdctl_txq_enable(tdh_set); 
+            const TX_Q_ENABLE: u32 = 1 << 25;
+            while txq.regs.txdctl_read() & TX_Q_ENABLE == 0 {} 
             tx_all_queues.push(txq);
         }
         Ok(tx_all_queues)
