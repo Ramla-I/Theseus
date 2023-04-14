@@ -59,7 +59,7 @@ impl RxQueue<{RxState::Enabled}> {
             let rx_buf = mempool.pop()
                 .ok_or("Couldn't obtain a ReceiveBuffer from the pool")?; 
             
-            rd.init(mempool.phys_addr(&rx_buf)); 
+            rd.init(rx_buf.paddr); 
             rx_bufs_in_use.push(rx_buf); 
         }
         
@@ -139,13 +139,13 @@ impl RxQueue<{RxState::Enabled}> {
             // we need to obtain a new `ReceiveBuffer` and set it up such that the NIC will use it for future receivals.
             if let Some(new_receive_buf) = pool.pop() {
                 // actually tell the NIC about the new receive buffer, and that it's ready for use now
-                desc.set_packet_address(pool.phys_addr(&new_receive_buf));
+                desc.set_packet_address(new_receive_buf.paddr);
                 // desc.reset_status();
                 
                 let mut current_rx_buf = core::mem::replace(&mut self.rx_bufs_in_use[rx_cur as usize], new_receive_buf);
                 // current_rx_buf.length = length as u16; // set the ReceiveBuffer's length to the size of the actual packet received
                 // unsafe{ core::arch::x86_64::_mm_prefetch(current_rx_buf.buffer.as_ptr() as *const i8, _MM_HINT_ET0);}
-                pool.set_length(&current_rx_buf, length as u16); // set the ReceiveBuffer's length to the size of the actual packet received
+                current_rx_buf.length = length as u16; // set the ReceiveBuffer's length to the size of the actual packet received
                 buffers.push(current_rx_buf);
 
                 rcvd_pkts += 1;

@@ -40,7 +40,7 @@ use alloc::vec::Vec;
 use alloc::string::String;
 use ixgbe_verified::{
     get_ixgbe_nics_list, IxgbeStats,
-    allocator::{init_rx_buf_pool}, MEMPOOL, get_mempool, mempool::PacketBuffer,
+    allocator::{init_rx_buf_pool}, MEMPOOL, get_mempool, mempool::{PacketBuffer, Mempool},
 };
 // use packet_buffers::{PacketBufferS, EthernetFrame};
 use getopts::{Matches, Options};
@@ -151,8 +151,8 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
     // let mut pool1 = init_rx_buf_pool(DESC_RING_SIZE * 2).expect("failed to init buf pool");
 
     // bad hack, should separate mempool from rx queue
-    // let mut pool0 = init_rx_buf_pool(DESC_RING_SIZE * 2).expect("failed to init buf pool");
-    // let mut pool1 = init_rx_buf_pool(DESC_RING_SIZE * 2).expect("failed to init buf pool");
+    // let mut pool0 = Mempool::new(DESC_RING_SIZE * 2).expect("failed to init buf pool");
+    // let mut pool1 = Mempool::new(DESC_RING_SIZE * 2).expect("failed to init buf pool");
 
     let mut pool = get_mempool().expect("couldn't retrieve mempool").lock();
 
@@ -331,8 +331,8 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
         /*** unidirectional forwarder 2 ports (tested till 8.8 Mpps)***/
         let mut length =60;
         rx_packets_dev0 += dev0.rx_batch(0, &mut received_buffers0, batch_size, &mut pool) as usize;
-        for i in &mut received_buffers0 {
-            let p = pool.frame(i);
+        for p in &mut received_buffers0 {
+            // let p = pool.frame(i);
                 p.dest_addr = [0,0,0,0,0,1];
                 p.src_addr = src_addr;
         }
@@ -340,8 +340,8 @@ fn packet_forwarder(args: (usize, u16, bool, bool)) {
         pool.append(&mut received_buffers0);
 
         rx_packets_dev1 += dev1.rx_batch(0, &mut received_buffers1, batch_size, &mut pool) as usize;
-        for i in &mut received_buffers1 {
-                let p = pool.frame(i);
+        for p in &mut received_buffers1 {
+                // let p = pool.frame(i);
                 p.dest_addr = [0,0,0,0,0,1];
                 p.src_addr = src_addr;
         }

@@ -140,7 +140,7 @@ impl TxQueue<{TxState::Enabled}> {
                 // }
                 let rs_bit = if (self.tx_cur % TX_CLEAN_THRESHOLD) == TX_CLEAN_THRESHOLD - 1 { self.rs_bit.value() } else { 0 };
                 // error!("rs_bit = {}", rs_bit);
-                let (paddr, length) = pool.buffer_metadata(&packet);
+                let (paddr, length) = (packet.paddr, packet.length);
                 self.tx_descs[self.tx_cur as usize].send(paddr, length, rs_bit);
                 self.tx_bufs_in_use.push(packet);
     

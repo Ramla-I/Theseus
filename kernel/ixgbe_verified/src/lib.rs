@@ -241,7 +241,7 @@ impl IxgbeNic {
 
         let mut mempool = get_mempool().unwrap_or_else(||
         {
-            let pool = Mempool::new(num_rx_descriptors as usize * 6).expect("couldn't create mempool");
+            let pool = Mempool::new(num_rx_descriptors as usize * 7).expect("couldn't create mempool");
             MEMPOOL.call_once(|| MutexIrqSafe::new(pool));
             get_mempool().unwrap()
         }).lock();
