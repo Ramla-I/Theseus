@@ -11,16 +11,24 @@ pub struct LegacyDescriptor {
     other: Volatile<u64>
 }
 
+#[derive(Debug, Copy, Clone)]
+pub struct PacketLength(u16);
+
+impl PacketLength {
+    pub fn zero() -> PacketLength {
+        PacketLength(0)
+    }
+}
 impl LegacyDescriptor {
     #[inline(always)]
     /// Returns (descriptor done bit, packet length)
-    pub fn rx_metadata(&self) -> (bool, u16) {
+    pub fn rx_metadata(&self) -> (bool, PacketLength) {
         let metadata = self.other.read();
-        ((metadata & (1 << 32)) == (1 << 32), metadata as u16 & 0xFFFF)
+        ((metadata & (1 << 32)) == (1 << 32), PacketLength(metadata as u16 & 0xFFFF))
     }
 
     #[inline(always)]
-    pub fn send(&mut self, packet_length: u16, rs_bit: u64) {
-        self.other.write(packet_length as u64 | rs_bit | (1 << (24 + 1)) | (1 << 24));
+    pub fn send(&mut self, packet_length: PacketLength, rs_bit: u64) {
+        self.other.write(packet_length.0 as u64 | rs_bit | (1 << (24 + 1)) | (1 << 24));
     }
 }

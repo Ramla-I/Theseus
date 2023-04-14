@@ -128,7 +128,7 @@ impl IxgbeAgent {
     }
 
     #[inline(always)]
-    fn receive(&mut self, packet_length: &mut u16) -> Option<&mut EthernetFrame> {
+    fn receive(&mut self, packet_length: &mut PacketLength) -> Option<&mut EthernetFrame> {
         let (dd, length) = self.desc_ring[self.processed_delimiter as usize].rx_metadata();
         // let rx_metadata = unsafe{ self.desc_ring.get_unchecked(self.processed_delimiter as usize).other.read()};
 
@@ -145,7 +145,7 @@ impl IxgbeAgent {
     }
 
     #[inline(always)]
-    fn transmit(&mut self, packet_length: u16) {
+    fn transmit(&mut self, packet_length: PacketLength) {
         let rs_bit = if (self.processed_delimiter as u64 & (IXGBE_AGENT_RECYCLE_PERIOD - 1)) == (IXGBE_AGENT_RECYCLE_PERIOD - 1) { 1 << (24 + 3) } else { 0 };
         self.desc_ring[self.processed_delimiter as usize].send(packet_length, rs_bit);
         // unsafe{ self.desc_ring.get_unchecked_mut(self.processed_delimiter as usize).other.write(packet_length as u64 | rs_bit | (1 << (24 + 1)) | (1 << 24)); }
@@ -165,8 +165,8 @@ impl IxgbeAgent {
 
     #[inline(always)]
     pub fn run(&mut self){
-        let mut packet_length = 0;
-
+        let mut packet_length = PacketLength::zero();
+        
         for i in 0.. IXGBE_AGENT_FLUSH_PERIOD {
             if let Some(pkt) = self.receive(&mut packet_length) {
                 pkt.src_addr = [0,0,0,0,0,0];
