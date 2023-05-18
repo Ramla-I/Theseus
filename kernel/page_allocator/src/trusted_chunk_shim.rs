@@ -70,11 +70,11 @@ impl Chunk {
         self.pages.clone()
     }
 
-    // pub(crate) fn as_allocated_pages(self) -> AllocatedPages {
-    //     AllocatedPages {
-    //         pages: self,
-    //     }
-    // }
+    pub(crate) fn as_allocated_pages(self) -> AllocatedPages {
+        AllocatedPages {
+            pages: self,
+        }
+    }
 
     /// Returns a new `Chunk` with an empty range of pages. 
     pub(crate) const fn empty() -> Chunk {

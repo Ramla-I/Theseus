@@ -32,7 +32,7 @@ use intrusive_collections::Bound;
 
 mod static_array_rb_tree;
 // mod static_array_linked_list;
-mod chunk;
+// mod chunk;
 mod trusted_chunk_shim;
 
 use core::{borrow::Borrow, cmp::Ordering, fmt, ops::{Deref, DerefMut}};
@@ -40,7 +40,8 @@ use kernel_config::memory::*;
 use memory_structs::{VirtualAddress, Page, PageRange};
 use spin::{Mutex, Once};
 use static_array_rb_tree::*;
-use chunk::*;
+// use chunk::*;
+use trusted_chunk_shim::*;
 
 /// Certain regions are pre-designated for special usage, specifically the kernel's initial identity mapping.
 /// They will be allocated from if an address within them is specifically requested;
@@ -87,34 +88,34 @@ pub fn init(end_vaddr_of_low_designated_region: VirtualAddress) -> Result<(), &'
 	let initial_free_chunks = [
 		// The first region contains all pages *below* the beginning of the 510th entry of P4. 
 		// We split it up into three chunks just for ease, since it overlaps the designated regions.
-		Some(Chunk { 
-			pages: PageRange::new(
+		Some(Chunk::new( 
+			PageRange::new(
 				Page::containing_address(VirtualAddress::zero()),
 				designated_low_end,
 			)
-		}),
-		Some(Chunk { 
-			pages: PageRange::new(
+		)?),
+		Some(Chunk::new( 
+			PageRange::new(
 				designated_low_end + 1,
 				DESIGNATED_PAGES_HIGH_START - 1,
 			)
-		}),
-		Some(Chunk { 
-			pages: PageRange::new(
+		)?),
+		Some(Chunk::new( 
+			PageRange::new(
 				DESIGNATED_PAGES_HIGH_START,
 				// This is the page right below the beginning of the 510th entry of the top-level P4 page table.
 				Page::containing_address(VirtualAddress::new_canonical(KERNEL_TEXT_START - ADDRESSABILITY_PER_P4_ENTRY - 1)),
 			)
-		}),
+		)?),
 
 		// The second region contains all pages *above* the end of the 510th entry of P4, i.e., starting at the 511th (last) entry of P4.
 		// This is fully covered by the second (higher) designated region.
-		Some(Chunk { 
-			pages: PageRange::new(
+		Some(Chunk::new(
+			PageRange::new(
 				Page::containing_address(VirtualAddress::new_canonical(KERNEL_TEXT_START)),
 				Page::containing_address(VirtualAddress::new_canonical(MAX_VIRTUAL_ADDRESS)),
 			)
-		}),
+		)?),
 		None, None, None, None,
 		None, None, None, None, None, None, None, None,
 		None, None, None, None, None, None, None, None,
@@ -257,9 +258,7 @@ impl Drop for AllocatedPages {
 
 		// Simply add the newly-deallocated chunk to the free pages list.
 		let mut locked_list = FREE_PAGE_LIST.lock();
-		let res = locked_list.insert(Chunk {
-			pages: self.pages.clone(),
-		});
+		let res = locked_list.insert(core::mem::replace(&mut self.pages, Chunk::empty()));
 		match res {
 			Ok(_inserted_free_chunk) => (),
 			Err(c) => error!("BUG: couldn't insert deallocated chunk {:?} into free page list", c),
@@ -581,29 +580,31 @@ fn adjust_chosen_chunk(
 ) -> Result<(AllocatedPages, DeferredAllocAction<'static>), AllocationError> {
     let chosen_chunk = retrieve_chunk_from_ref(chosen_chunk_ref).ok_or(AllocationError::InternalError)?;
 
-	// The new allocated chunk might start in the middle of an existing chunk,
-	// so we need to break up that existing chunk into 3 possible chunks: before, newly-allocated, and after.
-	//
-	// Because Pages and VirtualAddresses use saturating add and subtract, we need to double-check that we're not creating
-	// an overlapping duplicate Chunk at either the very minimum or the very maximum of the address space.
-	let new_allocation = Chunk {
-		// The end page is an inclusive bound, hence the -1. Parentheses are needed to avoid overflow.
-		pages: PageRange::new(start_page, start_page + (num_pages - 1)),
-	};
-	let before = if start_page == MIN_PAGE {
-		None
-	} else {
-		Some(Chunk {
-			pages: PageRange::new(*chosen_chunk.start(), *new_allocation.start() - 1),
-		})
-	};
-	let after = if new_allocation.end() == &MAX_PAGE { 
-		None
-	} else {
-		Some(Chunk {
-			pages: PageRange::new(*new_allocation.end() + 1, *chosen_chunk.end()),
-		})
-	};
+    let (new_allocation, before, after) = chosen_chunk.split(start_page, num_pages);
+
+	// // The new allocated chunk might start in the middle of an existing chunk,
+	// // so we need to break up that existing chunk into 3 possible chunks: before, newly-allocated, and after.
+	// //
+	// // Because Pages and VirtualAddresses use saturating add and subtract, we need to double-check that we're not creating
+	// // an overlapping duplicate Chunk at either the very minimum or the very maximum of the address space.
+	// let new_allocation = Chunk {
+	// 	// The end page is an inclusive bound, hence the -1. Parentheses are needed to avoid overflow.
+	// 	pages: PageRange::new(start_page, start_page + (num_pages - 1)),
+	// };
+	// let before = if start_page == MIN_PAGE {
+	// 	None
+	// } else {
+	// 	Some(Chunk {
+	// 		pages: PageRange::new(*chosen_chunk.start(), *new_allocation.start() - 1),
+	// 	})
+	// };
+	// let after = if new_allocation.end() == &MAX_PAGE { 
+	// 	None
+	// } else {
+	// 	Some(Chunk {
+	// 		pages: PageRange::new(*new_allocation.end() + 1, *chosen_chunk.end()),
+	// 	})
+	// };
 
 	// some sanity checks -- these can be removed or disabled for better performance
 	if let Some(ref b) = before {
