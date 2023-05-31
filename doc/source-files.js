@@ -6,6 +6,7 @@ var sourcesIndex = JSON.parse('{\
 "ap_start":["",[],["lib.rs"]],\
 "apic":["",[],["lib.rs"]],\
 "app_io":["",[],["lib.rs"]],\
+"arm_boards":["",[],["lib.rs"]],\
 "async_channel":["",[],["lib.rs"]],\
 "ata":["",[],["lib.rs"]],\
 "atomic_linked_list":["",[],["atomic_linked_list.rs","atomic_map.rs","lib.rs"]],\
@@ -23,7 +24,8 @@ var sourcesIndex = JSON.parse('{\
 "context_switch_regular":["",[],["lib.rs","x86_64.rs"]],\
 "context_switch_sse":["",[],["lib.rs"]],\
 "cow_arc":["",[],["lib.rs"]],\
-"cpu":["",[],["lib.rs"]],\
+"cpu":["",[],["lib.rs","x86_64.rs"]],\
+"cpu_local_preemption":["",[],["cpu_local.rs","lib.rs","preemption.rs"]],\
 "crate_metadata":["",[],["lib.rs"]],\
 "crate_metadata_serde":["",[],["lib.rs"]],\
 "crate_name_utils":["",[],["lib.rs"]],\
@@ -38,6 +40,7 @@ var sourcesIndex = JSON.parse('{\
 "dmar":["",[],["device_scope.rs","drhd.rs","lib.rs"]],\
 "dreadnought":["",[],["lib.rs","task.rs","time.rs"]],\
 "e1000":["",[],["lib.rs","regs.rs","test_e1000_driver.rs"]],\
+"early_printer":["",[],["lib.rs"]],\
 "early_tls":["",[],["lib.rs"]],\
 "environment":["",[],["lib.rs"]],\
 "ethernet_smoltcp_device":["",[],["lib.rs"]],\
@@ -57,7 +60,7 @@ var sourcesIndex = JSON.parse('{\
 "framebuffer_printer":["",[],["lib.rs"]],\
 "fs_node":["",[],["lib.rs"]],\
 "gdt":["",[],["lib.rs"]],\
-"gic":["",[["gic",[],["cpu_interface_gicv2.rs","cpu_interface_gicv3.rs","dist_interface.rs","mod.rs","redist_interface.rs"]]],["lib.rs"]],\
+"gic":["",[],["lib.rs"]],\
 "heap":["",[],["lib.rs"]],\
 "heapfile":["",[],["lib.rs"]],\
 "hpet":["",[],["lib.rs"]],\
@@ -76,8 +79,7 @@ var sourcesIndex = JSON.parse('{\
 "libterm":["",[],["cursor.rs","lib.rs"]],\
 "lockable":["",[],["lib.rs"]],\
 "locked_idt":["",[],["lib.rs"]],\
-"logger_aarch64":["",[],["lib.rs"]],\
-"logger_x86_64":["",[],["lib.rs"]],\
+"logger":["",[],["lib.rs"]],\
 "madt":["",[],["lib.rs"]],\
 "memfs":["",[],["lib.rs"]],\
 "memory":["",[["paging",[],["mapper.rs","mod.rs","table.rs","temporary_page.rs"]]],["lib.rs"]],\
@@ -90,7 +92,7 @@ var sourcesIndex = JSON.parse('{\
 "mod_mgmt":["",[],["lib.rs","parse_nano_core.rs","replace_nano_core_crates.rs","serde.rs"]],\
 "mouse":["",[],["lib.rs"]],\
 "mouse_data":["",[],["lib.rs"]],\
-"multicore_bringup":["",[],["lib.rs"]],\
+"multicore_bringup":["",[],["lib.rs","x86_64.rs"]],\
 "multiple_heaps":["",[],["lib.rs"]],\
 "mutex_preemption":["",[],["lib.rs","mutex_preempt.rs","rwlock_preempt.rs"]],\
 "mutex_sleep":["",[],["lib.rs","mutex.rs","rwlock.rs"]],\
@@ -110,8 +112,8 @@ var sourcesIndex = JSON.parse('{\
 "panic_entry":["",[],["lib.rs"]],\
 "panic_wrapper":["",[],["lib.rs"]],\
 "path":["",[],["lib.rs"]],\
-"pause":["",[],["lib.rs"]],\
 "pci":["",[],["lib.rs"]],\
+"per_cpu":["",[],["lib.rs"]],\
 "percent_encoding":["",[],["lib.rs"]],\
 "physical_nic":["",[],["lib.rs"]],\
 "pic":["",[],["lib.rs"]],\
@@ -119,7 +121,6 @@ var sourcesIndex = JSON.parse('{\
 "pit_clock_basic":["",[],["lib.rs"]],\
 "pmu_x86":["",[],["lib.rs","stat.rs"]],\
 "port_io":["",[],["lib.rs","x86.rs"]],\
-"preemption":["",[],["lib.rs"]],\
 "ps2":["",[],["lib.rs"]],\
 "pte_flags":["",[],["lib.rs","pte_flags_aarch64.rs","pte_flags_x86_64.rs"]],\
 "random":["",[],["lib.rs"]],\
@@ -138,7 +139,7 @@ var sourcesIndex = JSON.parse('{\
 "scheduler_round_robin":["",[],["lib.rs"]],\
 "sdt":["",[],["lib.rs"]],\
 "serial_port":["",[],["lib.rs"]],\
-"serial_port_basic":["",[],["lib.rs"]],\
+"serial_port_basic":["",[],["lib.rs","x86_64.rs"]],\
 "shapes":["",[],["lib.rs"]],\
 "signal_handler":["",[],["lib.rs"]],\
 "simd_personality":["",[],["lib.rs"]],\
@@ -160,6 +161,8 @@ var sourcesIndex = JSON.parse('{\
 "storage_device":["",[],["lib.rs"]],\
 "storage_manager":["",[],["lib.rs"]],\
 "str_ref":["",[],["lib.rs"]],\
+"sync_block":["",[],["condvar.rs","lib.rs"]],\
+"sync_preemption":["",[],["lib.rs"]],\
 "task":["",[],["lib.rs"]],\
 "task_fs":["",[],["lib.rs"]],\
 "task_struct":["",[],["lib.rs"]],\
@@ -178,7 +181,10 @@ var sourcesIndex = JSON.parse('{\
 "vga_buffer":["",[],["lib.rs"]],\
 "virtual_nic":["",[],["lib.rs"]],\
 "wait_condition":["",[],["lib.rs"]],\
+"wait_guard":["",[],["lib.rs"]],\
 "wait_queue":["",[],["lib.rs"]],\
+"waker":["",[],["lib.rs"]],\
+"waker_generic":["",[],["lib.rs"]],\
 "wasi_interpreter":["",[],["lib.rs","posix_file_system.rs","wasi_definitions.rs","wasi_syscalls.rs","wasmi_state_machine.rs"]],\
 "window":["",[],["lib.rs"]],\
 "window_inner":["",[],["lib.rs"]],\

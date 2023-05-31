@@ -420,6 +420,63 @@
 <a href="#420" id="420">420</a>
 <a href="#421" id="421">421</a>
 <a href="#422" id="422">422</a>
+<a href="#423" id="423">423</a>
+<a href="#424" id="424">424</a>
+<a href="#425" id="425">425</a>
+<a href="#426" id="426">426</a>
+<a href="#427" id="427">427</a>
+<a href="#428" id="428">428</a>
+<a href="#429" id="429">429</a>
+<a href="#430" id="430">430</a>
+<a href="#431" id="431">431</a>
+<a href="#432" id="432">432</a>
+<a href="#433" id="433">433</a>
+<a href="#434" id="434">434</a>
+<a href="#435" id="435">435</a>
+<a href="#436" id="436">436</a>
+<a href="#437" id="437">437</a>
+<a href="#438" id="438">438</a>
+<a href="#439" id="439">439</a>
+<a href="#440" id="440">440</a>
+<a href="#441" id="441">441</a>
+<a href="#442" id="442">442</a>
+<a href="#443" id="443">443</a>
+<a href="#444" id="444">444</a>
+<a href="#445" id="445">445</a>
+<a href="#446" id="446">446</a>
+<a href="#447" id="447">447</a>
+<a href="#448" id="448">448</a>
+<a href="#449" id="449">449</a>
+<a href="#450" id="450">450</a>
+<a href="#451" id="451">451</a>
+<a href="#452" id="452">452</a>
+<a href="#453" id="453">453</a>
+<a href="#454" id="454">454</a>
+<a href="#455" id="455">455</a>
+<a href="#456" id="456">456</a>
+<a href="#457" id="457">457</a>
+<a href="#458" id="458">458</a>
+<a href="#459" id="459">459</a>
+<a href="#460" id="460">460</a>
+<a href="#461" id="461">461</a>
+<a href="#462" id="462">462</a>
+<a href="#463" id="463">463</a>
+<a href="#464" id="464">464</a>
+<a href="#465" id="465">465</a>
+<a href="#466" id="466">466</a>
+<a href="#467" id="467">467</a>
+<a href="#468" id="468">468</a>
+<a href="#469" id="469">469</a>
+<a href="#470" id="470">470</a>
+<a href="#471" id="471">471</a>
+<a href="#472" id="472">472</a>
+<a href="#473" id="473">473</a>
+<a href="#474" id="474">474</a>
+<a href="#475" id="475">475</a>
+<a href="#476" id="476">476</a>
+<a href="#477" id="477">477</a>
+<a href="#478" id="478">478</a>
+<a href="#479" id="479">479</a>
 </pre><pre class="rust"><code><span class="doccomment">//! This crate implements the virtual memory subsystem interfaces for Theseus on aarch64.
 //! `memory` uses this crate to get the memory layout and do other arch-specific operations on aarch64.  
 //! 
@@ -427,21 +484,10 @@
 //! All arch-specific definitions for memory system are exported from this crate.
 
 </span><span class="attr">#![no_std]
-#![feature(ptr_internals)]
-#![feature(unboxed_closures)]
 
-</span><span class="kw">extern crate </span>log;
-<span class="kw">extern crate </span>memory_structs;
-<span class="kw">extern crate </span>cortex_a;
-<span class="kw">extern crate </span>tock_registers;
-<span class="kw">extern crate </span>pte_flags;
-<span class="kw">extern crate </span>kernel_config;
-<span class="kw">extern crate </span>boot_info;
-
-<span class="kw">use </span>cortex_a::asm::barrier;
-<span class="kw">use </span>cortex_a::registers::<span class="kw-2">*</span>;
-<span class="kw">use </span>tock_registers::interfaces::Writeable;
-<span class="kw">use </span>tock_registers::interfaces::ReadWriteable;
+</span><span class="kw">use </span>cortex_a::asm::barrier;
+<span class="kw">use </span>cortex_a::registers::{MAIR_EL1, SCTLR_EL1, TCR_EL1, TTBR0_EL1};
+<span class="kw">use </span>tock_registers::interfaces::{Readable, Writeable, ReadWriteable};
 
 <span class="kw">use </span>memory_structs::{PhysicalAddress, VirtualAddress};
 <span class="kw">use </span>log::{debug, error};
@@ -636,6 +682,57 @@
     }
 }
 
+<span class="doccomment">/// See [`read_mmu_config`]
+</span><span class="attr">#[repr(C)]
+</span><span class="kw">pub struct </span>MmuConfig {
+    ttbr0_el1: u64,
+    mair_el1: u64,
+    tcr_el1: u64,
+    sctlr_el1: u64,
+}
+
+<span class="doccomment">/// Reads the current MMU configuration of the current CPU core,
+/// including the following system registers:
+/// - `TTBR0_EL1`,
+/// - `MAIR_EL1`,
+/// - `TCR_EL1`,
+/// - `SCTLR_EL1`
+///
+/// This configuration can be applied using [`asm_set_mmu_config_x2_x3`].
+///
+/// This is intended for use in `multicore_bringup`.
+</span><span class="kw">pub fn </span>read_mmu_config() -&gt; MmuConfig {
+    MmuConfig {
+        ttbr0_el1: TTBR0_EL1.get(),
+        mair_el1: MAIR_EL1.get(),
+        tcr_el1: TCR_EL1.get(),
+        sctlr_el1: SCTLR_EL1.get(),
+    }
+}
+
+<span class="doccomment">/// Configures the MMU based on the pointer to a MmuConfig,
+/// in x2. This function makes use of x3 too. If the MMU was
+/// enabled on the origin core, it will be enabled by this
+/// on the target core.
+///
+/// This is intended for use in `multicore_bringup`.
+</span><span class="attr">#[macro_export]
+</span><span class="macro">macro_rules! </span>asm_set_mmu_config_x2_x3 {
+    () =&gt; (
+        <span class="comment">// Save all general purpose registers into the previous task.
+        </span><span class="string">r#&quot;
+            ldr x3, [x2, 0]
+            msr ttbr0_el1, x3
+            ldr x3, [x2, 1*8]
+            msr mair_el1, x3
+            ldr x3, [x2, 2*8]
+            msr tcr_el1, x3
+            ldr x3, [x2, 3*8]
+            msr sctlr_el1, x3
+        &quot;#
+    </span>);
+}
+
 <span class="doccomment">/// The address bounds and mapping flags of a section&#39;s memory region.
 </span><span class="attr">#[derive(Debug)]
 </span><span class="kw">pub struct </span>SectionMemoryBounds {
@@ -730,10 +827,17 @@
         // | (2)  | .text             | end of executable pages       |
         // | (3)  | .rodata           | start of read-only pages      |
         // | (4)  | .eh_frame         | part of read-only pages       |
-        // | (5)  | .gcc_except_table | end of read-only pages        |
-        // | (6)  | .data             | start of read-write pages     | 
-        // | (7)  | .bss              | end of read-write pages       |
+        // | (5)  | .gcc_except_table | part/end of read-only pages   |
+        // | (6)  | .tdata            | part/end of read-only pages   |
+        // | (7)  | .tbss             | part/end of read-only pages   |
+        // | (8)  | .data             | start of read-write pages     |
+        // | (9)  | .bss              | end of read-write pages       |
         // |------|-------------------|-------------------------------|
+        //
+        // Note that we combine the TLS data sections (.tdata and .tbss) into the read-only pages,
+        // because they contain read-only initializer data &quot;images&quot; for each TLS area.
+        // In fact, .tbss can be completedly ignored because it represents a read-only data image of all zeroes,
+        // so there&#39;s no point in keeping it around.
         //
         // Those are the only sections we care about; we ignore subsequent `.debug_*` sections (and .got).
         </span><span class="kw">let </span>static_str_name = <span class="kw">match </span>section.name() {
@@ -761,6 +865,16 @@
                 rodata_flags = <span class="prelude-val">Some</span>(flags);
                 <span class="string">&quot;nano_core .gcc_except_table&quot;
             </span>}
+            <span class="comment">// The following four sections are optional: .tdata, .tbss, .data, .bss.
+            </span><span class="string">&quot;.tdata&quot; </span>=&gt; {
+                rodata_end = <span class="prelude-val">Some</span>((end_virt_addr, end_phys_addr));
+                <span class="string">&quot;nano_core .tdata&quot;
+            </span>}
+            <span class="string">&quot;.tbss&quot; </span>=&gt; {
+                <span class="comment">// Ignore .tbss (see above) because it is a read-only section of all zeroes.
+                </span><span class="macro">debug!</span>(<span class="string">&quot;     no need to map kernel section \&quot;.tbss\&quot;, it contains no content&quot;</span>);
+                <span class="kw">continue</span>;
+            }
             <span class="string">&quot;.data&quot; </span>=&gt; {
                 data_start.get_or_insert((start_virt_addr, start_phys_addr));
                 data_end = <span class="prelude-val">Some</span>((end_virt_addr, end_phys_addr));

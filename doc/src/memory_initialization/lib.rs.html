@@ -129,19 +129,22 @@
 <a href="#129" id="129">129</a>
 <a href="#130" id="130">130</a>
 <a href="#131" id="131">131</a>
+<a href="#132" id="132">132</a>
+<a href="#133" id="133">133</a>
+<a href="#134" id="134">134</a>
+<a href="#135" id="135">135</a>
+<a href="#136" id="136">136</a>
+<a href="#137" id="137">137</a>
+<a href="#138" id="138">138</a>
+<a href="#139" id="139">139</a>
+<a href="#140" id="140">140</a>
+<a href="#141" id="141">141</a>
 </pre><pre class="rust"><code><span class="attr">#![no_std]
 #![allow(clippy::type_complexity)]
 
 </span><span class="kw">extern crate </span>alloc;
-<span class="kw">extern crate </span>heap;
-<span class="kw">extern crate </span>kernel_config;
-<span class="attr">#[macro_use] </span><span class="kw">extern crate </span>log;
-<span class="kw">extern crate </span>memory;
-<span class="kw">extern crate </span>stack;
-<span class="kw">extern crate </span>no_drop;
-<span class="kw">extern crate </span>bootloader_modules;
-<span class="kw">extern crate </span>boot_info;
 
+<span class="kw">use </span>log::{error, debug};
 <span class="kw">use </span>memory::{MmiRef, MappedPages, VirtualAddress, InitialMemoryMappings, EarlyIdentityMappedPages};
 <span class="kw">use </span>kernel_config::memory::{KERNEL_HEAP_START, KERNEL_HEAP_INITIAL_SIZE};
 <span class="kw">use </span>boot_info::{BootInformation, Module};
@@ -196,6 +199,23 @@
         identity: identity_mapped_pages,
         additional: additional_mapped_pages,
     } = memory::init(<span class="kw-2">&amp;</span>boot_info, kernel_stack_start)<span class="question-mark">?</span>;
+
+    <span class="comment">// Immediately after initializing the memory subsystem, we will have switched
+    // to a new page table, so we must re-initialize the early printer because
+    // it would otherwise try to invalidly access the framebuffer via virtual memory
+    // that has since been unmapped.
+    // We should not issue any log or print statements until re-initializing this.
+    </span><span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">ref </span>fb_info) = boot_info.framebuffer_info() {
+        early_printer::init(fb_info, <span class="prelude-val">Some</span>(<span class="kw-2">&amp;mut </span>page_table)).unwrap_or_else(|_e|
+            <span class="macro">error!</span>(<span class="string">&quot;Failed to re-init early_printer after memory::init(); \
+                proceeding with init. Error: {:?}&quot;</span>, _e
+            )
+        );
+    }
+
+    <span class="comment">// Ok, now we can safely print or log messages.
+    </span><span class="macro">debug!</span>(<span class="string">&quot;Done with memory::init(); new page table: {:?}&quot;</span>, page_table);
+
     <span class="comment">// After this point, at which `memory::init()` has returned new objects that represent
     // the currently-executing code/data/stack, we must ensure they aren&#39;t dropped if an error occurs,
     // because that will cause them to be auto-unmapped.
@@ -205,7 +225,7 @@
         <span class="prelude-val">Ok</span>(s) =&gt; NoDrop::new(s),
         <span class="prelude-val">Err</span>((_stack_guard_page, stack_mp)) =&gt; {
             <span class="kw">let </span>_stack_mp = NoDrop::new(stack_mp);
-            <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="string">&quot;initial Stack was not contiguous in virtual memory&quot;</span>);
+            <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="string">&quot;BUG: initial Stack was not contiguous in virtual memory&quot;</span>);
         }
     };
 

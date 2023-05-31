@@ -439,22 +439,9 @@
 <a href="#439" id="439">439</a>
 <a href="#440" id="440">440</a>
 <a href="#441" id="441">441</a>
-<a href="#442" id="442">442</a>
-<a href="#443" id="443">443</a>
-<a href="#444" id="444">444</a>
-<a href="#445" id="445">445</a>
-<a href="#446" id="446">446</a>
-<a href="#447" id="447">447</a>
-<a href="#448" id="448">448</a>
-<a href="#449" id="449">449</a>
-<a href="#450" id="450">450</a>
-<a href="#451" id="451">451</a>
-<a href="#452" id="452">452</a>
 </pre><pre class="rust"><code><span class="doccomment">//! Exception handlers that are task-aware, and will kill a task on an exception.
 
-</span><span class="comment">// TODO: Add direct explanation to why this empty loop is necessary and criteria for replacing it with something else
-</span><span class="attr">#![allow(clippy::empty_loop)]
-#![no_std]
+</span><span class="attr">#![no_std]
 #![feature(abi_x86_interrupt)]
 
 </span><span class="kw">use </span>log::{warn, debug, trace};
@@ -516,15 +503,15 @@
 }
 
 
-<span class="doccomment">/// calls print!() and then print_raw!()
+<span class="doccomment">/// Prints to both the `early_printer` and the current terminal via `app_io`.
 </span><span class="macro">macro_rules! </span>println_both {
     (<span class="macro-nonterminal">$fmt</span>:expr) =&gt; {
-        <span class="macro">vga_buffer::print_raw!</span>(<span class="macro">concat!</span>(<span class="macro-nonterminal">$fmt</span>, <span class="string">&quot;\n&quot;</span>));
-        <span class="macro">app_io::print!</span>(<span class="macro">concat!</span>(<span class="macro-nonterminal">$fmt</span>, <span class="string">&quot;\n&quot;</span>));
+        <span class="macro">early_printer::println!</span>(<span class="macro-nonterminal">$fmt</span>);
+        <span class="macro">app_io::println!</span>(<span class="macro-nonterminal">$fmt</span>);
     };
     (<span class="macro-nonterminal">$fmt</span>:expr, $(<span class="macro-nonterminal">$arg</span>:tt)<span class="kw-2">*</span>) =&gt; {
-        <span class="macro">vga_buffer::print_raw!</span>(<span class="macro">concat!</span>(<span class="macro-nonterminal">$fmt</span>, <span class="string">&quot;\n&quot;</span>), $(<span class="macro-nonterminal">$arg</span>)<span class="kw-2">*</span>);
-        <span class="macro">app_io::print!</span>(<span class="macro">concat!</span>(<span class="macro-nonterminal">$fmt</span>, <span class="string">&quot;\n&quot;</span>), $(<span class="macro-nonterminal">$arg</span>)<span class="kw-2">*</span>);
+        <span class="macro">early_printer::println!</span>(<span class="macro-nonterminal">$fmt</span>, $(<span class="macro-nonterminal">$arg</span>)<span class="kw-2">*</span>);
+        <span class="macro">app_io::println!</span>(<span class="macro-nonterminal">$fmt</span>, $(<span class="macro-nonterminal">$arg</span>)<span class="kw-2">*</span>);
     };
 }
 
@@ -560,7 +547,7 @@
     }
 
 
-    <span class="attr">#[cfg(all(unwind_exceptions, not(downtime_eval)))] </span>{
+    <span class="attr">#[cfg(unwind_exceptions)] </span>{
         <span class="macro">println_both!</span>(<span class="string">&quot;Unwinding {:?} due to exception {}.&quot;</span>, task::get_my_current_task(), exception_number);
     }
     <span class="attr">#[cfg(not(unwind_exceptions))] </span>{
@@ -592,42 +579,38 @@
     }
 
     <span class="comment">// print a stack trace
-    </span><span class="attr">#[cfg(not(downtime_eval))] </span>{
-        <span class="kw">if </span>print_stack_trace {
-            <span class="macro">println_both!</span>(<span class="string">&quot;------------------ Stack Trace (DWARF) ---------------------------&quot;</span>);
-            <span class="kw">let </span>stack_trace_result = stack_trace::stack_trace(
-                <span class="kw-2">&amp;mut </span>|stack_frame, stack_frame_iter| {
-                    <span class="kw">let </span>symbol_offset = stack_frame_iter.namespace().get_section_containing_address(
-                        VirtualAddress::new_canonical(stack_frame.call_site_address() <span class="kw">as </span>usize),
-                        <span class="bool-val">false
-                    </span>).map(|(sec, offset)| (sec.name.clone(), offset));
-                    <span class="kw">if let </span><span class="prelude-val">Some</span>((symbol_name, offset)) = symbol_offset {
-                        <span class="macro">println_both!</span>(<span class="string">&quot;  {:&gt;#018X} in {} + {:#X}&quot;</span>, stack_frame.call_site_address(), symbol_name, offset);
-                    } <span class="kw">else </span>{
-                        <span class="macro">println_both!</span>(<span class="string">&quot;  {:&gt;#018X} in ??&quot;</span>, stack_frame.call_site_address());
-                    }
-                    <span class="bool-val">true
-                </span>},
-                <span class="prelude-val">None</span>,
-            );
-            <span class="kw">match </span>stack_trace_result {
-                <span class="prelude-val">Ok</span>(()) =&gt; { <span class="macro">println_both!</span>(<span class="string">&quot;  Beginning of stack&quot;</span>); }
-                <span class="prelude-val">Err</span>(e) =&gt; { <span class="macro">println_both!</span>(<span class="string">&quot;  {}&quot;</span>, e); }
-            }
-            <span class="macro">println_both!</span>(<span class="string">&quot;---------------------- End of Stack Trace ------------------------&quot;</span>);
+    </span><span class="kw">if </span>print_stack_trace {
+        <span class="macro">println_both!</span>(<span class="string">&quot;------------------ Stack Trace (DWARF) ---------------------------&quot;</span>);
+        <span class="kw">let </span>stack_trace_result = stack_trace::stack_trace(
+            <span class="kw-2">&amp;mut </span>|stack_frame, stack_frame_iter| {
+                <span class="kw">let </span>symbol_offset = stack_frame_iter.namespace().get_section_containing_address(
+                    VirtualAddress::new_canonical(stack_frame.call_site_address() <span class="kw">as </span>usize),
+                    <span class="bool-val">false
+                </span>).map(|(sec, offset)| (sec.name.clone(), offset));
+                <span class="kw">if let </span><span class="prelude-val">Some</span>((symbol_name, offset)) = symbol_offset {
+                    <span class="macro">println_both!</span>(<span class="string">&quot;  {:&gt;#018X} in {} + {:#X}&quot;</span>, stack_frame.call_site_address(), symbol_name, offset);
+                } <span class="kw">else </span>{
+                    <span class="macro">println_both!</span>(<span class="string">&quot;  {:&gt;#018X} in ??&quot;</span>, stack_frame.call_site_address());
+                }
+                <span class="bool-val">true
+            </span>},
+            <span class="prelude-val">None</span>,
+        );
+        <span class="kw">match </span>stack_trace_result {
+            <span class="prelude-val">Ok</span>(()) =&gt; { <span class="macro">println_both!</span>(<span class="string">&quot;  Beginning of stack&quot;</span>); }
+            <span class="prelude-val">Err</span>(e) =&gt; { <span class="macro">println_both!</span>(<span class="string">&quot;  {}&quot;</span>, e); }
         }
+        <span class="macro">println_both!</span>(<span class="string">&quot;---------------------- End of Stack Trace ------------------------&quot;</span>);
     }
 
     <span class="kw">let </span>cause = task::KillReason::Exception(exception_number);
 
     <span class="comment">// Call this task&#39;s kill handler, if it has one.
     </span><span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">ref </span>kh_func) = task::take_kill_handler() {
-        <span class="attr">#[cfg(not(downtime_eval))]
-        </span><span class="macro">debug!</span>(<span class="string">&quot;Found kill handler callback to invoke in Task {:?}&quot;</span>, task::get_my_current_task());
+        <span class="macro">debug!</span>(<span class="string">&quot;Found kill handler callback to invoke in Task {:?}&quot;</span>, task::get_my_current_task());
         kh_func(<span class="kw-2">&amp;</span>cause);
     } <span class="kw">else </span>{
-        <span class="attr">#[cfg(not(downtime_eval))]
-        </span><span class="macro">debug!</span>(<span class="string">&quot;No kill handler callback in Task {:?}&quot;</span>, task::get_my_current_task());
+        <span class="macro">debug!</span>(<span class="string">&quot;No kill handler callback in Task {:?}&quot;</span>, task::get_my_current_task());
     }
 
     <span class="comment">// Invoke the proper signal handler registered for this task, if one exists.
@@ -685,7 +668,7 @@
     // But in general, this task should have already been marked as killed and thus no longer schedulable,
     // so it should not reach this point. 
     // Only exceptions during the early OS initialization process will get here, meaning that the OS will basically stop.
-    </span><span class="kw">loop </span>{ }
+    </span><span class="kw">loop </span>{ core::hint::spin_loop() }
 }
 
 
@@ -721,7 +704,9 @@
     <span class="comment">// don&#39;t halt here, this isn&#39;t a fatal/permanent failure, just a brief pause.
 </span>}
 
-<span class="doccomment">/// exception 0x02, also used for TLB Shootdown IPIs and sampling interrupts.
+<span class="doccomment">/// Exception 0x02 is a Non-Maskable Interrupt (NMI).
+///
+/// Theseus uses this for TLB Shootdown IPIs and sampling interrupts.
 ///
 /// # Important Note
 /// Acquiring ANY locks in this function, even irq-safe ones, could cause a deadlock
@@ -729,16 +714,11 @@
 /// another regular interrupt. 
 /// This includes printing to the log (e.g., `debug!()`) or the screen.
 </span><span class="kw">extern </span><span class="string">&quot;x86-interrupt&quot; </span><span class="kw">fn </span>nmi_handler(stack_frame: InterruptStackFrame) {
-    <span class="kw">let </span><span class="kw-2">mut </span>expected_nmi = <span class="bool-val">false</span>;
+    <span class="comment">// trace!(&quot;nmi_handler (CPU {})&quot;, cpu::current_cpu());
+    </span><span class="kw">let </span><span class="kw-2">mut </span>expected_nmi = <span class="bool-val">false</span>;
 
-    <span class="comment">// currently we&#39;re using NMIs to send TLB shootdown IPIs
-    </span>{
-        <span class="kw">let </span>pages_to_invalidate = tlb_shootdown::TLB_SHOOTDOWN_IPI_PAGES.read().clone();
-        <span class="kw">if let </span><span class="prelude-val">Some</span>(pages) = pages_to_invalidate {
-            <span class="comment">// trace!(&quot;nmi_handler (AP {})&quot;, cpu::current_cpu());
-            </span>tlb_shootdown::handle_tlb_shootdown_ipi(pages);
-            expected_nmi = <span class="bool-val">true</span>;
-        }
+    <span class="kw">if </span>tlb_shootdown::handle_tlb_shootdown_ipi() {
+        <span class="kw">return</span>;
     }
 
     <span class="comment">// Performance monitoring hardware uses NMIs to trigger a sampling interrupt.
@@ -813,7 +793,7 @@
     }
     
     kill_and_halt(<span class="number">0x8</span>, <span class="kw-2">&amp;</span>stack_frame, <span class="prelude-val">Some</span>(error_code.into()), <span class="bool-val">false</span>);
-    <span class="kw">loop </span>{}
+    <span class="kw">loop </span>{ core::hint::spin_loop() }
 }
 
 <span class="doccomment">/// exception 0x0A
@@ -844,16 +824,14 @@
 </span><span class="kw">extern </span><span class="string">&quot;x86-interrupt&quot; </span><span class="kw">fn </span>page_fault_handler(stack_frame: InterruptStackFrame, error_code: PageFaultErrorCode) {
     <span class="kw">let </span>accessed_vaddr = Cr2::read_raw() <span class="kw">as </span>usize;
 
-    <span class="attr">#[cfg(not(downtime_eval))] </span>{
-        <span class="macro">println_both!</span>(<span class="string">&quot;\nEXCEPTION: PAGE FAULT while accessing {:#x}\n\
-            error code: {:?}\n{:#X?}&quot;</span>,
-            accessed_vaddr,
-            error_code,
-            stack_frame
-        );
-        <span class="kw">if </span>is_stack_overflow(VirtualAddress::new_canonical(accessed_vaddr)) {
-            <span class="macro">println_both!</span>(<span class="string">&quot;--&gt; Page fault was caused by stack overflow, tried to access {:#X}\n.&quot;</span>, accessed_vaddr);
-        }
+    <span class="macro">println_both!</span>(<span class="string">&quot;\nEXCEPTION: PAGE FAULT while accessing {:#x}\n\
+        error code: {:?}\n{:#X?}&quot;</span>,
+        accessed_vaddr,
+        error_code,
+        stack_frame
+    );
+    <span class="kw">if </span>is_stack_overflow(VirtualAddress::new_canonical(accessed_vaddr)) {
+        <span class="macro">println_both!</span>(<span class="string">&quot;--&gt; Page fault was caused by stack overflow, tried to access {:#X}\n.&quot;</span>, accessed_vaddr);
     }
     
     kill_and_halt(<span class="number">0xE</span>, <span class="kw-2">&amp;</span>stack_frame, <span class="prelude-val">Some</span>(ErrorCode::PageFaultError { accessed_address: accessed_vaddr, pf_error: error_code }), <span class="bool-val">true</span>)
@@ -876,7 +854,7 @@
 </span><span class="kw">extern </span><span class="string">&quot;x86-interrupt&quot; </span><span class="kw">fn </span>machine_check_handler(stack_frame: InterruptStackFrame) -&gt; ! {
     <span class="macro">println_both!</span>(<span class="string">&quot;\nEXCEPTION: MACHINE CHECK\n{:#X?}&quot;</span>, stack_frame);
     kill_and_halt(<span class="number">0x12</span>, <span class="kw-2">&amp;</span>stack_frame, <span class="prelude-val">None</span>, <span class="bool-val">true</span>);
-    <span class="kw">loop </span>{}
+    <span class="kw">loop </span>{ core::hint::spin_loop() }
 }
 
 <span class="doccomment">/// exception 0x13

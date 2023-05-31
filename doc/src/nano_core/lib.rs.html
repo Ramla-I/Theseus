@@ -269,38 +269,60 @@
 <a href="#269" id="269">269</a>
 <a href="#270" id="270">270</a>
 <a href="#271" id="271">271</a>
+<a href="#272" id="272">272</a>
+<a href="#273" id="273">273</a>
+<a href="#274" id="274">274</a>
+<a href="#275" id="275">275</a>
+<a href="#276" id="276">276</a>
+<a href="#277" id="277">277</a>
+<a href="#278" id="278">278</a>
+<a href="#279" id="279">279</a>
+<a href="#280" id="280">280</a>
+<a href="#281" id="281">281</a>
+<a href="#282" id="282">282</a>
+<a href="#283" id="283">283</a>
+<a href="#284" id="284">284</a>
+<a href="#285" id="285">285</a>
+<a href="#286" id="286">286</a>
+<a href="#287" id="287">287</a>
+<a href="#288" id="288">288</a>
 </pre><pre class="rust"><code><span class="doccomment">//! The aptly-named tiny crate containing the first OS code to run.
-//! 
+//!
 //! The `nano_core` is very simple, and only does the following things:
-//! 
 //! 1. Bootstraps the OS after the bootloader is finished, and initializes simple things like logging.
 //! 2. Establishes a simple virtual memory subsystem so that other modules can be loaded.
-//! 3. Loads the core library module, the `captain` module, and then calls [`captain::init()`](../captain/fn.init.html) as a final step.
-//! 4. That&#39;s it! Once `nano_core` gives complete control to the `captain`, it takes no other actions.
+//! 3. Loads the core library module, the `captain` module, and then calls [`captain::init()`] as a final step.
+//!
+//! That&#39;s it! Once `nano_core` gives complete control to the `captain`, it takes no other actions.
 //!
 //! In general, you shouldn&#39;t ever need to change `nano_core`. 
 //! That&#39;s because `nano_core` doesn&#39;t contain any specific program logic, 
 //! it just sets up an initial environment so that other subsystems can run.
-//! 
+//!
 //! If you want to change how the OS starts up and which systems it initializes, 
-//! you should change the code in the [`captain`](../captain/index.html) crate instead.
-//! 
+//! you should change the code in the [`captain`] crate instead.
 
 </span><span class="attr">#![no_std]
 #![no_main]
+#![feature(let_chains)]
 #![feature(naked_functions)]
 
 </span><span class="kw">extern crate </span>panic_entry;
 
 <span class="kw">use </span>core::ops::DerefMut;
+<span class="kw">use </span>captain::MulticoreBringupInfo;
 <span class="kw">use </span>memory::VirtualAddress;
-<span class="kw">use </span>kernel_config::memory::KERNEL_OFFSET;
 <span class="kw">use </span>mod_mgmt::parse_nano_core::NanoCoreItems;
+<span class="kw">use </span>serial_port_basic::{take_serial_port, SerialPortAddress};
 
 <span class="attr">#[cfg(target_arch = <span class="string">&quot;x86_64&quot;</span>)]
-</span><span class="kw">use </span>vga_buffer::println_raw;
+</span><span class="kw">use </span>{
+    early_printer::println,
+    kernel_config::memory::KERNEL_OFFSET,
+};
+
 <span class="attr">#[cfg(target_arch = <span class="string">&quot;aarch64&quot;</span>)]
-</span><span class="kw">use </span>log::info <span class="kw">as </span>println_raw;
+</span><span class="kw">use </span>log::info <span class="kw">as </span>println;
 
 <span class="macro">cfg_if::cfg_if! </span>{
     <span class="kw">if </span><span class="attr">#[cfg(feature = <span class="string">&quot;uefi&quot;</span>)] </span>{
@@ -323,72 +345,64 @@
 </span><span class="attr">#[macro_export]
 </span><span class="macro">macro_rules! </span>try_exit {
     (<span class="macro-nonterminal">$expr</span>:expr) =&gt; {
-        <span class="kw">match </span><span class="macro-nonterminal">$expr </span>{
-            <span class="prelude-val">Ok</span>(val) =&gt; val,
-            <span class="prelude-val">Err</span>(err_msg) =&gt; {
-                <span class="macro-nonterminal">$crate::shutdown</span>(<span class="macro">format_args!</span>(<span class="string">&quot;{}&quot;</span>, err_msg));
-            }
-        }
+        <span class="macro-nonterminal">$expr</span>.unwrap_or_else(|e| <span class="macro-nonterminal">$crate::shutdown</span>(<span class="macro">format_args!</span>(<span class="string">&quot;{e}&quot;</span>)))
     };
 }
 
-<span class="doccomment">/// Shuts down Theseus and prints the given formatted arguuments.
+<span class="doccomment">/// Shuts down Theseus and prints the given formatted arguments.
 </span><span class="kw">fn </span>shutdown(msg: core::fmt::Arguments) -&gt; ! {
-    <span class="macro">println_raw!</span>(<span class="string">&quot;Theseus is shutting down, msg: {}&quot;</span>, msg);
+    <span class="macro">println!</span>(<span class="string">&quot;Theseus is shutting down, msg: {}&quot;</span>, msg);
     <span class="macro">log::error!</span>(<span class="string">&quot;Theseus is shutting down, msg: {}&quot;</span>, msg);
 
     <span class="comment">// TODO: handle shutdowns properly with ACPI commands
     </span><span class="macro">panic!</span>(<span class="string">&quot;{}&quot;</span>, msg);
 }
 
-<span class="doccomment">/// Early setup that must be done prior to loading the boot information.
+
+<span class="doccomment">/// The main nano_core entry routine.
 ///
-/// This involves:
-/// 1. Setting up logging
-/// 2. Dumping basic information about the Theseus build
-/// 3. Initialising early exceptions
-</span><span class="attr">#[cfg(target_arch = <span class="string">&quot;x86_64&quot;</span>)]
-</span><span class="kw">fn </span>early_setup(early_double_fault_stack_top: usize) -&gt; <span class="prelude-ty">Result</span>&lt;(), <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str&gt; {
-    irq_safety::disable_interrupts();
-    <span class="macro">println_raw!</span>(<span class="string">&quot;Entered early_setup(). Interrupts disabled.&quot;</span>);
-
-    <span class="kw">let </span>logger_ports = [serial_port_basic::take_serial_port(
-        serial_port_basic::SerialPortAddress::COM1,
-    )];
-    logger_x86_64::early_init(<span class="prelude-val">None</span>, IntoIterator::into_iter(logger_ports).flatten())
-        .map_err(|<span class="kw">_</span>| <span class="string">&quot;failed to initialise early logging&quot;</span>)<span class="question-mark">?</span>;
-    <span class="macro">log::info!</span>(<span class="string">&quot;initialized early logger&quot;</span>);
-    <span class="macro">println_raw!</span>(<span class="string">&quot;early_setup(): initialized early logger.&quot;</span>);
-
-    <span class="comment">// Dump basic information about this build of Theseus.
-    </span><span class="macro">log::info!</span>(<span class="string">&quot;\n    \
-        ===================== Theseus build info: =====================\n    \
-        CUSTOM CFGs: {} \n    \
-        ===============================================================&quot;</span>,
-        build_info::CUSTOM_CFG_STR,
-    );
-
-    exceptions_early::init(<span class="prelude-val">Some</span>(VirtualAddress::new_canonical(early_double_fault_stack_top)));
-    <span class="macro">println_raw!</span>(<span class="string">&quot;early_setup(): initialized early IDT with exception handlers.&quot;</span>);
-
-    <span class="prelude-val">Ok</span>(())
-}
-
-<span class="doccomment">/// aarch64 placeholder
-</span><span class="attr">#[cfg(target_arch = <span class="string">&quot;aarch64&quot;</span>)]
-</span><span class="kw">fn </span>early_setup(_early_double_fault_stack_top: usize) -&gt; <span class="prelude-ty">Result</span>&lt;(), <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str&gt; {
-    <span class="prelude-val">Ok</span>(())
-}
-
-<span class="doccomment">/// The nano core routine. See crate-level documentation for more information.
+/// This is invoked by an entry point in the bootloader-specific modules:
+/// * In the `bios` module (for multiboot2 boot), the entry point is `rust_entry`,
+///   which then invokes this function.
+/// * In the `uefi` module (for UEFI boot), the entry point is `_start`,
+///   which invokes `rust_entry`, which then invokes this function.
 </span><span class="attr">#[cfg_attr(target_arch = <span class="string">&quot;aarch64&quot;</span>, allow(unused_variables))]
-</span><span class="kw">fn </span>nano_core&lt;T&gt;(boot_info: T, kernel_stack_start: VirtualAddress) -&gt; <span class="prelude-ty">Result</span>&lt;(), <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str&gt;
+</span><span class="kw">fn </span>nano_core&lt;B&gt;(
+    boot_info: B,
+    double_fault_stack_top: VirtualAddress,
+    kernel_stack_start: VirtualAddress,
+) -&gt; <span class="prelude-ty">Result</span>&lt;(), <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str&gt;
 <span class="kw">where
-    </span>T: boot_info::BootInformation
+    </span>B: boot_info::BootInformation
 {
-    <span class="kw">let </span>rsdp_address = boot_info.rsdp();
-    <span class="macro">println_raw!</span>(<span class="string">&quot;nano_core(): bootloader-provided RSDP address: {:X?}&quot;</span>, rsdp_address);
+    irq_safety::disable_interrupts();
+    <span class="macro">println!</span>(<span class="string">&quot;nano_core(): Entered early setup. Interrupts disabled.&quot;</span>);
 
+    <span class="attr">#[cfg(target_arch = <span class="string">&quot;x86_64&quot;</span>)]
+    </span><span class="kw">let </span>logger_ports = [take_serial_port(SerialPortAddress::COM1)];
+
+    <span class="comment">// On aarch64, we must init memory management before mapping serial ports.
+    // Before that, we can log messages to a static buffer.
+    </span><span class="attr">#[cfg(target_arch = <span class="string">&quot;aarch64&quot;</span>)]
+    </span><span class="kw">let </span>logger_ports: [[serial_port_basic::SerialPort; <span class="number">0</span>]; <span class="number">0</span>] = [];
+
+    logger::early_init(<span class="prelude-val">None</span>, IntoIterator::into_iter(logger_ports).flatten());
+    <span class="macro">log::info!</span>(<span class="string">&quot;initialized early logger&quot;</span>);
+    <span class="macro">println!</span>(<span class="string">&quot;nano_core(): initialized early logger.&quot;</span>);
+
+    <span class="attr">#[cfg(target_arch = <span class="string">&quot;x86_64&quot;</span>)] </span>{
+        exceptions_early::init(<span class="prelude-val">Some</span>(double_fault_stack_top));
+        <span class="macro">println!</span>(<span class="string">&quot;nano_core(): initialized early IDT with exception handlers.&quot;</span>);
+    }
+
+    <span class="comment">// If the bootloader already mapped the framebuffer for us, then we can use it now.
+    </span><span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">ref </span>fb_info) = boot_info.framebuffer_info() &amp;&amp; fb_info.is_mapped() {
+        early_printer::init(fb_info, <span class="prelude-val">None</span>).unwrap_or_else(|_e|
+            <span class="macro">log::error!</span>(<span class="string">&quot;Failed to init early_printer; proceeding with init. Error: {:?}&quot;</span>, _e)
+        );
+    }
+
+    <span class="kw">let </span>rsdp_address = boot_info.rsdp();
     <span class="comment">// init memory management: set up stack with guard page, heap, kernel text/data mappings, etc
     </span><span class="kw">let </span>(
         kernel_mmi_ref,
@@ -400,27 +414,36 @@
         identity_mapped_pages
     ) = memory_initialization::init_memory_management(boot_info, kernel_stack_start)<span class="question-mark">?</span>;
 
-    <span class="attr">#[cfg(target_arch = <span class="string">&quot;aarch64&quot;</span>)]
-    </span>logger_aarch64::init().unwrap();
+    <span class="comment">// On aarch64, serial port access requires memory mapping.
+    </span><span class="attr">#[cfg(target_arch = <span class="string">&quot;aarch64&quot;</span>)] </span>{
+        <span class="kw">let </span>logger_ports = [take_serial_port(SerialPortAddress::COM1)];
+        logger::early_init(<span class="prelude-val">None</span>, IntoIterator::into_iter(logger_ports).flatten());
+        <span class="macro">log::info!</span>(<span class="string">&quot;initialized early logger with aarch64 serial ports.&quot;</span>);
+        <span class="macro">println!</span>(<span class="string">&quot;nano_core(): initialized early logger  with aarch64 serial ports.&quot;</span>);
+    }
 
-    <span class="macro">println_raw!</span>(<span class="string">&quot;nano_core(): initialized memory subsystem.&quot;</span>);
+    <span class="macro">println!</span>(<span class="string">&quot;nano_core(): initialized memory subsystem.&quot;</span>);
+    <span class="macro">println!</span>(<span class="string">&quot;nano_core(): bootloader-provided RSDP address: {:X?}&quot;</span>, rsdp_address);
+
+    <span class="comment">// Dump basic information about this build of Theseus.
+    </span><span class="macro">log::info!</span>(<span class="string">&quot;\n    \
+        ===================== Theseus build info: =====================\n    \
+        CUSTOM CFGs: {} \n    \
+        ===============================================================&quot;</span>,
+        build_info::CUSTOM_CFG_STR,
+    );
 
     state_store::init();
     <span class="macro">log::trace!</span>(<span class="string">&quot;state_store initialized.&quot;</span>);
-    <span class="macro">println_raw!</span>(<span class="string">&quot;nano_core(): initialized state store.&quot;</span>);
+    <span class="macro">println!</span>(<span class="string">&quot;nano_core(): initialized state store.&quot;</span>);
 
     <span class="comment">// initialize the module management subsystem, so we can create the default crate namespace
     </span><span class="kw">let </span>default_namespace = mod_mgmt::init(bootloader_modules, kernel_mmi_ref.lock().deref_mut())<span class="question-mark">?</span>;
-    <span class="macro">println_raw!</span>(<span class="string">&quot;nano_core(): initialized crate namespace subsystem.&quot;</span>);
+    <span class="macro">println!</span>(<span class="string">&quot;nano_core(): initialized crate namespace subsystem.&quot;</span>);
 
     <span class="comment">// Parse the nano_core crate (the code we&#39;re already running) since we need it to load and run applications.
-    </span><span class="macro">println_raw!</span>(<span class="string">&quot;nano_core(): parsing nano_core crate, please wait ...&quot;</span>);
-    <span class="kw">let </span>(
-        nano_core_crate_ref,
-        ap_realmode_begin,
-        ap_realmode_end,
-        ap_gdt,
-    ) = <span class="kw">match </span>mod_mgmt::parse_nano_core::parse_nano_core(
+    </span><span class="macro">println!</span>(<span class="string">&quot;nano_core(): parsing nano_core crate, please wait ...&quot;</span>);
+    <span class="kw">let </span>(nano_core_crate_ref, multicore_info) = <span class="kw">match </span>mod_mgmt::parse_nano_core::parse_nano_core(
         default_namespace,
         text_mapped_pages.into_inner(),
         rodata_mapped_pages.into_inner(),
@@ -428,34 +451,46 @@
         <span class="bool-val">false</span>,
     ) {
         <span class="prelude-val">Ok</span>(NanoCoreItems { nano_core_crate_ref, init_symbol_values, num_new_symbols }) =&gt; {
-            <span class="macro">println_raw!</span>(<span class="string">&quot;nano_core(): finished parsing the nano_core crate, {} new symbols.&quot;</span>, num_new_symbols);
+            <span class="macro">println!</span>(<span class="string">&quot;nano_core(): finished parsing the nano_core crate, {} new symbols.&quot;</span>, num_new_symbols);
 
-            <span class="comment">// Get symbols from the boot assembly code that define where the ap_start code is.
-            // They will be present in the &quot;.init&quot; sections, i.e., in the `init_symbols` list. 
-            </span><span class="kw">let </span>ap_realmode_begin = init_symbol_values
-                .get(<span class="string">&quot;ap_start_realmode&quot;</span>)
-                .and_then(|v| VirtualAddress::new(<span class="kw-2">*</span>v + KERNEL_OFFSET))
-                .ok_or(<span class="string">&quot;Missing/invalid symbol expected from assembly code \&quot;ap_start_realmode\&quot;&quot;</span>)<span class="question-mark">?</span>;
-            <span class="kw">let </span>ap_realmode_end = init_symbol_values
-                .get(<span class="string">&quot;ap_start_realmode_end&quot;</span>)
-                .and_then(|v| VirtualAddress::new(<span class="kw-2">*</span>v + KERNEL_OFFSET))
-                .ok_or(<span class="string">&quot;Missing/invalid symbol expected from assembly code \&quot;ap_start_realmode_end\&quot;&quot;</span>)<span class="question-mark">?</span>;
+            <span class="attr">#[cfg(target_arch = <span class="string">&quot;x86_64&quot;</span>)]
+            </span><span class="kw">let </span>multicore_info = {
+                <span class="comment">// Get symbols from the boot assembly code that define where the ap_start code is.
+                // They will be present in the &quot;.init&quot; sections, i.e., in the `init_symbols` list. 
+                </span><span class="kw">let </span>ap_realmode_begin = init_symbol_values
+                    .get(<span class="string">&quot;ap_start_realmode&quot;</span>)
+                    .and_then(|v| VirtualAddress::new(<span class="kw-2">*</span>v + KERNEL_OFFSET))
+                    .ok_or(<span class="string">&quot;Missing/invalid symbol expected from assembly code \&quot;ap_start_realmode\&quot;&quot;</span>)<span class="question-mark">?</span>;
+                <span class="kw">let </span>ap_realmode_end = init_symbol_values
+                    .get(<span class="string">&quot;ap_start_realmode_end&quot;</span>)
+                    .and_then(|v| VirtualAddress::new(<span class="kw-2">*</span>v + KERNEL_OFFSET))
+                    .ok_or(<span class="string">&quot;Missing/invalid symbol expected from assembly code \&quot;ap_start_realmode_end\&quot;&quot;</span>)<span class="question-mark">?</span>;
 
-            <span class="comment">// Obtain the identity-mapped virtual address of GDT_AP.
-            </span><span class="kw">let </span>ap_gdt = nano_core_crate_ref.lock_as_ref()
-                .sections
-                .values()
-                .find(|sec| <span class="kw-2">&amp;*</span>sec.name == <span class="string">&quot;GDT_AP&quot;</span>)
-                .map(|ap_gdt_sec| ap_gdt_sec.virt_addr)
-                .ok_or(<span class="string">&quot;Missing/invalid symbol expected from data section \&quot;GDT_AP\&quot;&quot;</span>)
-                .and_then(|vaddr| memory::translate(vaddr)
-                    .ok_or(<span class="string">&quot;Failed to translate \&quot;GDT_AP\&quot;&quot;</span>)
-                )
-                .and_then(|paddr| VirtualAddress::new(paddr.value())
-                    .ok_or(<span class="string">&quot;\&quot;GDT_AP\&quot; physical address was not a valid identity virtual address&quot;</span>)
-                )<span class="question-mark">?</span>;
-            <span class="comment">// log::debug!(&quot;ap_realmode_begin: {:#X}, ap_realmode_end: {:#X}, ap_gdt: {:#X}&quot;, ap_realmode_begin, ap_realmode_end, ap_gdt);
-            </span>(nano_core_crate_ref, ap_realmode_begin, ap_realmode_end, ap_gdt)
+                <span class="comment">// Obtain the identity-mapped virtual address of GDT_AP.
+                </span><span class="kw">let </span>ap_gdt = nano_core_crate_ref.lock_as_ref()
+                    .sections
+                    .values()
+                    .find(|sec| <span class="kw-2">&amp;*</span>sec.name == <span class="string">&quot;GDT_AP&quot;</span>)
+                    .map(|ap_gdt_sec| ap_gdt_sec.virt_addr)
+                    .ok_or(<span class="string">&quot;Missing/invalid symbol expected from data section \&quot;GDT_AP\&quot;&quot;</span>)
+                    .and_then(|vaddr| memory::translate(vaddr)
+                        .ok_or(<span class="string">&quot;Failed to translate \&quot;GDT_AP\&quot;&quot;</span>)
+                    )
+                    .and_then(|paddr| VirtualAddress::new(paddr.value())
+                        .ok_or(<span class="string">&quot;\&quot;GDT_AP\&quot; physical address was not a valid identity virtual address&quot;</span>)
+                    )<span class="question-mark">?</span>;
+                <span class="comment">// log::debug!(&quot;ap_realmode_begin: {:#X}, ap_realmode_end: {:#X}, ap_gdt: {:#X}&quot;, ap_realmode_begin, ap_realmode_end, ap_gdt);
+                </span>MulticoreBringupInfo {
+                    ap_start_realmode_begin: ap_realmode_begin,
+                    ap_start_realmode_end: ap_realmode_end,
+                    ap_gdt,
+                }
+            };
+
+            <span class="attr">#[cfg(target_arch = <span class="string">&quot;aarch64&quot;</span>)]
+            </span><span class="kw">let </span>multicore_info = MulticoreBringupInfo { };
+
+            (nano_core_crate_ref, multicore_info)
         }
         <span class="prelude-val">Err</span>((msg, _mapped_pages_array)) =&gt; <span class="kw">return </span><span class="prelude-val">Err</span>(msg),
     };
@@ -471,10 +506,10 @@
     <span class="comment">// if in loadable mode, parse the crates we always need: the core library (Rust no_std lib), the panic handlers, and the captain
     </span><span class="attr">#[cfg(loadable)] </span>{
         <span class="kw">use </span>mod_mgmt::CrateNamespace;
-        <span class="macro">println_raw!</span>(<span class="string">&quot;nano_core(): loading the \&quot;captain\&quot; crate...&quot;</span>);
+        <span class="macro">println!</span>(<span class="string">&quot;nano_core(): loading the \&quot;captain\&quot; crate...&quot;</span>);
         <span class="kw">let </span>(captain_file, _ns) = CrateNamespace::get_crate_object_file_starting_with(default_namespace, <span class="string">&quot;captain-&quot;</span>).ok_or(<span class="string">&quot;couldn&#39;t find the singular \&quot;captain\&quot; crate object file&quot;</span>)<span class="question-mark">?</span>;
         <span class="kw">let </span>(_captain_crate, _num_captain_syms) = default_namespace.load_crate(<span class="kw-2">&amp;</span>captain_file, <span class="prelude-val">None</span>, <span class="kw-2">&amp;</span>kernel_mmi_ref, <span class="bool-val">false</span>)<span class="question-mark">?</span>;
-        <span class="macro">println_raw!</span>(<span class="string">&quot;nano_core(): loading the panic handling crate(s)...&quot;</span>);
+        <span class="macro">println!</span>(<span class="string">&quot;nano_core(): loading the panic handling crate(s)...&quot;</span>);
         <span class="kw">let </span>(panic_wrapper_file, _ns) = CrateNamespace::get_crate_object_file_starting_with(default_namespace, <span class="string">&quot;panic_wrapper-&quot;</span>).ok_or(<span class="string">&quot;couldn&#39;t find the singular \&quot;panic_wrapper\&quot; crate object file&quot;</span>)<span class="question-mark">?</span>;
         <span class="kw">let </span>(_pw_crate, _num_pw_syms) = default_namespace.load_crate(<span class="kw-2">&amp;</span>panic_wrapper_file, <span class="prelude-val">None</span>, <span class="kw-2">&amp;</span>kernel_mmi_ref, <span class="bool-val">false</span>)<span class="question-mark">?</span>;
 
@@ -485,15 +520,14 @@
 
     <span class="comment">// Now we invoke the Captain, which will take over from here.
     // That&#39;s it, the nano_core is done! That&#39;s really all it does! 
-    </span><span class="macro">println_raw!</span>(<span class="string">&quot;nano_core(): invoking the captain...&quot;</span>);
-    <span class="attr">#[cfg(target_arch = <span class="string">&quot;x86_64&quot;</span>)]
-    </span><span class="kw">let </span>drop_after_init = captain::DropAfterInit {
+    </span><span class="macro">println!</span>(<span class="string">&quot;nano_core(): invoking the captain...&quot;</span>);
+    <span class="kw">let </span>drop_after_init = captain::DropAfterInit {
         identity_mappings: identity_mapped_pages,
     };
-    <span class="attr">#[cfg(all(target_arch = <span class="string">&quot;x86_64&quot;</span>, not(loadable)))] </span>{
-        captain::init(kernel_mmi_ref, stack, drop_after_init, ap_realmode_begin, ap_realmode_end, ap_gdt, rsdp_address)<span class="question-mark">?</span>;
+    <span class="attr">#[cfg(not(loadable))] </span>{
+        captain::init(kernel_mmi_ref, stack, drop_after_init, multicore_info, rsdp_address)<span class="question-mark">?</span>;
     }
-    <span class="attr">#[cfg(all(target_arch = <span class="string">&quot;x86_64&quot;</span>, loadable))] </span>{
+    <span class="attr">#[cfg(loadable)] </span>{
         <span class="kw">use </span>captain::DropAfterInit;
         <span class="kw">use </span>memory::{MmiRef, PhysicalAddress};
         <span class="kw">use </span>no_drop::NoDrop;
@@ -505,10 +539,10 @@
             .ok_or(<span class="string">&quot;no single symbol matching \&quot;captain::init\&quot;&quot;</span>)<span class="question-mark">?</span>;
         <span class="macro">log::info!</span>(<span class="string">&quot;The nano_core (in loadable mode) is invoking the captain init function: {:?}&quot;</span>, section.name);
 
-        <span class="kw">type </span>CaptainInitFunc = <span class="kw">fn</span>(MmiRef, NoDrop&lt;Stack&gt;, DropAfterInit, VirtualAddress, VirtualAddress, VirtualAddress, <span class="prelude-ty">Option</span>&lt;PhysicalAddress&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;(), <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str&gt;;
+        <span class="kw">type </span>CaptainInitFunc = <span class="kw">fn</span>(MmiRef, NoDrop&lt;Stack&gt;, DropAfterInit, MulticoreBringupInfo, <span class="prelude-ty">Option</span>&lt;PhysicalAddress&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;(), <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str&gt;;
         <span class="kw">let </span>func: <span class="kw-2">&amp;</span>CaptainInitFunc = <span class="kw">unsafe </span>{ section.as_func() }<span class="question-mark">?</span>;
 
-        func(kernel_mmi_ref, stack, drop_after_init, ap_realmode_begin, ap_realmode_end, ap_gdt, rsdp_address)<span class="question-mark">?</span>;
+        func(kernel_mmi_ref, stack, drop_after_init, multicore_info, rsdp_address)<span class="question-mark">?</span>;
     }
 
     <span class="comment">// the captain shouldn&#39;t return ...
