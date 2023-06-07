@@ -40,15 +40,16 @@ mod static_array_rb_tree;
 mod region;
 mod trusted_chunk_shim;
 
-use core::{borrow::Borrow, cmp::{Ordering, min, max}, fmt, ops::{Deref, DerefMut, RangeInclusive}, marker::PhantomData};
+use core::{borrow::Borrow, cmp::{Ordering, min, max}, fmt, ops::{Deref, DerefMut}, marker::PhantomData};
 use kernel_config::memory::*;
 use memory_structs::{PhysicalAddress, Frame, FrameRange};
 use spin::Mutex;
 use intrusive_collections::Bound;
 use static_array_rb_tree::*;
+use trusted_chunk::trusted_chunk::TrustedChunk;
 use trusted_chunk_shim::*;
 use region::*;
-use range_inclusive::RangeInclusiveIterator;
+use range_inclusive::{RangeInclusive, RangeInclusiveIterator};
 
 const FRAME_SIZE: usize = PAGE_SIZE;
 pub(crate) const MIN_FRAME: Frame = Frame::containing_address(PhysicalAddress::zero());
@@ -87,7 +88,7 @@ static RESERVED_REGIONS: Mutex<StaticArrayRBTree<Region>> = Mutex::new(StaticArr
 pub fn init<F, R, P>(
     free_physical_memory_areas: F,
     reserved_physical_memory_areas: R,
-) -> Result<fn(FrameRange) -> AllocatedFrames, &'static str> 
+) -> Result<(fn(RangeInclusive<usize>) -> TrustedChunk, fn(TrustedChunk, FrameRange) -> AllocatedFrames), &'static str> 
     where P: Borrow<PhysicalMemoryRegion>,
           F: IntoIterator<Item = P>,
           R: IntoIterator<Item = P> + Clone,
@@ -193,8 +194,8 @@ pub fn init<F, R, P>(
 
     // Register the callback to create a Chunk.
     // This function is not formally-verified and we only call it in the code path for UnmappedFrames.
-    trusted_chunk_shim::INTO_VERIFIED_CHUNK_FUNC.call_once(|| trusted_chunk::init());
-    Ok(into_allocated_frames)
+    // trusted_chunk_shim::INTO_VERIFIED_CHUNK_FUNC.call_once(|| trusted_chunk::init());
+    Ok((trusted_chunk::init(), into_allocated_frames))
 }
 
 
@@ -404,13 +405,13 @@ impl AllocatedFrames {
 /// This exists to break the cyclic dependency cycle between this crate and
 /// the `page_table_entry` crate, since `page_table_entry` must depend on types
 /// from this crate in order to enforce safety when modifying page table entries.
-fn into_allocated_frames(frames: FrameRange) -> AllocatedFrames {
+fn into_allocated_frames(tc: TrustedChunk, frames: FrameRange) -> AllocatedFrames {
     let typ = if frame_is_in_list(&RESERVED_REGIONS.lock(), frames.start()) {
         MemoryRegionType::Reserved
     } else {
         MemoryRegionType::Free
     };
-    AllocatedFrames { frames: Chunk::trusted_new(typ, frames).expect("function to create a chunk from unmapped frames wasn't initialized.") }
+    AllocatedFrames { frames: Chunk::from_trusted_chunk(tc, frames, typ) }
 }
 
 impl Drop for AllocatedFrames {

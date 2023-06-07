@@ -16,6 +16,7 @@
 #![feature(result_option_inspect)]
 
 extern crate alloc;
+extern crate random2;
 
 mod paging;
 pub use self::paging::{
@@ -50,6 +51,7 @@ use alloc::vec::Vec;
 use alloc::sync::Arc;
 use no_drop::NoDrop;
 pub use kernel_config::memory::PAGE_SIZE;
+use x86_64::instructions::random;
 
 /// The memory management info and address space of the kernel
 static KERNEL_MMI: Once<MmiRef> = Once::new();
@@ -216,7 +218,7 @@ pub fn init(
         reserved_index += 1;
     }
 
-    let into_alloc_frames_fn = frame_allocator::init(free_regions.iter().flatten(), reserved_regions.iter().flatten())?;
+    let (into_trusted_chunk_fn, into_alloc_frames_fn) = frame_allocator::init(free_regions.iter().flatten(), reserved_regions.iter().flatten())?;
     debug!("Initialized new frame allocator!");
     frame_allocator::dump_frame_allocator_state();
 
@@ -235,8 +237,9 @@ pub fn init(
     debug!("Initialized new page allocator!");
     page_allocator::dump_page_allocator_state();
 
+    random2::init(into_trusted_chunk_fn, into_alloc_frames_fn);
     // Initialize paging, which creates a new page table and maps all of the current code/data sections into it.
-    paging::init(boot_info, kernel_stack_start, into_alloc_frames_fn)
+    paging::init(boot_info, kernel_stack_start/*, into_alloc_frames_fn*/)
         .inspect(|InitialMemoryMappings { page_table, .. } | {
             debug!("Done with paging::init(). new page table: {:?}", page_table);
         })

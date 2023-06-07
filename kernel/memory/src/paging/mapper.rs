@@ -48,7 +48,7 @@ use owned_borrowed_trait::{OwnedOrBorrowed, Owned, Borrowed};
 /// This is safe because the frame allocator can only be initialized once, and also because
 /// only this crate has access to that function callback and can thus guarantee
 /// that it is only invoked for `UnmappedFrames`.
-pub(super) static INTO_ALLOCATED_FRAMES_FUNC: Once<fn(FrameRange) -> AllocatedFrames> = Once::new();
+// pub(super) static INTO_ALLOCATED_FRAMES_FUNC: Once<fn(FrameRange) -> AllocatedFrames> = Once::new();
 
 /// A convenience function to translate the given virtual address into a
 /// physical address using the currently-active page table.
@@ -628,9 +628,11 @@ impl MappedPages {
             // freed from the newly-unmapped P1 PTE entry above.
             match unmapped_frames {
                 UnmapResult::Exclusive(newly_unmapped_frames) => {
-                    let newly_unmapped_frames = INTO_ALLOCATED_FRAMES_FUNC.get()
-                        .ok_or("BUG: Mapper::unmap(): the `INTO_ALLOCATED_FRAMES_FUNC` callback was not initialized")
-                        .map(|into_func| into_func(newly_unmapped_frames.deref().clone()))?;
+                    let newly_unmapped_frames = random2::from_unmapped(newly_unmapped_frames)?;
+                    
+                    // INTO_ALLOCATED_FRAMES_FUNC.get()
+                    //     .ok_or("BUG: Mapper::unmap(): the `INTO_ALLOCATED_FRAMES_FUNC` callback was not initialized")
+                    //     .map(|into_func| into_func(newly_unmapped_frames.deref().clone()))?;
 
                     if let Some(mut curr_frames) = current_frame_range.take() {
                         match curr_frames.merge(newly_unmapped_frames) {

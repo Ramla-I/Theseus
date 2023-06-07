@@ -53,6 +53,9 @@ path = "../frame_allocator"
 [dependencies.no_drop]
 path = "../no_drop"
 
+[dependencies.random2]
+path = "../random2"
+
 [dependencies.owned_borrowed_trait]
 path = "../../libs/owned_borrowed_trait"
 

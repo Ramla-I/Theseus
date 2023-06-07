@@ -21,7 +21,7 @@ use trusted_chunk::{
 pub(crate) static HEAP_INIT: Once<bool> = Once::new();
 static CHUNK_ARRAY: Mutex<StaticArray> = Mutex::new(StaticArray::new());
 static CHUNK_LIST: Mutex<List> = Mutex::new(List::new());
-pub(crate) static INTO_VERIFIED_CHUNK_FUNC: Once<fn(RangeInclusive<usize>) -> TrustedChunk> = Once::new();
+// pub(crate) static INTO_VERIFIED_CHUNK_FUNC: Once<fn(RangeInclusive<usize>) -> TrustedChunk> = Once::new();
 
 #[derive(Debug, Eq)]
 pub struct Chunk {
@@ -61,14 +61,23 @@ impl Chunk {
         })
     }
 
-    pub(crate) fn trusted_new(typ: MemoryRegionType, frames: FrameRange) -> Result<Chunk, &'static str> {
-        INTO_VERIFIED_CHUNK_FUNC.get()
-            .ok_or("into verified chunk function wasn't initialized")
-            .map(|function| {
-                let verified_chunk = function(frames.to_range_inclusive());
-                Chunk { typ, frames, verified_chunk }
-            })
+    pub(crate) fn from_trusted_chunk(verified_chunk: TrustedChunk, frames: FrameRange, typ: MemoryRegionType) -> Chunk {
+        Chunk {
+            typ,
+            frames,
+            verified_chunk
+        }
     }
+
+    // /// This is a specializes way to create a TrustedChunk
+    // pub(crate) fn from_unmapped_pte(typ: MemoryRegionType, frames: FrameRange) -> Result<Chunk, &'static str> {
+    //     INTO_VERIFIED_CHUNK_FUNC.get()
+    //         .ok_or("into verified chunk function wasn't initialized")
+    //         .map(|function| {
+    //             let verified_chunk = function(frames.to_range_inclusive());
+    //             Chunk { typ, frames, verified_chunk }
+    //         })
+    // }
 
     pub(crate) fn frames(&self) -> FrameRange {
         self.frames.clone()
