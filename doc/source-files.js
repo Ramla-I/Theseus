@@ -67,6 +67,7 @@ var sourcesIndex = JSON.parse('{\
 "http_client":["",[],["lib.rs"]],\
 "idle":["",[["arch",[["x86_64",[],["intel.rs","mod.rs"]]],["mod.rs"]]],["lib.rs"]],\
 "intel_ethernet":["",[],["descriptors.rs","lib.rs"]],\
+"interrupt_controller":["",[],["lib.rs","x86_64.rs"]],\
 "interrupts":["",[["x86_64",[],["mod.rs"]]],["lib.rs"]],\
 "io":["",[],["lib.rs"]],\
 "ioapic":["",[],["lib.rs"]],\
@@ -94,7 +95,6 @@ var sourcesIndex = JSON.parse('{\
 "mouse_data":["",[],["lib.rs"]],\
 "multicore_bringup":["",[],["lib.rs","x86_64.rs"]],\
 "multiple_heaps":["",[],["lib.rs"]],\
-"mutex_preemption":["",[],["lib.rs","mutex_preempt.rs","rwlock_preempt.rs"]],\
 "mutex_sleep":["",[],["lib.rs","mutex.rs","rwlock.rs"]],\
 "nano_core":["",[],["bios.rs","lib.rs","libm.rs","stack_smash_protection.rs"]],\
 "net":["",[],["device.rs","error.rs","interface.rs","lib.rs","socket.rs"]],\
