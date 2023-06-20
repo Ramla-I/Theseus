@@ -18,14 +18,13 @@ use core::{
     slice,
 };
 use log::{error, warn, debug, trace};
-use crate::{BROADCAST_TLB_SHOOTDOWN_FUNC, VirtualAddress, PhysicalAddress, Page, Frame, FrameRange, AllocatedPages, AllocatedFrames}; 
+use crate::{BROADCAST_TLB_SHOOTDOWN_FUNC, VirtualAddress, PhysicalAddress, Page, Frame, AllocatedPages, AllocatedFrames}; 
 use crate::paging::{
     get_current_p4,
     PageRange,
     table::{P4, UPCOMING_P4, Table, Level4},
 };
 use pte_flags::PteFlagsArch;
-use spin::Once;
 use kernel_config::memory::PAGE_SIZE;
 use super::tlb_flush_virt_addr;
 use zerocopy::FromBytes;
@@ -34,24 +33,6 @@ use owned_borrowed_trait::{OwnedOrBorrowed, Owned, Borrowed};
 
 #[cfg(target_arch = "x86_64")]
 use kernel_config::memory::ENTRIES_PER_PAGE_TABLE;
-
-/// This is a private callback used to convert `UnmappedFrames` into `AllocatedFrames`.
-/// 
-/// This exists to break the cyclic dependency cycle between `page_table_entry` and
-/// `frame_allocator`, which depend on each other as such:
-/// * `frame_allocator` needs to `impl Into<AllocatedPages> for UnmappedFrames`
-///    in order to allow unmapped exclusive frames to be safely deallocated
-/// * `page_table_entry` needs to use the `AllocatedFrames` type in order to allow
-///   page table entry values to be set safely to a real physical frame that is owned and exists.
-/// 
-/// To get around that, the `frame_allocator::init()` function returns a callback
-/// to its function that allows converting a range of unmapped frames back into `AllocatedFrames`,
-/// which then allows them to be dropped and thus deallocated.
-/// 
-/// This is safe because the frame allocator can only be initialized once, and also because
-/// only this crate has access to that function callback and can thus guarantee
-/// that it is only invoked for `UnmappedFrames`.
-pub(super) static INTO_ALLOCATED_FRAMES_FUNC: Once<fn(FrameRange) -> AllocatedFrames> = Once::new();
 
 /// A convenience function to translate the given virtual address into a
 /// physical address using the currently-active page table.
@@ -259,7 +240,8 @@ impl Mapper {
         // there is no easy/efficient way to store a dynamic list of non-contiguous frames (would require Vec).
         // This is okay because we will deallocate each of these frames when this MappedPages object is dropped
         // and each of the page table entries for its pages are cleared.
-        core::mem::forget(frames);
+        let mapped_frames = frames.into_mapped_frames(); // mark the frames as mapped
+        core::mem::forget(mapped_frames);
 
         Ok(mapped_pages)
     }
@@ -296,8 +278,9 @@ impl Mapper {
                 return Err("map_allocated_pages(): page was already in use");
             } 
 
-            p1[page.p1_index()].set_entry(af.as_allocated_frame(), actual_flags);
-            core::mem::forget(af); // we currently forget frames allocated here since we don't yet have a way to track them.
+            p1[page.p1_index()].set_entry(af.as_unmapped_frame(), actual_flags);
+            let mapped_frames = af.into_mapped_frames(); // mark the frame as mapped
+            core::mem::forget(mapped_frames); // we currently forget frames allocated here since we don't yet have a way to track them.
         }
 
         Ok(MappedPages {
@@ -631,9 +614,7 @@ impl MappedPages {
             // freed from the newly-unmapped P1 PTE entry above.
             match unmapped_frames {
                 UnmapResult::Exclusive(newly_unmapped_frames) => {
-                    let newly_unmapped_frames = INTO_ALLOCATED_FRAMES_FUNC.get()
-                        .ok_or("BUG: Mapper::unmap(): the `INTO_ALLOCATED_FRAMES_FUNC` callback was not initialized")
-                        .map(|into_func| into_func(newly_unmapped_frames.deref().clone()))?;
+                    let newly_unmapped_frames = frame_range_callbacks::from_unmapped(newly_unmapped_frames)?;
 
                     if let Some(mut curr_frames) = current_frame_range.take() {
                         match curr_frames.merge(newly_unmapped_frames) {
