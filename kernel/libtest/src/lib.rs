@@ -40,6 +40,10 @@ macro_rules! CPU_ID {
 	() => (cpu::current_cpu())
 }
 
+pub fn cpu_id() -> CpuId {
+	cpu::current_cpu()
+}
+
 /// Helper function return the tasks in a given `cpu`'s runqueue
 pub fn nr_tasks_in_rq(cpu: CpuId) -> Option<usize> {
 	match runqueue::get_runqueue(cpu.into_u8()).map(|rq| rq.read()) {
@@ -52,7 +56,7 @@ pub fn nr_tasks_in_rq(cpu: CpuId) -> Option<usize> {
 /// True if only two tasks are running in the current runqueue.
 /// Used to verify if there are any other tasks than the current task and idle task in the runqueue
 pub fn check_myrq() -> bool {
-	match nr_tasks_in_rq(CPU_ID!()) {
+	match nr_tasks_in_rq(cpu_id()) {
 		Some(2) => { true }
 		_ => { false }
 	}

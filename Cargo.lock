@@ -2124,6 +2124,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "mm_eval"
+version = "0.1.0"
+dependencies = [
+ "apic",
+ "app_io",
+ "getopts",
+ "hpet",
+ "kernel_config",
+ "libm",
+ "libtest",
+ "log",
+ "memory",
+ "memory_structs",
+ "pte_flags",
+ "runqueue",
+ "tsc",
+]
+
+[[package]]
 name = "mod_mgmt"
 version = "0.1.0"
 dependencies = [
