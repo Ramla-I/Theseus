@@ -95,7 +95,6 @@ var sourcesIndex = JSON.parse('{\
 "mouse_data":["",[],["lib.rs"]],\
 "multicore_bringup":["",[],["lib.rs","x86_64.rs"]],\
 "multiple_heaps":["",[],["lib.rs"]],\
-"mutex_sleep":["",[],["lib.rs","mutex.rs","rwlock.rs"]],\
 "nano_core":["",[],["bios.rs","lib.rs","libm.rs","stack_smash_protection.rs"]],\
 "net":["",[],["device.rs","error.rs","interface.rs","lib.rs","socket.rs"]],\
 "network_interface_card":["",[],["lib.rs"]],\
@@ -124,18 +123,19 @@ var sourcesIndex = JSON.parse('{\
 "ps2":["",[],["lib.rs"]],\
 "pte_flags":["",[],["lib.rs","pte_flags_aarch64.rs","pte_flags_x86_64.rs"]],\
 "random":["",[],["lib.rs"]],\
+"range_inclusive":["",[],["lib.rs"]],\
 "rendezvous":["",[],["lib.rs"]],\
 "root":["",[],["lib.rs"]],\
 "rsdp":["",[],["lib.rs"]],\
 "rsdt":["",[],["lib.rs"]],\
 "rtc":["",[],["lib.rs"]],\
 "runqueue":["",[],["lib.rs"]],\
+"runqueue_epoch":["",[],["lib.rs"]],\
 "runqueue_priority":["",[],["lib.rs"]],\
-"runqueue_realtime":["",[],["lib.rs"]],\
 "runqueue_round_robin":["",[],["lib.rs"]],\
 "scheduler":["",[],["lib.rs"]],\
+"scheduler_epoch":["",[],["lib.rs"]],\
 "scheduler_priority":["",[],["lib.rs"]],\
-"scheduler_realtime":["",[],["lib.rs"]],\
 "scheduler_round_robin":["",[],["lib.rs"]],\
 "sdt":["",[],["lib.rs"]],\
 "serial_port":["",[],["lib.rs"]],\
@@ -156,7 +156,6 @@ var sourcesIndex = JSON.parse('{\
 "stack_trace":["",[],["lib.rs"]],\
 "stack_trace_frame_pointers":["",[],["lib.rs"]],\
 "state_store":["",[],["lib.rs"]],\
-"state_transfer":["",[],["lib.rs"]],\
 "stdio":["",[],["lib.rs"]],\
 "storage_device":["",[],["lib.rs"]],\
 "storage_manager":["",[],["lib.rs"]],\

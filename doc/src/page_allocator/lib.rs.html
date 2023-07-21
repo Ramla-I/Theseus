@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `kernel/page_allocator/src/lib.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>lib.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceSerif4-Regular-1f7d512b176f0f72.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/FiraSans-Regular-018c141bf0843ffd.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/FiraSans-Medium-8f9a781e4970d388.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceSerif4-Bold-124a1ca42af929b6.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2"><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-fbcde169c4acde5f.css" id="mainThemeStyle"><link rel="stylesheet" id="themeStyle" href="../../static.files/light-4743e13df3dfe8c4.css"><link rel="stylesheet" disabled href="../../static.files/dark-0e1b889528bd466b.css"><link rel="stylesheet" disabled href="../../static.files/ayu-65289d5d067c7c66.css"><script id="default-settings" ></script><script src="../../static.files/storage-d43fa987303ecbbb.js"></script><script defer src="../../static.files/source-script-ea63cb6500f71309.js"></script><script defer src="../../source-files.js"></script><script defer src="../../static.files/main-bc1b32400f872ddb.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-13285aec31fa243e.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-16x16-8b506e7a72182f1c.png"><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"></nav><main><nav class="sub"><a class="sub-logo-container" href="../../page_allocator/index.html"><img class="rust-logo" src="../../static.files/rust-logo-151179464ae7ed46.svg" alt="logo"></a><form class="search-form"><span></span><input class="search-input" name="search" aria-label="Run search in the documentation" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../static.files/wheel-5ec35bf9ca753509.svg"></a></div></form></nav><section id="main-content" class="content"><div class="example-wrap"><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `kernel/page_allocator/src/lib.rs`."><title>lib.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceSerif4-Regular-46f98efaafac5295.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/FiraSans-Regular-018c141bf0843ffd.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/FiraSans-Medium-8f9a781e4970d388.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceSerif4-Bold-a2c9cd1067f8b328.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2"><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-f40c346f39d9abc1.css" id="mainThemeStyle"><div id="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="page_allocator" data-themes="" data-resource-suffix="" data-rustdoc-version="1.72.0-nightly (065a1f5df 2023-06-21)" data-search-js="search-95c92dd01058facf.js" data-settings-js="settings-de11bff964e9d4e5.js" data-settings-css="settings-8c76f75bfb6bd192.css" data-theme-light-css="light-0f8c037637f9eb3e.css" data-theme-dark-css="dark-1097f8e92a01e3cf.css" data-theme-ayu-css="ayu-614652228113ac93.css" ></div><script src="../../static.files/storage-62ce34ea385b278a.js"></script><script defer src="../../static.files/source-script-11255107d0a65077.js"></script><script defer src="../../source-files.js"></script><script defer src="../../static.files/main-190c35055d2a8300.js"></script><noscript><link rel="stylesheet" media="(prefers-color-scheme:light)" href="../../static.files/light-0f8c037637f9eb3e.css"><link rel="stylesheet" media="(prefers-color-scheme:dark)" href="../../static.files/dark-1097f8e92a01e3cf.css"><link rel="stylesheet" href="../../static.files/noscript-13285aec31fa243e.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-16x16-8b506e7a72182f1c.png"><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"></nav><main><nav class="sub"><a class="sub-logo-container" href="../../page_allocator/index.html"><img class="rust-logo" src="../../static.files/rust-logo-151179464ae7ed46.svg" alt="logo"></a><form class="search-form"><span></span><input class="search-input" name="search" aria-label="Run search in the documentation" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../static.files/wheel-7b819b6101059cd0.svg"></a></div></form></nav><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -797,7 +797,100 @@
 <a href="#797" id="797">797</a>
 <a href="#798" id="798">798</a>
 <a href="#799" id="799">799</a>
-</pre><pre class="rust"><code><span class="doccomment">//! Provides an allocator for virtual memory pages.
+<a href="#800" id="800">800</a>
+<a href="#801" id="801">801</a>
+<a href="#802" id="802">802</a>
+<a href="#803" id="803">803</a>
+<a href="#804" id="804">804</a>
+<a href="#805" id="805">805</a>
+<a href="#806" id="806">806</a>
+<a href="#807" id="807">807</a>
+<a href="#808" id="808">808</a>
+<a href="#809" id="809">809</a>
+<a href="#810" id="810">810</a>
+<a href="#811" id="811">811</a>
+<a href="#812" id="812">812</a>
+<a href="#813" id="813">813</a>
+<a href="#814" id="814">814</a>
+<a href="#815" id="815">815</a>
+<a href="#816" id="816">816</a>
+<a href="#817" id="817">817</a>
+<a href="#818" id="818">818</a>
+<a href="#819" id="819">819</a>
+<a href="#820" id="820">820</a>
+<a href="#821" id="821">821</a>
+<a href="#822" id="822">822</a>
+<a href="#823" id="823">823</a>
+<a href="#824" id="824">824</a>
+<a href="#825" id="825">825</a>
+<a href="#826" id="826">826</a>
+<a href="#827" id="827">827</a>
+<a href="#828" id="828">828</a>
+<a href="#829" id="829">829</a>
+<a href="#830" id="830">830</a>
+<a href="#831" id="831">831</a>
+<a href="#832" id="832">832</a>
+<a href="#833" id="833">833</a>
+<a href="#834" id="834">834</a>
+<a href="#835" id="835">835</a>
+<a href="#836" id="836">836</a>
+<a href="#837" id="837">837</a>
+<a href="#838" id="838">838</a>
+<a href="#839" id="839">839</a>
+<a href="#840" id="840">840</a>
+<a href="#841" id="841">841</a>
+<a href="#842" id="842">842</a>
+<a href="#843" id="843">843</a>
+<a href="#844" id="844">844</a>
+<a href="#845" id="845">845</a>
+<a href="#846" id="846">846</a>
+<a href="#847" id="847">847</a>
+<a href="#848" id="848">848</a>
+<a href="#849" id="849">849</a>
+<a href="#850" id="850">850</a>
+<a href="#851" id="851">851</a>
+<a href="#852" id="852">852</a>
+<a href="#853" id="853">853</a>
+<a href="#854" id="854">854</a>
+<a href="#855" id="855">855</a>
+<a href="#856" id="856">856</a>
+<a href="#857" id="857">857</a>
+<a href="#858" id="858">858</a>
+<a href="#859" id="859">859</a>
+<a href="#860" id="860">860</a>
+<a href="#861" id="861">861</a>
+<a href="#862" id="862">862</a>
+<a href="#863" id="863">863</a>
+<a href="#864" id="864">864</a>
+<a href="#865" id="865">865</a>
+<a href="#866" id="866">866</a>
+<a href="#867" id="867">867</a>
+<a href="#868" id="868">868</a>
+<a href="#869" id="869">869</a>
+<a href="#870" id="870">870</a>
+<a href="#871" id="871">871</a>
+<a href="#872" id="872">872</a>
+<a href="#873" id="873">873</a>
+<a href="#874" id="874">874</a>
+<a href="#875" id="875">875</a>
+<a href="#876" id="876">876</a>
+<a href="#877" id="877">877</a>
+<a href="#878" id="878">878</a>
+<a href="#879" id="879">879</a>
+<a href="#880" id="880">880</a>
+<a href="#881" id="881">881</a>
+<a href="#882" id="882">882</a>
+<a href="#883" id="883">883</a>
+<a href="#884" id="884">884</a>
+<a href="#885" id="885">885</a>
+<a href="#886" id="886">886</a>
+<a href="#887" id="887">887</a>
+<a href="#888" id="888">888</a>
+<a href="#889" id="889">889</a>
+<a href="#890" id="890">890</a>
+<a href="#891" id="891">891</a>
+<a href="#892" id="892">892</a>
+</pre></div><pre class="rust"><code><span class="doccomment">//! Provides an allocator for virtual memory pages.
 //! The minimum unit of allocation is a single page. 
 //! 
 //! This also supports early allocation of pages (up to 32 separate chunks)
@@ -808,10 +901,12 @@
 //! The core allocation function is [`allocate_pages_deferred()`](fn.allocate_pages_deferred.html), 
 //! but there are several convenience functions that offer simpler interfaces for general usage. 
 //!
-//! # Notes and Missing Features
-//! This allocator currently does **not** merge freed chunks (de-fragmentation) upon deallocation. 
-//! It only merges free chunks lazily upon request, i.e., when we run out of address space
-//! or when a requested address is in a chunk that needs to be merged with a nearby chunk.
+//! # Notes
+//! This allocator only makes one attempt to merge deallocated pages into existing
+//! free chunks for de-fragmentation. It does not iteratively merge adjacent chunks in order to
+//! maximally combine separate chunks into the biggest single chunk.
+//! Instead, free chunks are lazily merged only when running out of address space
+//! or when needed to fulfill a specific request.
 
 </span><span class="attr">#![no_std]
 
@@ -824,10 +919,8 @@
 <span class="kw">extern crate </span>intrusive_collections;
 <span class="kw">use </span>intrusive_collections::Bound;
 
-
 <span class="kw">mod </span>static_array_rb_tree;
 <span class="comment">// mod static_array_linked_list;
-
 
 </span><span class="kw">use </span>core::{borrow::Borrow, cmp::{Ordering, max, min}, fmt, ops::{Deref, DerefMut}};
 <span class="kw">use </span>kernel_config::memory::<span class="kw-2">*</span>;
@@ -1011,12 +1104,6 @@
 <span class="comment">// AllocatedPages must not be Cloneable, and it must not expose its inner pages as mutable.
 </span><span class="macro">assert_not_impl_any!</span>(AllocatedPages: DerefMut, Clone);
 
-<span class="kw">impl </span>Deref <span class="kw">for </span>AllocatedPages {
-    <span class="kw">type </span>Target = PageRange;
-    <span class="kw">fn </span>deref(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>PageRange {
-        <span class="kw-2">&amp;</span><span class="self">self</span>.pages
-    }
-}
 <span class="kw">impl </span>fmt::Debug <span class="kw">for </span>AllocatedPages {
     <span class="kw">fn </span>fmt(<span class="kw-2">&amp;</span><span class="self">self</span>, f: <span class="kw-2">&amp;mut </span>fmt::Formatter) -&gt; fmt::Result {
 		<span class="macro">write!</span>(f, <span class="string">&quot;AllocatedPages({:?})&quot;</span>, <span class="self">self</span>.pages)
@@ -1030,6 +1117,61 @@
         AllocatedPages {
 			pages: PageRange::empty()
 		}
+	}
+
+	<span class="doccomment">/// Returns the starting `VirtualAddress` in this range of pages.
+    </span><span class="kw">pub fn </span>start_address(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; VirtualAddress {
+        <span class="self">self</span>.pages.start_address()
+    }
+
+	<span class="doccomment">/// Returns the size in bytes of this range of pages.
+    </span><span class="kw">pub fn </span>size_in_bytes(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; usize {
+        <span class="self">self</span>.pages.size_in_bytes()
+    }
+
+	<span class="doccomment">/// Returns the size in number of pages of this range of pages.
+    </span><span class="kw">pub fn </span>size_in_pages(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; usize {
+        <span class="self">self</span>.pages.size_in_pages()
+    }
+
+	<span class="doccomment">/// Returns the starting `Page` in this range of pages.
+	</span><span class="kw">pub fn </span>start(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>Page {
+		<span class="self">self</span>.pages.start()
+	}
+
+	<span class="doccomment">/// Returns the ending `Page` (inclusive) in this range of pages.
+	</span><span class="kw">pub fn </span>end(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>Page {
+		<span class="self">self</span>.pages.end()
+	}
+
+	<span class="doccomment">/// Returns a reference to the inner `PageRange`, which is cloneable/iterable.
+	</span><span class="kw">pub fn </span>range(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>PageRange {
+		<span class="kw-2">&amp;</span><span class="self">self</span>.pages
+	}
+
+	<span class="doccomment">/// Returns the offset of the given `VirtualAddress` within this range of pages,
+	/// i.e., `addr - self.start_address()`.
+	///
+	/// If the given `addr` is not covered by this range of pages, this returns `None`.
+	///
+	/// ## Examples
+	/// If the range covers addresses `0x2000` to `0x4000`,
+	/// then `offset_of_address(0x3500)` would return `Some(0x1500)`.
+	</span><span class="kw">pub const fn </span>offset_of_address(<span class="kw-2">&amp;</span><span class="self">self</span>, addr: VirtualAddress) -&gt; <span class="prelude-ty">Option</span>&lt;usize&gt; {
+		<span class="self">self</span>.pages.offset_of_address(addr)
+	}
+
+	<span class="doccomment">/// Returns the `VirtualAddress` at the given offset into this range of pages,
+	/// i.e., `self.start_address() + offset`.
+	///
+	/// If the given `offset` is not within this range of pages, this returns `None`.
+	///
+	/// ## Examples
+	/// If the range covers addresses `0x2000` through `0x3FFF`,
+	/// then `address_at_offset(0x1500)` would return `Some(0x3500)`,
+	/// and `address_at_offset(0x2000)` would return `None`.
+	</span><span class="kw">pub const fn </span>address_at_offset(<span class="kw-2">&amp;</span><span class="self">self</span>, offset: usize) -&gt; <span class="prelude-ty">Option</span>&lt;VirtualAddress&gt; {
+		<span class="self">self</span>.pages.address_at_offset(offset)
 	}
 
 	<span class="doccomment">/// Merges the given `AllocatedPages` object `ap` into this `AllocatedPages` object (`self`).
@@ -1098,22 +1240,53 @@
 		<span class="kw">if </span><span class="self">self</span>.size_in_pages() == <span class="number">0 </span>{ <span class="kw">return</span>; }
 		<span class="comment">// trace!(&quot;page_allocator: deallocating {:?}&quot;, self);
 
-		// Simply add the newly-deallocated chunk to the free pages list.
-		</span><span class="kw">let </span><span class="kw-2">mut </span>locked_list = FREE_PAGE_LIST.lock();
-		<span class="kw">let </span>res = locked_list.insert(Chunk {
+		</span><span class="kw">let </span>chunk = Chunk {
 			pages: <span class="self">self</span>.pages.clone(),
-		});
-		<span class="kw">match </span>res {
-			<span class="prelude-val">Ok</span>(_inserted_free_chunk) =&gt; (),
-			<span class="prelude-val">Err</span>(c) =&gt; <span class="macro">error!</span>(<span class="string">&quot;BUG: couldn&#39;t insert deallocated chunk {:?} into free page list&quot;</span>, c),
+		};
+		<span class="kw">let </span><span class="kw-2">mut </span>list = FREE_PAGE_LIST.lock();
+		<span class="kw">match </span><span class="kw-2">&amp;mut </span>list.<span class="number">0 </span>{
+			<span class="comment">// For early allocations, just add the deallocated chunk to the free pages list.
+			</span>Inner::Array(<span class="kw">_</span>) =&gt; {
+				<span class="kw">if </span>list.insert(chunk).is_ok() {
+					<span class="kw">return</span>;
+				}
+			}
+
+			<span class="comment">// For full-fledged deallocations, use the entry API to efficiently determine if
+			// we can merge the deallocated pages with an existing contiguously-adjactent chunk
+			// or if we need to insert a new chunk.
+			</span>Inner::RBTree(<span class="kw-2">ref mut </span>tree) =&gt; {
+				<span class="kw">let </span><span class="kw-2">mut </span>cursor_mut = tree.lower_bound_mut(Bound::Included(chunk.start()));
+				<span class="kw">if let </span><span class="prelude-val">Some</span>(next_chunk) = cursor_mut.get() {
+					<span class="kw">if </span><span class="kw-2">*</span>chunk.end() + <span class="number">1 </span>== <span class="kw-2">*</span>next_chunk.start() {
+						<span class="comment">// trace!(&quot;Prepending {:?} onto beg of next {:?}&quot;, chunk, next_chunk.deref());
+						</span><span class="kw">if </span>cursor_mut.replace_with(Wrapper::new_link(Chunk {
+							pages: PageRange::new(<span class="kw-2">*</span>chunk.start(), <span class="kw-2">*</span>next_chunk.end()),
+						})).is_ok() {
+							<span class="kw">return</span>;
+						}
+					}
+				}
+				<span class="kw">if let </span><span class="prelude-val">Some</span>(prev_chunk) = cursor_mut.peek_prev().get() {
+					<span class="kw">if </span><span class="kw-2">*</span>prev_chunk.end() + <span class="number">1 </span>== <span class="kw-2">*</span>chunk.start() {
+						<span class="comment">// trace!(&quot;Appending {:?} onto end of prev {:?}&quot;, chunk, prev_chunk.deref());
+						</span><span class="kw">let </span>new_page_range = PageRange::new(<span class="kw-2">*</span>prev_chunk.start(), <span class="kw-2">*</span>chunk.end());
+						cursor_mut.move_prev();
+						<span class="kw">if </span>cursor_mut.replace_with(Wrapper::new_link(Chunk {
+							pages: new_page_range,
+						})).is_ok() {
+							<span class="kw">return</span>;
+						}
+					}
+				}
+
+				<span class="comment">// trace!(&quot;Inserting new chunk for deallocated {:?} &quot;, chunk.pages);
+				</span>cursor_mut.insert(Wrapper::new_link(chunk));
+				<span class="kw">return</span>;
+			}
 		}
-		
-		<span class="comment">// Here, we could optionally use above `_inserted_free_chunk` to merge the adjacent (contiguous) chunks
-		// before or after the newly-inserted free chunk. 
-		// However, there&#39;s no *need* to do so until we actually run out of address space or until 
-		// a requested address is in a chunk that needs to be merged.
-		// Thus, for performance, we save that for those future situations.
-    </span>}
+		<span class="macro">log::error!</span>(<span class="string">&quot;BUG: couldn&#39;t insert deallocated {:?} into free page list&quot;</span>, <span class="self">self</span>.pages);
+    }
 }
 
 
@@ -1448,6 +1621,16 @@
 }
 
 
+<span class="doccomment">/// Possible options when requested pages from the page allocator.
+</span><span class="kw">pub enum </span>AllocationRequest&lt;<span class="lifetime">&#39;r</span>&gt; {
+	<span class="doccomment">/// The allocated pages can be located at any virtual address.
+	</span>Any,
+	<span class="doccomment">/// The allocated pages must start exactly at the given `VirtualAddress`.
+	</span>AtVirtualAddress(VirtualAddress),
+	<span class="doccomment">/// The allocated pages can be located anywhere within the given range.
+	</span>WithinRange(<span class="kw-2">&amp;</span><span class="lifetime">&#39;r </span>PageRange),
+}
+
 <span class="doccomment">/// The core page allocation routine that allocates the given number of virtual pages,
 /// optionally at the requested starting `VirtualAddress`.
 /// 
@@ -1459,9 +1642,8 @@
 /// Fragmentation isn&#39;t cleaned up until we&#39;re out of address space, but that&#39;s not really a big deal.
 /// 
 /// # Arguments
-/// * `requested_vaddr`: if `Some`, the returned `AllocatedPages` will start at the `Page`
-///   containing this `VirtualAddress`. 
-///   If `None`, the first available `Page` range will be used, starting at any random virtual address.
+/// * `request`: whether to allocate `num_pages` pages at any address,
+///    at a specific virtual address, or withing a specified range.
 /// * `num_pages`: the number of `Page`s to be allocated. 
 /// 
 /// # Return
@@ -1471,9 +1653,8 @@
 ///   Those actions are deferred until this returned `DeferredAllocAction` struct object is dropped, 
 ///   allowing the caller (such as the heap implementation itself) to control when heap allocation may occur.
 </span><span class="kw">pub fn </span>allocate_pages_deferred(
-	requested_vaddr: <span class="prelude-ty">Option</span>&lt;VirtualAddress&gt;,
+	request: AllocationRequest,
 	num_pages: usize,
-	within_range: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>PageRange&gt;,
 ) -&gt; <span class="prelude-ty">Result</span>&lt;(AllocatedPages, DeferredAllocAction&lt;<span class="lifetime">&#39;static</span>&gt;), <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str&gt; {
 	<span class="kw">if </span>num_pages == <span class="number">0 </span>{
 		<span class="macro">warn!</span>(<span class="string">&quot;PageAllocator: requested an allocation of 0 pages... stupid!&quot;</span>);
@@ -1487,12 +1668,18 @@
 	// - Can fit the requested size (starting at the requested address) within the chunk.
 	// - The chunk can only be within in a designated region if a specific address was requested, 
 	//   or all other non-designated chunks are already in use.
-	</span><span class="kw">if let </span><span class="prelude-val">Some</span>(vaddr) = requested_vaddr {
-		find_specific_chunk(<span class="kw-2">&amp;mut </span>locked_list, Page::containing_address(vaddr), num_pages)
-	} <span class="kw">else </span>{
-		find_any_chunk(<span class="kw-2">&amp;mut </span>locked_list, num_pages, within_range)
-	}
-	.map_err(From::from) <span class="comment">// convert from AllocationError to &amp;str
+	</span><span class="kw">let </span>res = <span class="kw">match </span>request {
+		AllocationRequest::AtVirtualAddress(vaddr) =&gt; {
+			find_specific_chunk(<span class="kw-2">&amp;mut </span>locked_list, Page::containing_address(vaddr), num_pages)
+		}
+		AllocationRequest::Any =&gt; {
+			find_any_chunk(<span class="kw-2">&amp;mut </span>locked_list, num_pages, <span class="prelude-val">None</span>)
+		}
+		AllocationRequest::WithinRange(range) =&gt; {
+			find_any_chunk(<span class="kw-2">&amp;mut </span>locked_list, num_pages, <span class="prelude-val">Some</span>(range))
+		}
+	};
+	res.map_err(From::from) <span class="comment">// convert from AllocationError to &amp;str
 </span>}
 
 
@@ -1501,16 +1688,16 @@
 /// 
 /// This function still allocates whole pages by rounding up the number of bytes. 
 </span><span class="kw">pub fn </span>allocate_pages_by_bytes_deferred(
-	requested_vaddr: <span class="prelude-ty">Option</span>&lt;VirtualAddress&gt;,
+	request: AllocationRequest,
 	num_bytes: usize,
 ) -&gt; <span class="prelude-ty">Result</span>&lt;(AllocatedPages, DeferredAllocAction&lt;<span class="lifetime">&#39;static</span>&gt;), <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str&gt; {
-	<span class="kw">let </span>actual_num_bytes = <span class="kw">if let </span><span class="prelude-val">Some</span>(vaddr) = requested_vaddr {
+	<span class="kw">let </span>actual_num_bytes = <span class="kw">if let </span>AllocationRequest::AtVirtualAddress(vaddr) = request {
 		num_bytes + (vaddr.value() % PAGE_SIZE)
 	} <span class="kw">else </span>{
 		num_bytes
 	};
 	<span class="kw">let </span>num_pages = (actual_num_bytes + PAGE_SIZE - <span class="number">1</span>) / PAGE_SIZE; <span class="comment">// round up
-	</span>allocate_pages_deferred(requested_vaddr, num_pages, <span class="prelude-val">None</span>)
+	</span>allocate_pages_deferred(request, num_pages)
 }
 
 
@@ -1518,7 +1705,7 @@
 /// 
 /// See [`allocate_pages_deferred()`](fn.allocate_pages_deferred.html) for more details. 
 </span><span class="kw">pub fn </span>allocate_pages(num_pages: usize) -&gt; <span class="prelude-ty">Option</span>&lt;AllocatedPages&gt; {
-	allocate_pages_deferred(<span class="prelude-val">None</span>, num_pages, <span class="prelude-val">None</span>)
+	allocate_pages_deferred(AllocationRequest::Any, num_pages)
 		.map(|(ap, _action)| ap)
 		.ok()
 }
@@ -1530,7 +1717,7 @@
 /// This function still allocates whole pages by rounding up the number of bytes. 
 /// See [`allocate_pages_deferred()`](fn.allocate_pages_deferred.html) for more details. 
 </span><span class="kw">pub fn </span>allocate_pages_by_bytes(num_bytes: usize) -&gt; <span class="prelude-ty">Option</span>&lt;AllocatedPages&gt; {
-	allocate_pages_by_bytes_deferred(<span class="prelude-val">None</span>, num_bytes)
+	allocate_pages_by_bytes_deferred(AllocationRequest::Any, num_bytes)
 		.map(|(ap, _action)| ap)
 		.ok()
 }
@@ -1541,7 +1728,7 @@
 /// This function still allocates whole pages by rounding up the number of bytes. 
 /// See [`allocate_pages_deferred()`](fn.allocate_pages_deferred.html) for more details. 
 </span><span class="kw">pub fn </span>allocate_pages_by_bytes_at(vaddr: VirtualAddress, num_bytes: usize) -&gt; <span class="prelude-ty">Result</span>&lt;AllocatedPages, <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str&gt; {
-	allocate_pages_by_bytes_deferred(<span class="prelude-val">Some</span>(vaddr), num_bytes)
+	allocate_pages_by_bytes_deferred(AllocationRequest::AtVirtualAddress(vaddr), num_bytes)
 		.map(|(ap, _action)| ap)
 }
 
@@ -1550,7 +1737,7 @@
 /// 
 /// See [`allocate_pages_deferred()`](fn.allocate_pages_deferred.html) for more details. 
 </span><span class="kw">pub fn </span>allocate_pages_at(vaddr: VirtualAddress, num_pages: usize) -&gt; <span class="prelude-ty">Result</span>&lt;AllocatedPages, <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str&gt; {
-	allocate_pages_deferred(<span class="prelude-val">Some</span>(vaddr), num_pages, <span class="prelude-val">None</span>)
+	allocate_pages_deferred(AllocationRequest::AtVirtualAddress(vaddr), num_pages)
 		.map(|(ap, _action)| ap)
 }
 
@@ -1561,7 +1748,7 @@
 	num_pages: usize,
 	range: <span class="kw-2">&amp;</span>PageRange,
 ) -&gt; <span class="prelude-ty">Result</span>&lt;AllocatedPages, <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str&gt; {
-	allocate_pages_deferred(<span class="prelude-val">None</span>, num_pages, <span class="prelude-val">Some</span>(range))
+	allocate_pages_deferred(AllocationRequest::WithinRange(range), num_pages)
 		.map(|(ap, _action)| ap)
 }
 
@@ -1572,8 +1759,7 @@
 	num_bytes: usize,
 	range: <span class="kw-2">&amp;</span>PageRange,
 ) -&gt; <span class="prelude-ty">Result</span>&lt;AllocatedPages, <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str&gt; {
-	<span class="kw">let </span>num_pages = (num_bytes + PAGE_SIZE - <span class="number">1</span>) / PAGE_SIZE; <span class="comment">// round up
-	</span>allocate_pages_deferred(<span class="prelude-val">None</span>, num_pages, <span class="prelude-val">Some</span>(range))
+	allocate_pages_by_bytes_deferred(AllocationRequest::WithinRange(range), num_bytes)
 		.map(|(ap, _action)| ap)
 }
 
@@ -1583,7 +1769,7 @@
 /// Call this function once heap allocation is available. 
 /// Calling this multiple times is unnecessary but harmless, as it will do nothing after the first invocation.
 </span><span class="attr">#[doc(hidden)] 
-</span><span class="kw">pub fn </span>convert_to_heap_allocated() {
+</span><span class="kw">pub fn </span>convert_page_allocator_to_heap_based() {
 	FREE_PAGE_LIST.lock().convert_to_heap_allocated();
 }
 
@@ -1596,5 +1782,4 @@
 	}
 	<span class="macro">debug!</span>(<span class="string">&quot;---------------------------------------------------&quot;</span>);
 }
-</code></pre></div>
-</section></main><div id="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="page_allocator" data-themes="" data-resource-suffix="" data-rustdoc-version="1.68.0-nightly (0442fbabe 2023-01-10)" data-search-js="search-181581080540673f.js" data-settings-js="settings-bebeae96e00e4617.js" data-settings-css="settings-58836c674e2f7bd2.css" ></div></body></html>
+</code></pre></div></section></main></body></html>

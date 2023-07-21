@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `kernel/panic_entry/src/lib.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>lib.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceSerif4-Regular-1f7d512b176f0f72.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/FiraSans-Regular-018c141bf0843ffd.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/FiraSans-Medium-8f9a781e4970d388.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceSerif4-Bold-124a1ca42af929b6.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2"><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-fbcde169c4acde5f.css" id="mainThemeStyle"><link rel="stylesheet" id="themeStyle" href="../../static.files/light-4743e13df3dfe8c4.css"><link rel="stylesheet" disabled href="../../static.files/dark-0e1b889528bd466b.css"><link rel="stylesheet" disabled href="../../static.files/ayu-65289d5d067c7c66.css"><script id="default-settings" ></script><script src="../../static.files/storage-d43fa987303ecbbb.js"></script><script defer src="../../static.files/source-script-ea63cb6500f71309.js"></script><script defer src="../../source-files.js"></script><script defer src="../../static.files/main-bc1b32400f872ddb.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-13285aec31fa243e.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-16x16-8b506e7a72182f1c.png"><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"></nav><main><nav class="sub"><a class="sub-logo-container" href="../../panic_entry/index.html"><img class="rust-logo" src="../../static.files/rust-logo-151179464ae7ed46.svg" alt="logo"></a><form class="search-form"><span></span><input class="search-input" name="search" aria-label="Run search in the documentation" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../static.files/wheel-5ec35bf9ca753509.svg"></a></div></form></nav><section id="main-content" class="content"><div class="example-wrap"><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `kernel/panic_entry/src/lib.rs`."><title>lib.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceSerif4-Regular-46f98efaafac5295.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/FiraSans-Regular-018c141bf0843ffd.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/FiraSans-Medium-8f9a781e4970d388.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceSerif4-Bold-a2c9cd1067f8b328.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2"><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-f40c346f39d9abc1.css" id="mainThemeStyle"><div id="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="panic_entry" data-themes="" data-resource-suffix="" data-rustdoc-version="1.72.0-nightly (065a1f5df 2023-06-21)" data-search-js="search-95c92dd01058facf.js" data-settings-js="settings-de11bff964e9d4e5.js" data-settings-css="settings-8c76f75bfb6bd192.css" data-theme-light-css="light-0f8c037637f9eb3e.css" data-theme-dark-css="dark-1097f8e92a01e3cf.css" data-theme-ayu-css="ayu-614652228113ac93.css" ></div><script src="../../static.files/storage-62ce34ea385b278a.js"></script><script defer src="../../static.files/source-script-11255107d0a65077.js"></script><script defer src="../../source-files.js"></script><script defer src="../../static.files/main-190c35055d2a8300.js"></script><noscript><link rel="stylesheet" media="(prefers-color-scheme:light)" href="../../static.files/light-0f8c037637f9eb3e.css"><link rel="stylesheet" media="(prefers-color-scheme:dark)" href="../../static.files/dark-1097f8e92a01e3cf.css"><link rel="stylesheet" href="../../static.files/noscript-13285aec31fa243e.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-16x16-8b506e7a72182f1c.png"><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"></nav><main><nav class="sub"><a class="sub-logo-container" href="../../panic_entry/index.html"><img class="rust-logo" src="../../static.files/rust-logo-151179464ae7ed46.svg" alt="logo"></a><form class="search-form"><span></span><input class="search-input" name="search" aria-label="Run search in the documentation" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../static.files/wheel-7b819b6101059cd0.svg"></a></div></form></nav><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -131,17 +131,7 @@
 <a href="#131" id="131">131</a>
 <a href="#132" id="132">132</a>
 <a href="#133" id="133">133</a>
-<a href="#134" id="134">134</a>
-<a href="#135" id="135">135</a>
-<a href="#136" id="136">136</a>
-<a href="#137" id="137">137</a>
-<a href="#138" id="138">138</a>
-<a href="#139" id="139">139</a>
-<a href="#140" id="140">140</a>
-<a href="#141" id="141">141</a>
-<a href="#142" id="142">142</a>
-<a href="#143" id="143">143</a>
-</pre><pre class="rust"><code><span class="doccomment">//! Provides the default entry points and lang items for panics and unwinding. 
+</pre></div><pre class="rust"><code><span class="doccomment">//! Provides the default entry points and lang items for panics and unwinding. 
 //! 
 //! These lang items are required by the Rust compiler. 
 //! They should never be directly invoked by developers, only by the compiler. 
@@ -153,42 +143,31 @@
 #![feature(panic_info_message)]
 
 </span><span class="kw">extern crate </span>alloc;
-<span class="attr">#[macro_use] </span><span class="kw">extern crate </span>log;
-<span class="kw">extern crate </span>memory;
-<span class="kw">extern crate </span>mod_mgmt;
-
-<span class="attr">#[cfg(target_arch = <span class="string">&quot;x86_64&quot;</span>)]
-#[cfg(not(loadable))] </span><span class="kw">extern crate </span>unwind;
-
-<span class="attr">#[cfg(target_arch = <span class="string">&quot;x86_64&quot;</span>)]
-#[macro_use] </span><span class="kw">extern crate </span>early_printer;
-
-<span class="attr">#[cfg(target_arch = <span class="string">&quot;x86_64&quot;</span>)]
-#[cfg(not(loadable))] </span><span class="kw">extern crate </span>panic_wrapper;
 
 <span class="kw">use </span>core::panic::PanicInfo;
+<span class="kw">use </span>log::error;
+
+<span class="attr">#[cfg(target_arch = <span class="string">&quot;x86_64&quot;</span>)]
+</span><span class="kw">use </span>early_printer::println;
+<span class="attr">#[cfg(target_arch = <span class="string">&quot;aarch64&quot;</span>)]
+</span><span class="kw">use </span>log::info <span class="kw">as </span>println;
 
 <span class="doccomment">/// The singular entry point for a language-level panic.
 /// 
 /// The Rust compiler will rename this to &quot;rust_begin_unwind&quot;.
 </span><span class="attr">#[cfg(not(test))]
 #[panic_handler] </span><span class="comment">// same as:  #[lang = &quot;panic_impl&quot;]
-</span><span class="attr">#[doc(hidden)]
 </span><span class="kw">fn </span>panic_entry_point(info: <span class="kw-2">&amp;</span>PanicInfo) -&gt; ! {
     <span class="comment">// Since a panic could occur before the memory subsystem is initialized,
     // we must check before using alloc types or other functions that depend on the memory system (the heap).
     // We can check that by seeing if the kernel mmi has been initialized.
     </span><span class="kw">let </span>kernel_mmi_ref = memory::get_kernel_mmi_ref();  
     <span class="kw">let </span>res = <span class="kw">if </span>kernel_mmi_ref.is_some() {
-        <span class="attr">#[cfg(target_arch = <span class="string">&quot;aarch64&quot;</span>)] </span>{
-            <span class="prelude-val">Err</span>(<span class="string">&quot;panic_wrapper unimplemented for aarch64&quot;</span>) <span class="kw">as </span><span class="prelude-ty">Result</span>&lt;(), <span class="kw">_</span>&gt;
-        }
-
         <span class="comment">// proceed with calling the panic_wrapper, but don&#39;t shutdown with try_exit() if errors occur here
-        </span><span class="attr">#[cfg(all(target_arch = <span class="string">&quot;x86_64&quot;</span>, not(loadable)))] </span>{
+        </span><span class="attr">#[cfg(not(loadable))] </span>{
             panic_wrapper::panic_wrapper(info)
         }
-        <span class="attr">#[cfg(all(target_arch = <span class="string">&quot;x86_64&quot;</span>, loadable))] </span>{
+        <span class="attr">#[cfg(loadable)] </span>{
             <span class="comment">// An internal function for calling the panic_wrapper, but returning errors along the way.
             // We must make sure to not hold any locks when invoking the panic_wrapper function.
             </span><span class="kw">fn </span>invoke_panic_wrapper(info: <span class="kw-2">&amp;</span>PanicInfo) -&gt; <span class="prelude-ty">Result</span>&lt;(), <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str&gt; {
@@ -214,7 +193,6 @@
     <span class="kw">if let </span><span class="prelude-val">Err</span>(_e) = res {
         <span class="macro">error!</span>(<span class="string">&quot;Halting due to early panic: {}&quot;</span>, info);
         <span class="comment">// basic early panic printing with no dependencies
-        </span><span class="attr">#[cfg(target_arch = <span class="string">&quot;x86_64&quot;</span>)]
         </span><span class="macro">println!</span>(<span class="string">&quot;\nHalting due to early panic: {}&quot;</span>, info);
     }
 
@@ -236,8 +214,7 @@
 #[no_mangle]
 #[doc(hidden)]
 </span><span class="kw">extern </span><span class="string">&quot;C&quot; </span><span class="kw">fn </span>rust_eh_personality() -&gt; ! {
-    <span class="macro">error!</span>(<span class="string">&quot;BUG: Theseus does not use rust_eh_personality. Why has it been invoked?&quot;</span>);
-    <span class="kw">loop </span>{ core::hint::spin_loop() }
+    <span class="macro">panic!</span>(<span class="string">&quot;BUG: Theseus does not use rust_eh_personality. Why has it been invoked?&quot;</span>)
 }
 
 <span class="doccomment">/// This function is automatically jumped to after each unwinding cleanup routine finishes executing,
@@ -247,15 +224,12 @@
 /// that invokes the real `unwind_resume()` function in the `unwind` crate, 
 /// but does so dynamically in loadable mode.
 </span><span class="attr">#[no_mangle]
-#[cfg_attr(target_arch = <span class="string">&quot;aarch64&quot;</span>, allow(unused_variables))]
+#[cfg(target_arch = <span class="string">&quot;x86_64&quot;</span>)]
 </span><span class="kw">extern </span><span class="string">&quot;C&quot; </span><span class="kw">fn </span>_Unwind_Resume(arg: usize) -&gt; ! {
-    <span class="attr">#[cfg(target_arch = <span class="string">&quot;aarch64&quot;</span>)]
-    </span><span class="kw">loop </span>{ core::hint::spin_loop() }
-
-    <span class="attr">#[cfg(all(target_arch = <span class="string">&quot;x86_64&quot;</span>, not(loadable)))] </span>{
+    <span class="attr">#[cfg(not(loadable))] </span>{
         unwind::unwind_resume(arg)
     }
-    <span class="attr">#[cfg(all(target_arch = <span class="string">&quot;x86_64&quot;</span>, loadable))] </span>{
+    <span class="attr">#[cfg(loadable)] </span>{
         <span class="comment">// An internal function for calling the real unwind_resume function, but returning errors along the way.
         // We must make sure to not hold any locks when invoking the function.
         </span><span class="kw">fn </span>invoke_unwind_resume(arg: usize) -&gt; <span class="prelude-ty">Result</span>&lt;(), <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str&gt; {
@@ -277,6 +251,12 @@
     }
 }
 
+<span class="attr">#[no_mangle]
+#[cfg(target_arch = <span class="string">&quot;aarch64&quot;</span>)]
+</span><span class="kw">extern </span><span class="string">&quot;C&quot; </span><span class="kw">fn </span>_Unwind_Resume(_arg: usize) -&gt; ! {
+    <span class="macro">todo!</span>(<span class="string">&quot;_Unwind_Resume is not yet implemented on aarch64&quot;</span>)
+}
+
 <span class="doccomment">/// This is the callback entry point that gets invoked when the heap allocator runs out of memory.
 </span><span class="attr">#[alloc_error_handler]
 #[cfg(not(test))]
@@ -284,5 +264,4 @@
     <span class="macro">error!</span>(<span class="string">&quot;\n(oom) Out of Heap Memory! requested allocation: {:?}&quot;</span>, _layout);
     <span class="macro">panic!</span>(<span class="string">&quot;\n(oom) Out of Heap Memory! requested allocation: {:?}&quot;</span>, _layout);
 }
-</code></pre></div>
-</section></main><div id="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="panic_entry" data-themes="" data-resource-suffix="" data-rustdoc-version="1.68.0-nightly (0442fbabe 2023-01-10)" data-search-js="search-181581080540673f.js" data-settings-js="settings-bebeae96e00e4617.js" data-settings-css="settings-58836c674e2f7bd2.css" ></div></body></html>
+</code></pre></div></section></main></body></html>

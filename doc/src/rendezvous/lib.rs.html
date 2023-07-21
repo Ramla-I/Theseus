@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `kernel/rendezvous/src/lib.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>lib.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceSerif4-Regular-1f7d512b176f0f72.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/FiraSans-Regular-018c141bf0843ffd.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/FiraSans-Medium-8f9a781e4970d388.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceSerif4-Bold-124a1ca42af929b6.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2"><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-fbcde169c4acde5f.css" id="mainThemeStyle"><link rel="stylesheet" id="themeStyle" href="../../static.files/light-4743e13df3dfe8c4.css"><link rel="stylesheet" disabled href="../../static.files/dark-0e1b889528bd466b.css"><link rel="stylesheet" disabled href="../../static.files/ayu-65289d5d067c7c66.css"><script id="default-settings" ></script><script src="../../static.files/storage-d43fa987303ecbbb.js"></script><script defer src="../../static.files/source-script-ea63cb6500f71309.js"></script><script defer src="../../source-files.js"></script><script defer src="../../static.files/main-bc1b32400f872ddb.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-13285aec31fa243e.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-16x16-8b506e7a72182f1c.png"><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"></nav><main><nav class="sub"><a class="sub-logo-container" href="../../rendezvous/index.html"><img class="rust-logo" src="../../static.files/rust-logo-151179464ae7ed46.svg" alt="logo"></a><form class="search-form"><span></span><input class="search-input" name="search" aria-label="Run search in the documentation" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../static.files/wheel-5ec35bf9ca753509.svg"></a></div></form></nav><section id="main-content" class="content"><div class="example-wrap"><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `kernel/rendezvous/src/lib.rs`."><title>lib.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceSerif4-Regular-46f98efaafac5295.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/FiraSans-Regular-018c141bf0843ffd.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/FiraSans-Medium-8f9a781e4970d388.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceSerif4-Bold-a2c9cd1067f8b328.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2"><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-f40c346f39d9abc1.css" id="mainThemeStyle"><div id="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rendezvous" data-themes="" data-resource-suffix="" data-rustdoc-version="1.72.0-nightly (065a1f5df 2023-06-21)" data-search-js="search-95c92dd01058facf.js" data-settings-js="settings-de11bff964e9d4e5.js" data-settings-css="settings-8c76f75bfb6bd192.css" data-theme-light-css="light-0f8c037637f9eb3e.css" data-theme-dark-css="dark-1097f8e92a01e3cf.css" data-theme-ayu-css="ayu-614652228113ac93.css" ></div><script src="../../static.files/storage-62ce34ea385b278a.js"></script><script defer src="../../static.files/source-script-11255107d0a65077.js"></script><script defer src="../../source-files.js"></script><script defer src="../../static.files/main-190c35055d2a8300.js"></script><noscript><link rel="stylesheet" media="(prefers-color-scheme:light)" href="../../static.files/light-0f8c037637f9eb3e.css"><link rel="stylesheet" media="(prefers-color-scheme:dark)" href="../../static.files/dark-1097f8e92a01e3cf.css"><link rel="stylesheet" href="../../static.files/noscript-13285aec31fa243e.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-16x16-8b506e7a72182f1c.png"><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"></nav><main><nav class="sub"><a class="sub-logo-container" href="../../rendezvous/index.html"><img class="rust-logo" src="../../static.files/rust-logo-151179464ae7ed46.svg" alt="logo"></a><form class="search-form"><span></span><input class="search-input" name="search" aria-label="Run search in the documentation" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../static.files/wheel-7b819b6101059cd0.svg"></a></div></form></nav><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -505,7 +505,7 @@
 <a href="#505" id="505">505</a>
 <a href="#506" id="506">506</a>
 <a href="#507" id="507">507</a>
-</pre><pre class="rust"><code><span class="doccomment">//! A rendezvous-based channel for synchronous Inter-Task Communication (ITC).
+</pre></div><pre class="rust"><code><span class="doccomment">//! A rendezvous-based channel for synchronous Inter-Task Communication (ITC).
 //! 
 //! This crate offers a rendezvous channel, in which two tasks can exchange messages
 //! without an intermediary buffer. 
@@ -529,7 +529,7 @@
 <span class="attr">#[cfg(trace_channel)] 
 #[macro_use] </span><span class="kw">extern crate </span>debugit;
 <span class="kw">extern crate </span>spin;
-<span class="kw">extern crate </span>irq_safety;
+<span class="kw">extern crate </span>sync_irq;
 <span class="kw">extern crate </span>wait_queue;
 <span class="kw">extern crate </span>wait_guard;
 <span class="kw">extern crate </span>task;
@@ -539,7 +539,7 @@
 
 <span class="kw">use </span>core::fmt;
 <span class="kw">use </span>alloc::sync::Arc;
-<span class="kw">use </span>irq_safety::MutexIrqSafe;
+<span class="kw">use </span>sync_irq::IrqSafeMutex;
 <span class="kw">use </span>spin::Mutex;
 <span class="kw">use </span>wait_queue::WaitQueue;
 <span class="kw">use </span>wait_guard::WaitGuard;
@@ -548,9 +548,9 @@
 
 
 <span class="doccomment">/// A wrapper type for an `ExchangeSlot` that is used for sending only.
-</span><span class="kw">struct </span>SenderSlot&lt;T&gt;(Arc&lt;MutexIrqSafe&lt;ExchangeState&lt;T&gt;&gt;&gt;);
+</span><span class="kw">struct </span>SenderSlot&lt;T&gt;(Arc&lt;IrqSafeMutex&lt;ExchangeState&lt;T&gt;&gt;&gt;);
 <span class="doccomment">/// A wrapper type for an `ExchangeSlot` that is used for receiving only.
-</span><span class="kw">struct </span>ReceiverSlot&lt;T&gt;(Arc&lt;MutexIrqSafe&lt;ExchangeState&lt;T&gt;&gt;&gt;);
+</span><span class="kw">struct </span>ReceiverSlot&lt;T&gt;(Arc&lt;IrqSafeMutex&lt;ExchangeState&lt;T&gt;&gt;&gt;);
 
 
 <span class="doccomment">/// An `ExchangeSlot` consists of two references to a shared state
@@ -564,7 +564,7 @@
 }
 <span class="kw">impl</span>&lt;T&gt; ExchangeSlot&lt;T&gt; {
     <span class="kw">fn </span>new() -&gt; ExchangeSlot&lt;T&gt; {
-        <span class="kw">let </span>inner = Arc::new(MutexIrqSafe::new(ExchangeState::Init));
+        <span class="kw">let </span>inner = Arc::new(IrqSafeMutex::new(ExchangeState::Init));
         ExchangeSlot {
             sender: Mutex::new(<span class="prelude-val">Some</span>(SenderSlot(inner.clone()))),
             receiver: Mutex::new(<span class="prelude-val">Some</span>(ReceiverSlot(inner))),
@@ -750,7 +750,7 @@
             <span class="kw">match </span>current_state {
                 ExchangeState::Init =&gt; {
                     <span class="comment">// Hold interrupts to avoid blocking &amp; descheduling this task until we release the slot lock,
-                    // which is currently done automatically because the slot uses a MutexIrqSafe.
+                    // which is currently done automatically because the slot uses a IrqSafeMutex.
                     </span><span class="kw">let </span>curr = task::get_my_current_task().ok_or(<span class="string">&quot;couldn&#39;t get current task&quot;</span>)<span class="question-mark">?</span>;
                     <span class="kw-2">*</span>exchange_state = ExchangeState::WaitingForReceiver(
                         WaitGuard::new(curr).map_err(|<span class="kw">_</span>| <span class="string">&quot;failed to create wait guard&quot;</span>)<span class="question-mark">?</span>,
@@ -850,13 +850,13 @@
             let current_state = core::mem::replace(&amp;mut *wait_entry, RendezvousState::Init);
             match current_state {
                 RendezvousState::Init =&gt; {
-                    let _held_interrupts = irq_safety::hold_interrupts();
+                    let _held_interrupts = sync_irq::hold_interrupts();
                     *wait_entry = RendezvousState::Waiting(WaitGuard::new(curr_task.clone()), Some(msg));
                     // interrupts are re-enabled here
                 }
                 RendezvousState::Waiting(task_to_notify, dest) =&gt; {
                     *dest = Some(msg);
-                    let _held_interrupts = irq_safety::hold_interrupts();
+                    let _held_interrupts = sync_irq::hold_interrupts();
                     *task_to_notify = WaitGuard::new(curr_task.clone());
                     drop(task_to_notify); // notifies the receiver
                 }
@@ -904,7 +904,7 @@
             <span class="kw">match </span>current_state {
                 ExchangeState::Init =&gt; {
                     <span class="comment">// Hold interrupts to avoid blocking &amp; descheduling this task until we release the slot lock,
-                    // which is currently done automatically because the slot uses a MutexIrqSafe.
+                    // which is currently done automatically because the slot uses a IrqSafeMutex.
                     </span><span class="kw-2">*</span>exchange_state = ExchangeState::WaitingForSender(WaitGuard::new(curr_task.clone()).map_err(|<span class="kw">_</span>| <span class="string">&quot;failed to create wait guard&quot;</span>)<span class="question-mark">?</span>);
                     <span class="prelude-val">None
                 </span>}
@@ -1012,5 +1012,4 @@
 
 
 <span class="comment">// TODO: implement drop for sender and receiver in order to notify the other side of a disconnect
-</span></code></pre></div>
-</section></main><div id="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rendezvous" data-themes="" data-resource-suffix="" data-rustdoc-version="1.68.0-nightly (0442fbabe 2023-01-10)" data-search-js="search-181581080540673f.js" data-settings-js="settings-bebeae96e00e4617.js" data-settings-css="settings-58836c674e2f7bd2.css" ></div></body></html>
+</span></code></pre></div></section></main></body></html>

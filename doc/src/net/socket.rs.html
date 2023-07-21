@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `kernel/net/src/socket.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>socket.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceSerif4-Regular-1f7d512b176f0f72.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/FiraSans-Regular-018c141bf0843ffd.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/FiraSans-Medium-8f9a781e4970d388.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceSerif4-Bold-124a1ca42af929b6.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2"><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-fbcde169c4acde5f.css" id="mainThemeStyle"><link rel="stylesheet" id="themeStyle" href="../../static.files/light-4743e13df3dfe8c4.css"><link rel="stylesheet" disabled href="../../static.files/dark-0e1b889528bd466b.css"><link rel="stylesheet" disabled href="../../static.files/ayu-65289d5d067c7c66.css"><script id="default-settings" ></script><script src="../../static.files/storage-d43fa987303ecbbb.js"></script><script defer src="../../static.files/source-script-ea63cb6500f71309.js"></script><script defer src="../../source-files.js"></script><script defer src="../../static.files/main-bc1b32400f872ddb.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-13285aec31fa243e.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-16x16-8b506e7a72182f1c.png"><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"></nav><main><nav class="sub"><a class="sub-logo-container" href="../../net/index.html"><img class="rust-logo" src="../../static.files/rust-logo-151179464ae7ed46.svg" alt="logo"></a><form class="search-form"><span></span><input class="search-input" name="search" aria-label="Run search in the documentation" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../static.files/wheel-5ec35bf9ca753509.svg"></a></div></form></nav><section id="main-content" class="content"><div class="example-wrap"><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `kernel/net/src/socket.rs`."><title>socket.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceSerif4-Regular-46f98efaafac5295.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/FiraSans-Regular-018c141bf0843ffd.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/FiraSans-Medium-8f9a781e4970d388.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceSerif4-Bold-a2c9cd1067f8b328.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2"><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-f40c346f39d9abc1.css" id="mainThemeStyle"><div id="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="net" data-themes="" data-resource-suffix="" data-rustdoc-version="1.72.0-nightly (065a1f5df 2023-06-21)" data-search-js="search-95c92dd01058facf.js" data-settings-js="settings-de11bff964e9d4e5.js" data-settings-css="settings-8c76f75bfb6bd192.css" data-theme-light-css="light-0f8c037637f9eb3e.css" data-theme-dark-css="dark-1097f8e92a01e3cf.css" data-theme-ayu-css="ayu-614652228113ac93.css" ></div><script src="../../static.files/storage-62ce34ea385b278a.js"></script><script defer src="../../static.files/source-script-11255107d0a65077.js"></script><script defer src="../../source-files.js"></script><script defer src="../../static.files/main-190c35055d2a8300.js"></script><noscript><link rel="stylesheet" media="(prefers-color-scheme:light)" href="../../static.files/light-0f8c037637f9eb3e.css"><link rel="stylesheet" media="(prefers-color-scheme:dark)" href="../../static.files/dark-1097f8e92a01e3cf.css"><link rel="stylesheet" href="../../static.files/noscript-13285aec31fa243e.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-16x16-8b506e7a72182f1c.png"><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"></nav><main><nav class="sub"><a class="sub-logo-container" href="../../net/index.html"><img class="rust-logo" src="../../static.files/rust-logo-151179464ae7ed46.svg" alt="logo"></a><form class="search-form"><span></span><input class="search-input" name="search" aria-label="Run search in the documentation" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../static.files/wheel-7b819b6101059cd0.svg"></a></div></form></nav><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -63,37 +63,84 @@
 <a href="#63" id="63">63</a>
 <a href="#64" id="64">64</a>
 <a href="#65" id="65">65</a>
-</pre><pre class="rust"><code><span class="kw">use </span>core::{
+<a href="#66" id="66">66</a>
+<a href="#67" id="67">67</a>
+<a href="#68" id="68">68</a>
+<a href="#69" id="69">69</a>
+<a href="#70" id="70">70</a>
+<a href="#71" id="71">71</a>
+<a href="#72" id="72">72</a>
+<a href="#73" id="73">73</a>
+<a href="#74" id="74">74</a>
+<a href="#75" id="75">75</a>
+<a href="#76" id="76">76</a>
+<a href="#77" id="77">77</a>
+<a href="#78" id="78">78</a>
+<a href="#79" id="79">79</a>
+<a href="#80" id="80">80</a>
+<a href="#81" id="81">81</a>
+<a href="#82" id="82">82</a>
+<a href="#83" id="83">83</a>
+<a href="#84" id="84">84</a>
+<a href="#85" id="85">85</a>
+<a href="#86" id="86">86</a>
+<a href="#87" id="87">87</a>
+<a href="#88" id="88">88</a>
+<a href="#89" id="89">89</a>
+</pre></div><pre class="rust"><code><span class="kw">use </span><span class="kw">crate</span>::NetworkInterface;
+<span class="kw">use </span>alloc::sync::Arc;
+<span class="kw">use </span>core::{
     marker::PhantomData,
     ops::{Deref, DerefMut},
 };
-<span class="kw">use </span>mutex_sleep::{MutexSleep, MutexSleepGuard};
 <span class="kw">use </span>smoltcp::{
     iface::{SocketHandle, SocketSet},
     socket::AnySocket,
+    wire::{IpEndpoint, IpListenEndpoint},
 };
+<span class="kw">use </span>sync_block::MutexGuard;
+
+<span class="kw">pub use </span>smoltcp::socket::tcp::ConnectError;
 
 <span class="doccomment">/// A network socket.
 ///
 /// In order to use the socket, it must be locked using the [`lock`] method.
 /// This will lock the interface&#39;s list of sockets, and so the guard returned by
 /// [`lock`] must be dropped before calling [`Interface::poll`].
-</span><span class="kw">pub struct </span>Socket&lt;<span class="lifetime">&#39;a</span>, T&gt;
+</span><span class="kw">pub struct </span>Socket&lt;T&gt;
 <span class="kw">where
+    </span><span class="comment">// TODO: Relax &#39;static lifetime.
     </span>T: AnySocket&lt;<span class="lifetime">&#39;static</span>&gt; + <span class="question-mark">?</span>Sized,
 {
     <span class="kw">pub</span>(<span class="kw">crate</span>) handle: SocketHandle,
-    <span class="kw">pub</span>(<span class="kw">crate</span>) sockets: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a </span>MutexSleep&lt;SocketSet&lt;<span class="lifetime">&#39;static</span>&gt;&gt;,
+    <span class="kw">pub</span>(<span class="kw">crate</span>) interface: Arc&lt;NetworkInterface&gt;,
     <span class="kw">pub</span>(<span class="kw">crate</span>) phantom_data: PhantomData&lt;T&gt;,
 }
 
-<span class="kw">struct </span>LockedSocket&lt;<span class="lifetime">&#39;a</span>, T&gt;
+<span class="kw">pub struct </span>LockedSocket&lt;<span class="lifetime">&#39;a</span>, T&gt;
 <span class="kw">where
     </span>T: AnySocket&lt;<span class="lifetime">&#39;static</span>&gt; + <span class="question-mark">?</span>Sized,
 {
     handle: SocketHandle,
-    sockets: MutexSleepGuard&lt;<span class="lifetime">&#39;a</span>, SocketSet&lt;<span class="lifetime">&#39;static</span>&gt;&gt;,
+    sockets: MutexGuard&lt;<span class="lifetime">&#39;a</span>, SocketSet&lt;<span class="lifetime">&#39;static</span>&gt;&gt;,
+    interface: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a </span>Arc&lt;NetworkInterface&gt;,
     phantom_data: PhantomData&lt;T&gt;,
+}
+
+<span class="kw">impl</span>&lt;<span class="lifetime">&#39;a</span>&gt; LockedSocket&lt;<span class="lifetime">&#39;a</span>, smoltcp::socket::tcp::Socket&lt;<span class="lifetime">&#39;static</span>&gt;&gt; {
+    <span class="kw">pub fn </span>connect&lt;R, L&gt;(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        remote_endpoint: R,
+        local_endpoint: L,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), ConnectError&gt;
+    <span class="kw">where
+        </span>R: Into&lt;IpEndpoint&gt;,
+        L: Into&lt;IpListenEndpoint&gt;,
+    {
+        <span class="kw">let </span><span class="kw-2">mut </span>interface = <span class="self">self</span>.interface.inner.lock();
+        <span class="kw">let </span>context = interface.context();
+        (<span class="kw-2">**</span><span class="self">self</span>).connect(context, remote_endpoint, local_endpoint)
+    }
 }
 
 <span class="kw">impl</span>&lt;<span class="lifetime">&#39;a</span>, T&gt; Deref <span class="kw">for </span>LockedSocket&lt;<span class="lifetime">&#39;a</span>, T&gt;
@@ -116,17 +163,17 @@
     }
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">&#39;a</span>, T&gt; Socket&lt;<span class="lifetime">&#39;a</span>, T&gt;
+<span class="kw">impl</span>&lt;T&gt; Socket&lt;T&gt;
 <span class="kw">where
-    </span>T: AnySocket&lt;<span class="lifetime">&#39;static</span>&gt; + <span class="lifetime">&#39;a</span>,
+    </span>T: AnySocket&lt;<span class="lifetime">&#39;static</span>&gt;,
 {
-    <span class="kw">pub fn </span>lock(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw">impl </span>DerefMut&lt;Target = T&gt; + <span class="lifetime">&#39;a </span>{
+    <span class="kw">pub fn </span>lock(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; LockedSocket&lt;<span class="lifetime">&#39;_</span>, T&gt; {
         LockedSocket {
             handle: <span class="self">self</span>.handle,
-            sockets: <span class="self">self</span>.sockets.lock().expect(<span class="string">&quot;failed to lock sockets&quot;</span>),
+            sockets: <span class="self">self</span>.interface.sockets.lock(),
+            interface: <span class="kw-2">&amp;</span><span class="self">self</span>.interface,
             phantom_data: PhantomData,
         }
     }
 }
-</code></pre></div>
-</section></main><div id="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="net" data-themes="" data-resource-suffix="" data-rustdoc-version="1.68.0-nightly (0442fbabe 2023-01-10)" data-search-js="search-181581080540673f.js" data-settings-js="settings-bebeae96e00e4617.js" data-settings-css="settings-58836c674e2f7bd2.css" ></div></body></html>
+</code></pre></div></section></main></body></html>

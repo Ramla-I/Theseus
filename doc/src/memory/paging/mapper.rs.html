@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `kernel/memory/src/paging/mapper.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>mapper.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/SourceSerif4-Regular-1f7d512b176f0f72.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/FiraSans-Regular-018c141bf0843ffd.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/FiraSans-Medium-8f9a781e4970d388.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/SourceSerif4-Bold-124a1ca42af929b6.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2"><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-fbcde169c4acde5f.css" id="mainThemeStyle"><link rel="stylesheet" id="themeStyle" href="../../../static.files/light-4743e13df3dfe8c4.css"><link rel="stylesheet" disabled href="../../../static.files/dark-0e1b889528bd466b.css"><link rel="stylesheet" disabled href="../../../static.files/ayu-65289d5d067c7c66.css"><script id="default-settings" ></script><script src="../../../static.files/storage-d43fa987303ecbbb.js"></script><script defer src="../../../static.files/source-script-ea63cb6500f71309.js"></script><script defer src="../../../source-files.js"></script><script defer src="../../../static.files/main-bc1b32400f872ddb.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-13285aec31fa243e.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-16x16-8b506e7a72182f1c.png"><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"></nav><main><nav class="sub"><a class="sub-logo-container" href="../../../memory/index.html"><img class="rust-logo" src="../../../static.files/rust-logo-151179464ae7ed46.svg" alt="logo"></a><form class="search-form"><span></span><input class="search-input" name="search" aria-label="Run search in the documentation" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../../../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../../static.files/wheel-5ec35bf9ca753509.svg"></a></div></form></nav><section id="main-content" class="content"><div class="example-wrap"><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `kernel/memory/src/paging/mapper.rs`."><title>mapper.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/SourceSerif4-Regular-46f98efaafac5295.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/FiraSans-Regular-018c141bf0843ffd.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/FiraSans-Medium-8f9a781e4970d388.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/SourceSerif4-Bold-a2c9cd1067f8b328.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2"><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-f40c346f39d9abc1.css" id="mainThemeStyle"><div id="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="memory" data-themes="" data-resource-suffix="" data-rustdoc-version="1.72.0-nightly (065a1f5df 2023-06-21)" data-search-js="search-95c92dd01058facf.js" data-settings-js="settings-de11bff964e9d4e5.js" data-settings-css="settings-8c76f75bfb6bd192.css" data-theme-light-css="light-0f8c037637f9eb3e.css" data-theme-dark-css="dark-1097f8e92a01e3cf.css" data-theme-ayu-css="ayu-614652228113ac93.css" ></div><script src="../../../static.files/storage-62ce34ea385b278a.js"></script><script defer src="../../../static.files/source-script-11255107d0a65077.js"></script><script defer src="../../../source-files.js"></script><script defer src="../../../static.files/main-190c35055d2a8300.js"></script><noscript><link rel="stylesheet" media="(prefers-color-scheme:light)" href="../../../static.files/light-0f8c037637f9eb3e.css"><link rel="stylesheet" media="(prefers-color-scheme:dark)" href="../../../static.files/dark-1097f8e92a01e3cf.css"><link rel="stylesheet" href="../../../static.files/noscript-13285aec31fa243e.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-16x16-8b506e7a72182f1c.png"><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"></nav><main><nav class="sub"><a class="sub-logo-container" href="../../../memory/index.html"><img class="rust-logo" src="../../../static.files/rust-logo-151179464ae7ed46.svg" alt="logo"></a><form class="search-form"><span></span><input class="search-input" name="search" aria-label="Run search in the documentation" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../../../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../../static.files/wheel-7b819b6101059cd0.svg"></a></div></form></nav><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1252,7 +1252,79 @@
 <a href="#1252" id="1252">1252</a>
 <a href="#1253" id="1253">1253</a>
 <a href="#1254" id="1254">1254</a>
-</pre><pre class="rust"><code><span class="comment">// Copyright 2016 Philipp Oppermann. See the README.md
+<a href="#1255" id="1255">1255</a>
+<a href="#1256" id="1256">1256</a>
+<a href="#1257" id="1257">1257</a>
+<a href="#1258" id="1258">1258</a>
+<a href="#1259" id="1259">1259</a>
+<a href="#1260" id="1260">1260</a>
+<a href="#1261" id="1261">1261</a>
+<a href="#1262" id="1262">1262</a>
+<a href="#1263" id="1263">1263</a>
+<a href="#1264" id="1264">1264</a>
+<a href="#1265" id="1265">1265</a>
+<a href="#1266" id="1266">1266</a>
+<a href="#1267" id="1267">1267</a>
+<a href="#1268" id="1268">1268</a>
+<a href="#1269" id="1269">1269</a>
+<a href="#1270" id="1270">1270</a>
+<a href="#1271" id="1271">1271</a>
+<a href="#1272" id="1272">1272</a>
+<a href="#1273" id="1273">1273</a>
+<a href="#1274" id="1274">1274</a>
+<a href="#1275" id="1275">1275</a>
+<a href="#1276" id="1276">1276</a>
+<a href="#1277" id="1277">1277</a>
+<a href="#1278" id="1278">1278</a>
+<a href="#1279" id="1279">1279</a>
+<a href="#1280" id="1280">1280</a>
+<a href="#1281" id="1281">1281</a>
+<a href="#1282" id="1282">1282</a>
+<a href="#1283" id="1283">1283</a>
+<a href="#1284" id="1284">1284</a>
+<a href="#1285" id="1285">1285</a>
+<a href="#1286" id="1286">1286</a>
+<a href="#1287" id="1287">1287</a>
+<a href="#1288" id="1288">1288</a>
+<a href="#1289" id="1289">1289</a>
+<a href="#1290" id="1290">1290</a>
+<a href="#1291" id="1291">1291</a>
+<a href="#1292" id="1292">1292</a>
+<a href="#1293" id="1293">1293</a>
+<a href="#1294" id="1294">1294</a>
+<a href="#1295" id="1295">1295</a>
+<a href="#1296" id="1296">1296</a>
+<a href="#1297" id="1297">1297</a>
+<a href="#1298" id="1298">1298</a>
+<a href="#1299" id="1299">1299</a>
+<a href="#1300" id="1300">1300</a>
+<a href="#1301" id="1301">1301</a>
+<a href="#1302" id="1302">1302</a>
+<a href="#1303" id="1303">1303</a>
+<a href="#1304" id="1304">1304</a>
+<a href="#1305" id="1305">1305</a>
+<a href="#1306" id="1306">1306</a>
+<a href="#1307" id="1307">1307</a>
+<a href="#1308" id="1308">1308</a>
+<a href="#1309" id="1309">1309</a>
+<a href="#1310" id="1310">1310</a>
+<a href="#1311" id="1311">1311</a>
+<a href="#1312" id="1312">1312</a>
+<a href="#1313" id="1313">1313</a>
+<a href="#1314" id="1314">1314</a>
+<a href="#1315" id="1315">1315</a>
+<a href="#1316" id="1316">1316</a>
+<a href="#1317" id="1317">1317</a>
+<a href="#1318" id="1318">1318</a>
+<a href="#1319" id="1319">1319</a>
+<a href="#1320" id="1320">1320</a>
+<a href="#1321" id="1321">1321</a>
+<a href="#1322" id="1322">1322</a>
+<a href="#1323" id="1323">1323</a>
+<a href="#1324" id="1324">1324</a>
+<a href="#1325" id="1325">1325</a>
+<a href="#1326" id="1326">1326</a>
+</pre></div><pre class="rust"><code><span class="comment">// Copyright 2016 Philipp Oppermann. See the README.md
 // file at the top-level directory of this distribution.
 //
 // Licensed under the Apache License, Version 2.0 &lt;LICENSE-APACHE or
@@ -1275,7 +1347,6 @@
 <span class="kw">use crate</span>::{BROADCAST_TLB_SHOOTDOWN_FUNC, VirtualAddress, PhysicalAddress, Page, Frame, FrameRange, AllocatedPages, AllocatedFrames}; 
 <span class="kw">use </span><span class="kw">crate</span>::paging::{
     get_current_p4,
-    PageRange,
     table::{P4, UPCOMING_P4, Table, Level4},
 };
 <span class="kw">use </span>pte_flags::PteFlagsArch;
@@ -1474,7 +1545,7 @@
         }
 
         <span class="comment">// iterate over pages and frames in lockstep
-        </span><span class="kw">for </span>(page, frame) <span class="kw">in </span>pages.deref().clone().into_iter().zip(frames.borrow().into_iter()) {
+        </span><span class="kw">for </span>(page, frame) <span class="kw">in </span>pages.range().clone().into_iter().zip(frames.borrow().into_iter()) {
             <span class="kw">let </span>p3 = <span class="self">self</span>.p4_mut().next_table_create(page.p4_index(), higher_level_flags);
             <span class="kw">let </span>p2 = p3.next_table_create(page.p3_index(), higher_level_flags);
             <span class="kw">let </span>p1 = p2.next_table_create(page.p2_index(), higher_level_flags);
@@ -1536,7 +1607,7 @@
             .valid(<span class="bool-val">true</span>)
             .exclusive(<span class="bool-val">true</span>);
 
-        <span class="kw">for </span>page <span class="kw">in </span>pages.deref().clone() {
+        <span class="kw">for </span>page <span class="kw">in </span>pages.range().clone() {
             <span class="kw">let </span>af = frame_allocator::allocate_frames(<span class="number">1</span>).ok_or(<span class="string">&quot;map_allocated_pages(): couldn&#39;t allocate new frame, out of memory&quot;</span>)<span class="question-mark">?</span>;
 
             <span class="kw">let </span>p3 = <span class="self">self</span>.p4_mut().next_table_create(page.p4_index(), higher_level_flags);
@@ -1611,10 +1682,11 @@
     <span class="comment">// The PTE flags that define the page permissions of this mapping.
     </span>flags: PteFlagsArch,
 }
+<span class="macro">static_assertions::assert_not_impl_any!</span>(MappedPages: DerefMut, Clone);
 <span class="kw">impl </span>Deref <span class="kw">for </span>MappedPages {
-    <span class="kw">type </span>Target = PageRange;
-    <span class="kw">fn </span>deref(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>PageRange {
-        <span class="self">self</span>.pages.deref()
+    <span class="kw">type </span>Target = AllocatedPages;
+    <span class="kw">fn </span>deref(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>AllocatedPages {
+        <span class="kw-2">&amp;</span><span class="self">self</span>.pages
     }
 }
 
@@ -1791,7 +1863,7 @@
             <span class="kw">return </span><span class="prelude-val">Ok</span>(());
         }
 
-        <span class="kw">for </span>page <span class="kw">in </span><span class="self">self</span>.pages.clone() {
+        <span class="kw">for </span>page <span class="kw">in </span><span class="self">self</span>.pages.range().clone() {
             <span class="kw">let </span>p1 = active_table_mapper.p4_mut()
                 .next_table_mut(page.p4_index())
                 .and_then(|p3| p3.next_table_mut(page.p3_index()))
@@ -1804,7 +1876,7 @@
         }
         
         <span class="kw">if let </span><span class="prelude-val">Some</span>(func) = BROADCAST_TLB_SHOOTDOWN_FUNC.get() {
-            func(<span class="self">self</span>.pages.deref().clone());
+            func(<span class="self">self</span>.pages.range().clone());
         }
 
         <span class="self">self</span>.flags = new_flags;
@@ -1867,7 +1939,7 @@
         <span class="kw">let </span><span class="kw-2">mut </span>first_frame_range: <span class="prelude-ty">Option</span>&lt;AllocatedFrames&gt; = <span class="prelude-val">None</span>; <span class="comment">// this is what we&#39;ll return
         </span><span class="kw">let </span><span class="kw-2">mut </span>current_frame_range: <span class="prelude-ty">Option</span>&lt;AllocatedFrames&gt; = <span class="prelude-val">None</span>;
 
-        <span class="kw">for </span>page <span class="kw">in </span><span class="self">self</span>.pages.clone() {            
+        <span class="kw">for </span>page <span class="kw">in </span><span class="self">self</span>.pages.range().clone() {            
             <span class="kw">let </span>p1 = active_table_mapper.p4_mut()
                 .next_table_mut(page.p4_index())
                 .and_then(|p3| p3.next_table_mut(page.p3_index()))
@@ -1930,7 +2002,7 @@
         <span class="attr">#[cfg(not(bm_map))]
         </span>{
             <span class="kw">if let </span><span class="prelude-val">Some</span>(func) = BROADCAST_TLB_SHOOTDOWN_FUNC.get() {
-                func(<span class="self">self</span>.pages.deref().clone());
+                func(<span class="self">self</span>.pages.range().clone());
             }
         }
 
@@ -1958,8 +2030,8 @@
     /// # Arguments
     /// * `byte_offset`: the offset (in number of bytes) from the beginning of the memory region
     ///    at which the struct is located (where it should start).
-    ///    This offset must be properly aligned with respect to the alignment requirements
-    ///    of type `T`, otherwise an error will be returned.
+    ///    * This offset must be properly aligned with respect to the alignment requirements
+    ///      of type `T`, otherwise an error will be returned.
     /// 
     /// Returns a reference to the new struct (`&amp;T`) that is formed from the underlying memory region,
     /// with a lifetime dependent upon the lifetime of this `MappedPages` object.
@@ -2060,8 +2132,8 @@
     /// # Arguments
     /// * `byte_offset`: the offset (in number of bytes) into the memory region
     ///    at which the slice should start.
-    ///    This offset must be properly aligned with respect to the alignment requirements
-    ///    of type `T`, otherwise an error will be returned.
+    ///    * This offset must be properly aligned with respect to the alignment requirements
+    ///      of type `T`, otherwise an error will be returned.
     /// * `length`: the length of the slice, i.e., the number of elements of type `T` in the slice. 
     ///    Thus, the slice&#39;s address bounds will span the range from
     ///    `byte_offset` (inclusive) to `byte_offset + (size_of::&lt;T&gt;() * length)` (exclusive).
@@ -2230,31 +2302,58 @@
 
 
 <span class="doccomment">/// A borrowed [`MappedPages`] object that derefs to `&amp;T` and optionally also `&amp;mut T`.
-/// 
-/// By default, the `Mutability` type parameter is `Immutable` for ease of use.
 ///
-/// When dropped, the borrow ends and the contained `MappedPages` is dropped and unmapped.
-/// You can manually end the borrow and reclaim the inner `MappedPages` via [`Self::into_inner()`].
-</span><span class="kw">pub struct </span>BorrowedMappedPages&lt;T: FromBytes, M: Mutability = Immutable&gt; {
+/// ## Type parameters
+/// 1. `T: FromBytes`: the same parameter used in [`MappedPages::as_type()`] functions.
+/// 2. `M: Mutability`: whether or not the `MappedPages` can be mutably borrowed. 
+///    * For ease of use, the default is [`Immutable`].
+/// 3. `B: Borrow&lt;MappedPages&gt;`: enables the user of this type to use a borrow-able
+///    wrapper type or reference around `MappedPages`.
+///    * For ease of use, the default is just a plain `MappedPages` with no wrapper.
+///      This default `MappedPages` type can be borrowed immutably or mutably.
+///    * Example types that satisfy the bounds for `B` are `Arc&lt;MappedPages`,
+///      `Rc&lt;MappedPages&gt;`, `&amp;MappedPages`, etc, all of which can only be
+///      borrowed immutably via the `from()` method, as these types do not permit mutable access.
+///      For mutable borrows, see the `from_mut()` method, which works with
+///      types like `MappedPages` itself or `&amp;mut MappedPages`.
+///
+/// ## Drop behavior
+/// * When dropped, the borrow ends and the contained `MappedPages` is dropped and unmapped.
+/// * Also, you can manually end the borrow to reclaim the inner `B` `MappedPages` type
+///   via the [`Self::into_inner()`] method.
+</span><span class="kw">pub struct </span>BorrowedMappedPages&lt;T, M = Immutable, B = MappedPages&gt;
+<span class="kw">where
+    </span>T: FromBytes,
+    M: Mutability,
+    B: Borrow&lt;MappedPages&gt;,
+{
     ptr: Unique&lt;T&gt;,
-    mp: MappedPages,
+    mp: B,
     _mut: PhantomData&lt;M&gt;,
 }
 
-<span class="kw">impl</span>&lt;T: FromBytes&gt; BorrowedMappedPages&lt;T, Immutable&gt; {
+<span class="kw">impl</span>&lt;T: FromBytes, B: Borrow&lt;MappedPages&gt;&gt; BorrowedMappedPages&lt;T, Immutable, B&gt; {
     <span class="doccomment">/// Immutably borrows the given `MappedPages` as an instance of type `&amp;T` 
     /// located at the given `byte_offset` into the `MappedPages`.
     ///
     /// See [`MappedPages::as_type()`] for more info.
     ///
-    /// Upon failure, returns an error containing the unmodified `MappedPages` and a string
-    /// describing the error.
+    /// ## Arguments
+    /// * `mp`: the `MappedPages` that you wish to immutably borrow as an instance of `&amp;T`.
+    ///    * See the type-level docs for more info and examples of how to use this argument.
+    /// * `byte_offset`: the offset (in number of bytes) from the beginning of the `MappedPages`
+    ///    memory region at which the struct `T` is located (where it should start).
+    ///    * This offset must be properly aligned with respect to the alignment requirements
+    ///      of type `T`, otherwise an error will be returned.
+    ///
+    /// Upon failure, this returns an error tuple containing the unmodified `mp` argument
+    /// and a string describing the error.
     </span><span class="kw">pub fn </span>from(
-        mp: MappedPages,
+        mp: B,
         byte_offset: usize,
-    ) -&gt; <span class="prelude-ty">Result</span>&lt;BorrowedMappedPages&lt;T&gt;, (MappedPages, <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str)&gt; {
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="self">Self</span>, (B, <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str)&gt; {
         <span class="prelude-val">Ok</span>(<span class="self">Self </span>{
-            ptr: <span class="kw">match </span>mp.as_type::&lt;T&gt;(byte_offset) {
+            ptr: <span class="kw">match </span>mp.borrow().as_type::&lt;T&gt;(byte_offset) {
                 <span class="prelude-val">Ok</span>(r) =&gt; {
                     <span class="kw">let </span>nn: NonNull&lt;T&gt; = r.into();
                     nn.into()
@@ -2267,20 +2366,28 @@
     }
 }
 
-<span class="kw">impl</span>&lt;T: FromBytes&gt; BorrowedMappedPages&lt;T, Mutable&gt; {
+<span class="kw">impl</span>&lt;T: FromBytes, B: BorrowMut&lt;MappedPages&gt;&gt; BorrowedMappedPages&lt;T, Mutable, B&gt; {
     <span class="doccomment">/// Mutably borrows the given `MappedPages` as an instance of type `&amp;mut T` 
     /// located at the given `byte_offset` into the `MappedPages`.
-    /// 
+    ///
     /// See [`MappedPages::as_type_mut()`] for more info.
+    ///
+    /// ## Arguments
+    /// * `mp`: the `MappedPages` that you wish to mutably borrow as an instance of `&amp;mut T`.
+    ///    * See the type-level docs for more info and examples of how to use this argument.
+    /// * `byte_offset`: the offset (in number of bytes) from the beginning of the `MappedPages`
+    ///    memory region at which the struct `T` is located (where it should start).
+    ///    * This offset must be properly aligned with respect to the alignment requirements
+    ///      of type `T`, otherwise an error will be returned.
     /// 
     /// Upon failure, returns an error containing the unmodified `MappedPages`
     /// and a string describing the error.
     </span><span class="kw">pub fn </span>from_mut(
-        <span class="kw-2">mut </span>mp: MappedPages,
+        <span class="kw-2">mut </span>mp: B,
         byte_offset: usize,
-    ) -&gt; <span class="prelude-ty">Result</span>&lt;BorrowedMappedPages&lt;T, Mutable&gt;, (MappedPages, <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str)&gt; {
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="self">Self</span>, (B, <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str)&gt; {
         <span class="prelude-val">Ok</span>(<span class="self">Self </span>{
-            ptr: <span class="kw">match </span>mp.as_type_mut::&lt;T&gt;(byte_offset) {
+            ptr: <span class="kw">match </span>mp.borrow_mut().as_type_mut::&lt;T&gt;(byte_offset) {
                 <span class="prelude-val">Ok</span>(r) =&gt; r.into(),
                 <span class="prelude-val">Err</span>(e_str) =&gt; <span class="kw">return </span><span class="prelude-val">Err</span>((mp, e_str)),
             },
@@ -2290,15 +2397,22 @@
     }
 }
 
-<span class="kw">impl</span>&lt;T: FromBytes, M: Mutability&gt; BorrowedMappedPages&lt;T, M&gt; {
-    <span class="doccomment">/// Consumes this object and returns the inner `MappedPages`.
-    </span><span class="kw">pub fn </span>into_inner(<span class="self">self</span>) -&gt; MappedPages {
+<span class="kw">impl</span>&lt;T: FromBytes, M: Mutability, B: Borrow&lt;MappedPages&gt;&gt; BorrowedMappedPages&lt;T, M, B&gt; {
+    <span class="doccomment">/// Consumes this object and returns the inner `MappedPages` value
+    /// (more specifically, the `Borrow`-able container holding the `MappedPages`).
+    </span><span class="kw">pub fn </span>into_inner(<span class="self">self</span>) -&gt; B {
         <span class="self">self</span>.mp
+    }
+
+    <span class="doccomment">/// Returns a reference to the inner `MappedPages` value
+    /// (more specifically, the `Borrow`-able container holding the `MappedPages`).
+    </span><span class="kw">pub fn </span>inner_ref(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>B {
+        <span class="kw-2">&amp;</span><span class="self">self</span>.mp
     }
 }
 
 <span class="doccomment">/// Both [`Mutable`] and [`Immutable`] [`BorrowedMappedPages`] can deref into `&amp;T`.
-</span><span class="kw">impl</span>&lt;T: FromBytes, M: Mutability&gt; Deref <span class="kw">for </span>BorrowedMappedPages&lt;T, M&gt; {
+</span><span class="kw">impl</span>&lt;T: FromBytes, M: Mutability, B: Borrow&lt;MappedPages&gt;&gt; Deref <span class="kw">for </span>BorrowedMappedPages&lt;T, M, B&gt; {
     <span class="kw">type </span>Target = T;
     <span class="kw">fn </span>deref(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>T {
         <span class="comment">// SAFETY:
@@ -2311,7 +2425,7 @@
     }
 }
 <span class="doccomment">/// Only [`Mutable`] [`BorrowedMappedPages`] can deref into `&amp;mut T`.
-</span><span class="kw">impl</span>&lt;T: FromBytes&gt; DerefMut <span class="kw">for </span>BorrowedMappedPages&lt;T, Mutable&gt; {
+</span><span class="kw">impl</span>&lt;T: FromBytes, B: BorrowMut&lt;MappedPages&gt;&gt; DerefMut <span class="kw">for </span>BorrowedMappedPages&lt;T, Mutable, B&gt; {
     <span class="kw">fn </span>deref_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>T {
         <span class="comment">// SAFETY:
         // ✅ Same as the above `Deref` block, plus:
@@ -2320,65 +2434,78 @@
     }
 }
 <span class="doccomment">/// Both [`Mutable`] and [`Immutable`] [`BorrowedMappedPages`] implement `AsRef&lt;T&gt;`.
-</span><span class="kw">impl</span>&lt;T: FromBytes, M: Mutability&gt; AsRef&lt;T&gt; <span class="kw">for </span>BorrowedMappedPages&lt;T, M&gt; {
+</span><span class="kw">impl</span>&lt;T: FromBytes, M: Mutability, B: Borrow&lt;MappedPages&gt;&gt; AsRef&lt;T&gt; <span class="kw">for </span>BorrowedMappedPages&lt;T, M, B&gt; {
     <span class="kw">fn </span>as_ref(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>T { <span class="self">self</span>.deref() }
 }
 <span class="doccomment">/// Only [`Mutable`] [`BorrowedMappedPages`] implement `AsMut&lt;T&gt;`.
-</span><span class="kw">impl</span>&lt;T: FromBytes&gt; AsMut&lt;T&gt; <span class="kw">for </span>BorrowedMappedPages&lt;T, Mutable&gt; {
+</span><span class="kw">impl</span>&lt;T: FromBytes, B: BorrowMut&lt;MappedPages&gt;&gt; AsMut&lt;T&gt; <span class="kw">for </span>BorrowedMappedPages&lt;T, Mutable, B&gt; {
     <span class="kw">fn </span>as_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>T { <span class="self">self</span>.deref_mut() }
 }
 <span class="doccomment">/// Both [`Mutable`] and [`Immutable`] [`BorrowedMappedPages`] implement `Borrow&lt;T&gt;`.
-</span><span class="kw">impl</span>&lt;T: FromBytes, M: Mutability&gt; Borrow&lt;T&gt; <span class="kw">for </span>BorrowedMappedPages&lt;T, M&gt; {
+</span><span class="kw">impl</span>&lt;T: FromBytes, M: Mutability, B: Borrow&lt;MappedPages&gt;&gt; Borrow&lt;T&gt; <span class="kw">for </span>BorrowedMappedPages&lt;T, M, B&gt; {
     <span class="kw">fn </span>borrow(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>T { <span class="self">self</span>.deref() }
 }
 <span class="doccomment">/// Only [`Mutable`] [`BorrowedMappedPages`] implement `BorrowMut&lt;T&gt;`.
-</span><span class="kw">impl</span>&lt;T: FromBytes&gt; BorrowMut&lt;T&gt; <span class="kw">for </span>BorrowedMappedPages&lt;T, Mutable&gt; {
+</span><span class="kw">impl</span>&lt;T: FromBytes, B: BorrowMut&lt;MappedPages&gt;&gt; BorrowMut&lt;T&gt; <span class="kw">for </span>BorrowedMappedPages&lt;T, Mutable, B&gt; {
     <span class="kw">fn </span>borrow_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>T { <span class="self">self</span>.deref_mut() }
 }
 
 <span class="comment">// Forward the impls of `PartialEq`, `Eq`, `PartialOrd`, `Ord`, and `Hash`.
-</span><span class="kw">impl</span>&lt;T: FromBytes + PartialEq, M: Mutability&gt; PartialEq <span class="kw">for </span>BorrowedMappedPages&lt;T, M&gt; {
+</span><span class="kw">impl</span>&lt;T: FromBytes + PartialEq, M: Mutability, B: Borrow&lt;MappedPages&gt;&gt; PartialEq <span class="kw">for </span>BorrowedMappedPages&lt;T, M, B&gt; {
     <span class="kw">fn </span>eq(<span class="kw-2">&amp;</span><span class="self">self</span>, other: <span class="kw-2">&amp;</span><span class="self">Self</span>) -&gt; bool { <span class="self">self</span>.deref().eq(other.deref()) }
 }
-<span class="kw">impl</span>&lt;T: FromBytes + Eq, M: Mutability&gt; Eq <span class="kw">for </span>BorrowedMappedPages&lt;T, M&gt; { }
-<span class="kw">impl</span>&lt;T: FromBytes + PartialOrd, M: Mutability&gt; PartialOrd <span class="kw">for </span>BorrowedMappedPages&lt;T, M&gt; {
+<span class="kw">impl</span>&lt;T: FromBytes + Eq, M: Mutability, B: Borrow&lt;MappedPages&gt;&gt; Eq <span class="kw">for </span>BorrowedMappedPages&lt;T, M, B&gt; { }
+<span class="kw">impl</span>&lt;T: FromBytes + PartialOrd, M: Mutability, B: Borrow&lt;MappedPages&gt;&gt; PartialOrd <span class="kw">for </span>BorrowedMappedPages&lt;T, M, B&gt; {
     <span class="kw">fn </span>partial_cmp(<span class="kw-2">&amp;</span><span class="self">self</span>, other: <span class="kw-2">&amp;</span><span class="self">Self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;Ordering&gt; { <span class="self">self</span>.deref().partial_cmp(other.deref()) }
 }
-<span class="kw">impl</span>&lt;T: FromBytes + Ord, M: Mutability&gt; Ord <span class="kw">for </span>BorrowedMappedPages&lt;T, M&gt; {
+<span class="kw">impl</span>&lt;T: FromBytes + Ord, M: Mutability, B: Borrow&lt;MappedPages&gt;&gt; Ord <span class="kw">for </span>BorrowedMappedPages&lt;T, M, B&gt; {
     <span class="kw">fn </span>cmp(<span class="kw-2">&amp;</span><span class="self">self</span>, other: <span class="kw-2">&amp;</span><span class="self">Self</span>) -&gt; Ordering { <span class="self">self</span>.deref().cmp(other.deref()) }
 }
-<span class="kw">impl</span>&lt;T: FromBytes + Hash, M: Mutability&gt; Hash <span class="kw">for </span>BorrowedMappedPages&lt;T, M&gt; {
+<span class="kw">impl</span>&lt;T: FromBytes + Hash, M: Mutability, B: Borrow&lt;MappedPages&gt;&gt; Hash <span class="kw">for </span>BorrowedMappedPages&lt;T, M, B&gt; {
     <span class="kw">fn </span>hash&lt;H: Hasher&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, state: <span class="kw-2">&amp;mut </span>H) { <span class="self">self</span>.deref().hash(state) }
 }
 
 
 <span class="doccomment">/// A borrowed [`MappedPages`] object that derefs to a slice `&amp;[T]` and optionally also `&amp;mut [T]`.
-/// 
-/// For ease of use, the default `Mutability` type parameter is `Immutable`.
 ///
-/// When dropped, the borrow ends and the contained `MappedPages` is dropped and unmapped.
-/// You can manually end the borrow and reclaim the inner `MappedPages` via [`Self::into_inner()`].
-</span><span class="kw">pub struct </span>BorrowedSliceMappedPages&lt;T: FromBytes, M: Mutability = Immutable&gt; {
+/// See the docs of [`BorrowedMappedPages`] for more detail.
+</span><span class="kw">pub struct </span>BorrowedSliceMappedPages&lt;T, M = Immutable, B = MappedPages&gt;
+<span class="kw">where
+    </span>T: FromBytes,
+    M: Mutability,
+    B: Borrow&lt;MappedPages&gt;,
+{
     ptr: Unique&lt;[T]&gt;,
-    mp: MappedPages,
+    mp: B,
     _mut: PhantomData&lt;M&gt;,
 }
 
-<span class="kw">impl</span>&lt;T: FromBytes&gt; BorrowedSliceMappedPages&lt;T, Immutable&gt; {
+<span class="kw">impl</span>&lt;T: FromBytes, B: Borrow&lt;MappedPages&gt;&gt; BorrowedSliceMappedPages&lt;T, Immutable, B&gt; {
     <span class="doccomment">/// Immutably borrows the given `MappedPages` as a slice `&amp;[T]`
     /// of `length` elements of type `T` starting at the given `byte_offset` into the `MappedPages`.
     ///
-    /// See [`MappedPages::as_slice()`] for more info.
+    /// See the docs of [`BorrowedMappedPages::from()`] and [`MappedPages::as_slice()`].
     ///
-    /// Upon failure, returns an error containing the unmodified `MappedPages` and a string
-    /// describing the error.
+    /// ## Arguments
+    /// * `mp`: the `MappedPages` that you wish to borrow as an instance of type `&amp;[T]`.
+    ///    * See the type-level docs for more info and examples of how to use this argument.
+    /// * `byte_offset`: the offset (in number of bytes) from the beginning of the `MappedPages`
+    ///    memory region at which the slice `&amp;[T]` is located (where it should start).
+    ///    * This offset must be properly aligned with respect to the alignment requirements
+    ///      of type `T`, otherwise an error will be returned.
+    /// * `length`: the length of the slice, i.e., the number of elements of type `T` in the slice. 
+    ///    Thus, the slice&#39;s address bounds will span the range from
+    ///    `byte_offset` (inclusive) to `byte_offset + (size_of::&lt;T&gt;() * length)` (exclusive).
+    ///
+    /// Upon failure, returns an error containing the unmodified `MappedPages`
+    /// and a string describing the error.
     </span><span class="kw">pub fn </span>from(
-        mp: MappedPages,
+        mp: B,
         byte_offset: usize,
         length: usize,
-    ) -&gt; <span class="prelude-ty">Result</span>&lt;BorrowedSliceMappedPages&lt;T&gt;, (MappedPages, <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str)&gt; {
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="self">Self</span>, (B, <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str)&gt; {
         <span class="prelude-val">Ok</span>(<span class="self">Self </span>{
-            ptr: <span class="kw">match </span>mp.as_slice::&lt;T&gt;(byte_offset, length) {
+            ptr: <span class="kw">match </span>mp.borrow().as_slice::&lt;T&gt;(byte_offset, length) {
                 <span class="prelude-val">Ok</span>(r) =&gt; {
                     <span class="kw">let </span>nn: NonNull&lt;[T]&gt; = r.into();
                     nn.into()
@@ -2391,21 +2518,32 @@
     }
 }
 
-<span class="kw">impl</span>&lt;T: FromBytes&gt; BorrowedSliceMappedPages&lt;T, Mutable&gt; {
-    <span class="doccomment">/// Mutably borrows the given `MappedPages` as an instance of type `&amp;mut T` 
-    /// starting at the given `byte_offset` into the `MappedPages`.
-    /// 
-    /// See [`MappedPages::as_type_mut()`] for more info.
-    /// 
+<span class="kw">impl</span>&lt;T: FromBytes, B: BorrowMut&lt;MappedPages&gt;&gt; BorrowedSliceMappedPages&lt;T, Mutable, B&gt; {
+    <span class="doccomment">/// Mutably borrows the given `MappedPages` as a slice `&amp;mut [T]`
+    /// of `length` elements of type `T` starting at the given `byte_offset` into the `MappedPages`.
+    ///
+    /// See the docs of [`BorrowedMappedPages::from_mut()`] and [`MappedPages::as_slice_mut()`].
+    ///
+    /// ## Arguments
+    /// * `mp`: the `MappedPages` that you wish to borrow as an instance of type `&amp;mut [T]`.
+    ///    * See the type-level docs for more info and examples of how to use this argument.
+    /// * `byte_offset`: the offset (in number of bytes) from the beginning of the `MappedPages`
+    ///    memory region at which the slice `&amp;mut [T]` is located (where it should start).
+    ///    * This offset must be properly aligned with respect to the alignment requirements
+    ///      of type `T`, otherwise an error will be returned.
+    /// * `length`: the length of the slice, i.e., the number of elements of type `T` in the slice. 
+    ///    Thus, the slice&#39;s address bounds will span the range from
+    ///    `byte_offset` (inclusive) to `byte_offset + (size_of::&lt;T&gt;() * length)` (exclusive).
+    ///
     /// Upon failure, returns an error containing the unmodified `MappedPages`
     /// and a string describing the error.
     </span><span class="kw">pub fn </span>from_mut(
-        <span class="kw-2">mut </span>mp: MappedPages,
+        <span class="kw-2">mut </span>mp: B,
         byte_offset: usize,
         length: usize,
-    ) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="self">Self</span>, (MappedPages, <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str)&gt; {
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="self">Self</span>, (B, <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str)&gt; {
         <span class="prelude-val">Ok</span>(<span class="self">Self </span>{
-            ptr: <span class="kw">match </span>mp.as_slice_mut::&lt;T&gt;(byte_offset, length) {
+            ptr: <span class="kw">match </span>mp.borrow_mut().as_slice_mut::&lt;T&gt;(byte_offset, length) {
                 <span class="prelude-val">Ok</span>(r) =&gt; r.into(),
                 <span class="prelude-val">Err</span>(e_str) =&gt; <span class="kw">return </span><span class="prelude-val">Err</span>((mp, e_str)),
             },
@@ -2415,15 +2553,21 @@
     }
 }
 
-<span class="kw">impl</span>&lt;T: FromBytes, M: Mutability&gt; BorrowedSliceMappedPages&lt;T, M&gt; {
+<span class="kw">impl</span>&lt;T: FromBytes, M: Mutability, B: Borrow&lt;MappedPages&gt;&gt; BorrowedSliceMappedPages&lt;T, M, B&gt; {
     <span class="doccomment">/// Consumes this object and returns the inner `MappedPages`.
-    </span><span class="kw">pub fn </span>into_inner(<span class="self">self</span>) -&gt; MappedPages {
+    </span><span class="kw">pub fn </span>into_inner(<span class="self">self</span>) -&gt; B {
         <span class="self">self</span>.mp
+    }
+
+    <span class="doccomment">/// Returns a reference to the inner borrowed `MappedPages`.
+    </span><span class="kw">pub fn </span>inner_ref(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>B {
+        <span class="kw-2">&amp;</span><span class="self">self</span>.mp
     }
 }
 
+
 <span class="doccomment">/// Both [`Mutable`] and [`Immutable`] [`BorrowedSliceMappedPages`] can deref into `&amp;[T]`.
-</span><span class="kw">impl</span>&lt;T: FromBytes, M: Mutability&gt; Deref <span class="kw">for </span>BorrowedSliceMappedPages&lt;T, M&gt; {
+</span><span class="kw">impl</span>&lt;T: FromBytes, M: Mutability, B: Borrow&lt;MappedPages&gt;&gt; Deref <span class="kw">for </span>BorrowedSliceMappedPages&lt;T, M, B&gt; {
     <span class="kw">type </span>Target = [T];
     <span class="kw">fn </span>deref(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>[T] {
         <span class="comment">// SAFETY:
@@ -2436,7 +2580,7 @@
     }
 }
 <span class="doccomment">/// Only [`Mutable`] [`BorrowedSliceMappedPages`] can deref into `&amp;mut T`.
-</span><span class="kw">impl</span>&lt;T: FromBytes&gt; DerefMut <span class="kw">for </span>BorrowedSliceMappedPages&lt;T, Mutable&gt; {
+</span><span class="kw">impl</span>&lt;T: FromBytes, B: BorrowMut&lt;MappedPages&gt;&gt; DerefMut <span class="kw">for </span>BorrowedSliceMappedPages&lt;T, Mutable, B&gt; {
     <span class="kw">fn </span>deref_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>[T] {
         <span class="comment">// SAFETY:
         // ✅ Same as the above `Deref` block, plus:
@@ -2446,34 +2590,34 @@
 }
 
 <span class="doccomment">/// Both [`Mutable`] and [`Immutable`] [`BorrowedSliceMappedPages`] implement `AsRef&lt;[T]&gt;`.
-</span><span class="kw">impl</span>&lt;T: FromBytes, M: Mutability&gt; AsRef&lt;[T]&gt; <span class="kw">for </span>BorrowedSliceMappedPages&lt;T, M&gt; {
+</span><span class="kw">impl</span>&lt;T: FromBytes, M: Mutability, B: Borrow&lt;MappedPages&gt;&gt; AsRef&lt;[T]&gt; <span class="kw">for </span>BorrowedSliceMappedPages&lt;T, M, B&gt; {
     <span class="kw">fn </span>as_ref(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>[T] { <span class="self">self</span>.deref() }
 }
 <span class="doccomment">/// Only [`Mutable`] [`BorrowedSliceMappedPages`] implement `AsMut&lt;T&gt;`.
-</span><span class="kw">impl</span>&lt;T: FromBytes&gt; AsMut&lt;[T]&gt; <span class="kw">for </span>BorrowedSliceMappedPages&lt;T, Mutable&gt; {
+</span><span class="kw">impl</span>&lt;T: FromBytes, B: BorrowMut&lt;MappedPages&gt;&gt; AsMut&lt;[T]&gt; <span class="kw">for </span>BorrowedSliceMappedPages&lt;T, Mutable, B&gt; {
     <span class="kw">fn </span>as_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>[T] { <span class="self">self</span>.deref_mut() }
 }
 <span class="doccomment">/// Both [`Mutable`] and [`Immutable`] [`BorrowedSliceMappedPages`] implement `Borrow&lt;T&gt;`.
-</span><span class="kw">impl</span>&lt;T: FromBytes, M: Mutability&gt; Borrow&lt;[T]&gt; <span class="kw">for </span>BorrowedSliceMappedPages&lt;T, M&gt; {
+</span><span class="kw">impl</span>&lt;T: FromBytes, M: Mutability, B: Borrow&lt;MappedPages&gt;&gt; Borrow&lt;[T]&gt; <span class="kw">for </span>BorrowedSliceMappedPages&lt;T, M, B&gt; {
     <span class="kw">fn </span>borrow(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>[T] { <span class="self">self</span>.deref() }
 }
 <span class="doccomment">/// Only [`Mutable`] [`BorrowedSliceMappedPages`] implement `BorrowMut&lt;T&gt;`.
-</span><span class="kw">impl</span>&lt;T: FromBytes&gt; BorrowMut&lt;[T]&gt; <span class="kw">for </span>BorrowedSliceMappedPages&lt;T, Mutable&gt; {
+</span><span class="kw">impl</span>&lt;T: FromBytes, B: BorrowMut&lt;MappedPages&gt;&gt; BorrowMut&lt;[T]&gt; <span class="kw">for </span>BorrowedSliceMappedPages&lt;T, Mutable, B&gt; {
     <span class="kw">fn </span>borrow_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>[T] { <span class="self">self</span>.deref_mut() }
 }
 
 <span class="comment">// Forward the impls of `PartialEq`, `Eq`, `PartialOrd`, `Ord`, and `Hash`.
-</span><span class="kw">impl</span>&lt;T: FromBytes + PartialEq, M: Mutability&gt; PartialEq <span class="kw">for </span>BorrowedSliceMappedPages&lt;T, M&gt; {
+</span><span class="kw">impl</span>&lt;T: FromBytes + PartialEq, M: Mutability, B: Borrow&lt;MappedPages&gt;&gt; PartialEq <span class="kw">for </span>BorrowedSliceMappedPages&lt;T, M, B&gt; {
     <span class="kw">fn </span>eq(<span class="kw-2">&amp;</span><span class="self">self</span>, other: <span class="kw-2">&amp;</span><span class="self">Self</span>) -&gt; bool { <span class="self">self</span>.deref().eq(other.deref()) }
 }
-<span class="kw">impl</span>&lt;T: FromBytes + Eq, M: Mutability&gt; Eq <span class="kw">for </span>BorrowedSliceMappedPages&lt;T, M&gt; { }
-<span class="kw">impl</span>&lt;T: FromBytes + PartialOrd, M: Mutability&gt; PartialOrd <span class="kw">for </span>BorrowedSliceMappedPages&lt;T, M&gt; {
+<span class="kw">impl</span>&lt;T: FromBytes + Eq, M: Mutability, B: Borrow&lt;MappedPages&gt;&gt; Eq <span class="kw">for </span>BorrowedSliceMappedPages&lt;T, M, B&gt; { }
+<span class="kw">impl</span>&lt;T: FromBytes + PartialOrd, M: Mutability, B: Borrow&lt;MappedPages&gt;&gt; PartialOrd <span class="kw">for </span>BorrowedSliceMappedPages&lt;T, M, B&gt; {
     <span class="kw">fn </span>partial_cmp(<span class="kw-2">&amp;</span><span class="self">self</span>, other: <span class="kw-2">&amp;</span><span class="self">Self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;Ordering&gt; { <span class="self">self</span>.deref().partial_cmp(other.deref()) }
 }
-<span class="kw">impl</span>&lt;T: FromBytes + Ord, M: Mutability&gt; Ord <span class="kw">for </span>BorrowedSliceMappedPages&lt;T, M&gt; {
+<span class="kw">impl</span>&lt;T: FromBytes + Ord, M: Mutability, B: Borrow&lt;MappedPages&gt;&gt; Ord <span class="kw">for </span>BorrowedSliceMappedPages&lt;T, M, B&gt; {
     <span class="kw">fn </span>cmp(<span class="kw-2">&amp;</span><span class="self">self</span>, other: <span class="kw-2">&amp;</span><span class="self">Self</span>) -&gt; Ordering { <span class="self">self</span>.deref().cmp(other.deref()) }
 }
-<span class="kw">impl</span>&lt;T: FromBytes + Hash, M: Mutability&gt; Hash <span class="kw">for </span>BorrowedSliceMappedPages&lt;T, M&gt; {
+<span class="kw">impl</span>&lt;T: FromBytes + Hash, M: Mutability, B: Borrow&lt;MappedPages&gt;&gt; Hash <span class="kw">for </span>BorrowedSliceMappedPages&lt;T, M, B&gt; {
     <span class="kw">fn </span>hash&lt;H: Hasher&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, state: <span class="kw-2">&amp;mut </span>H) { <span class="self">self</span>.deref().hash(state) }
 }
 
@@ -2506,5 +2650,4 @@
 <span class="kw">mod </span>private {
     <span class="kw">pub trait </span>Sealed { }
 }
-</code></pre></div>
-</section></main><div id="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="memory" data-themes="" data-resource-suffix="" data-rustdoc-version="1.68.0-nightly (0442fbabe 2023-01-10)" data-search-js="search-181581080540673f.js" data-settings-js="settings-bebeae96e00e4617.js" data-settings-css="settings-58836c674e2f7bd2.css" ></div></body></html>
+</code></pre></div></section></main></body></html>
