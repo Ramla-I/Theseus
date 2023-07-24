@@ -3050,6 +3050,7 @@ dependencies = [
  "apic",
  "app_io",
  "getopts",
+ "log",
  "runqueue",
  "task",
 ]

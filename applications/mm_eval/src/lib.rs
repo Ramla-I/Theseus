@@ -26,12 +26,13 @@ use alloc::vec::Vec;
 use getopts::{Matches, Options};
 use kernel_config::memory::PAGE_SIZE;
 use libtest::{hpet_timing_overhead, hpet_2_ns, calculate_stats, check_myrq, cpu_id};
-use memory::{allocate_pages, AllocatedPages, Mapper, MappedPages, get_kernel_mmi_ref, PageTable};
+use memory::{allocate_pages, AllocatedPages, Mapper, MappedPages, get_kernel_mmi_ref, PageTable, MemoryManagementInfo, MmiRef};
 use hpet::get_hpet;
 use pte_flags::PteFlags;
+use log::{error, warn, debug, trace};
 
 fn create_mappings(
-	mapper: &mut PageTable,
+	mmi_ref: &MmiRef,
     allocated_pages: AllocatedPages, 
     size_in_pages: usize, 
     num_mappings: usize,
@@ -51,12 +52,11 @@ fn create_mappings(
     if remaining_chunk.size_in_pages() != 0 {
         return Err("failed to split allocated pages into num_mappings even segments");
     }
-
     let hpet = get_hpet().ok_or("couldn't get HPET timer")?;
 
     let mut mapped_pages: Vec<MappedPages> =  Vec::with_capacity(num_mappings);
     let size_in_bytes = size_in_pages * PAGE_SIZE;
-
+    let mapper = &mut mmi_ref.lock().page_table;
     let start_time = hpet.get_counter();
 
 	for allocated_pages in allocated_pages_list {
@@ -66,17 +66,18 @@ fn create_mappings(
 		)?;
 		mapped_pages.push(mp);
 	}
+
 	let end_time = hpet.get_counter() - hpet_overhead;
 	Ok((Some(mapped_pages), None, hpet_2_ns(end_time - start_time)))
 }
 
 
 fn remap_normal(
-    mapper_normal: &mut PageTable, 
+    mmi_ref: &MmiRef, 
     mapped_pages: &mut Vec<MappedPages>,
     hpet_overhead: u64
 ) -> Result<u64, &'static str> {
-
+    let mapper_normal = &mut mmi_ref.lock().page_table;
     let hpet = get_hpet().ok_or("couldn't get HPET timer")?;
     let start_time = hpet.get_counter();
 
@@ -155,7 +156,7 @@ pub fn main(args: Vec<String>) -> isize {
 pub fn rmain(matches: &Matches, _opts: &Options) -> Result<(), &'static str> {
     const TRIES: usize = 10;
     let kernel_mmi_ref = get_kernel_mmi_ref().ok_or("KERNEL_MMI was not yet initialized!")?;
-    let mut page_table = &mut kernel_mmi_ref.lock().page_table;
+    // let mut page_table = &mut kernel_mmi_ref.lock().page_table;
 
     let num_mappings = matches.opt_str("n")
         .and_then(|i| i.parse::<usize>().ok())
@@ -190,11 +191,10 @@ pub fn rmain(matches: &Matches, _opts: &Options) -> Result<(), &'static str> {
         let pages = allocate_pages(size_in_pages * num_mappings)
             .ok_or("couldn't allocate sufficient pages")?;
         let start_vaddr = pages.start_address();
-        
         // (1) create mappings
         if verbose { println!("*** Iteration {}: creating mappings.", _trial); }         
         let mut result = create_mappings(
-			&mut page_table,
+			&kernel_mmi_ref,
             pages, 
             size_in_pages, 
             num_mappings,
@@ -206,7 +206,7 @@ pub fn rmain(matches: &Matches, _opts: &Options) -> Result<(), &'static str> {
         match result {
             (Some(ref mut mapped_pages), None, time) => {
                 create_times.push(time);
-                let remap = remap_normal(&mut page_table, mapped_pages, overhead)?;
+                let remap = remap_normal(&kernel_mmi_ref, mapped_pages, overhead)?;
                 remap_times.push(remap);
             },
             _ => return Err("BUG: create_mappings returned unexpected result"),
@@ -224,16 +224,25 @@ pub fn rmain(matches: &Matches, _opts: &Options) -> Result<(), &'static str> {
     }
 
     println!("Create Mappings (ns)");
+    error!("Create Mappings (ns)");
     let stats_create = calculate_stats(&mut create_times).ok_or("Could not calculate stats for mappings")?;
     println!("{:?}", stats_create);
+    error!("{:?}", stats_create);
+
 
     println!("Remap Mappings (ns)");
+    error!("Remap Mappings (ns)");
     let stats_remap = calculate_stats(&mut remap_times).ok_or("Could not calculate stats for remappings")?;
     println!("{:?}", stats_remap);
+    error!("{:?}", stats_remap);
+
     
     println!("Unmap Mappings (ns)");
+    error!("Unmap Mappings (ns)");
     let stats_unmap = calculate_stats(&mut unmap_times).ok_or("Could not calculate stats for unmappings")?;
     println!("{:?}", stats_unmap);
+    error!("{:?}", stats_unmap);
+
 
     Ok(())
 

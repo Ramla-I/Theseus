@@ -91,7 +91,7 @@ where
     println!("nano_core(): Entered early setup. Interrupts disabled.");
 
     #[cfg(target_arch = "x86_64")]
-    let logger_ports = [take_serial_port(SerialPortAddress::COM1)];
+    let logger_ports = [take_serial_port(SerialPortAddress::COM1), take_serial_port(SerialPortAddress::COM2)];
 
     // On aarch64, we must init memory management before mapping serial ports.
     // Before that, we can log messages to a static buffer.
