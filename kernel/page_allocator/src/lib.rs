@@ -151,17 +151,60 @@ pub fn init(end_vaddr_of_low_designated_region: VirtualAddress) -> Result<(), &'
 /// both of which are also based ONLY on the **starting** `Page` of the `Chunk`.
 /// Thus, comparing two `Chunk`s with the `==` or `!=` operators may not work as expected.
 /// since it ignores their actual range of pages.
-#[derive(Debug, Clone, Eq)]
-struct Chunk {
+#[derive(Debug, Eq)]
+struct Pages<const S: MemoryState> {
 	/// The Pages covered by this chunk, an inclusive range. 
 	pages: PageRange,
 }
-impl Chunk {
-	fn as_allocated_pages(&self) -> AllocatedPages {
-		AllocatedPages {
-			pages: self.pages.clone(),
-		}
-	}
+
+/// A type alias for `Pages` in the `Free` state.
+pub type FreePages = Pages<{MemoryState::Free}>;
+/// A type alias for `Pages` in the `Allocated` state.
+pub type AllocatedPages = Pages<{MemoryState::Allocated}>;
+/// A type alias for `Pages` in the `Mapped` state.
+pub type MappedPages = Pages<{MemoryState::Mapped}>;
+/// A type alias for `Pages` in the `Unmapped` state.
+pub type UnmappedPages = Pages<{MemoryState::Unmapped}>;
+
+
+// Pages must not be Cloneable, and it must not expose its inner Pages as mutable.
+assert_not_impl_any!(Pages<{MemoryState::Free}>: DerefMut, Clone);
+assert_not_impl_any!(Pages<{MemoryState::Allocated}>: DerefMut, Clone);
+assert_not_impl_any!(Pages<{MemoryState::Mapped}>: DerefMut, Clone);
+assert_not_impl_any!(Pages<{MemoryState::Unmapped}>: DerefMut, Clone);
+
+
+impl FreePages {
+	/// Creates a new `Pages` object in the `Free` state.
+    ///
+    /// The page allocator logic is responsible for ensuring that no two `Pages` objects overlap.
+    pub(crate) fn new(pages: PageRange) -> Self {
+        Pages {
+            pages,
+        }
+    }
+
+    /// Consumes this `Pages` in the `Free` state and converts them into the `Allocated` state.
+    pub fn into_allocated_pages(self) -> AllocatedPages {    
+        let f = Pages {
+            pages: self.pages.clone(),
+        };
+        core::mem::forget(self);
+        f
+    }
+}
+
+impl AllocatedPages {
+    /// Consumes this `Frames` in the `Allocated` state and converts them into the `Mapped` state.
+    /// This should only be called once a `MappedPages` has been created from the `Frames`.
+    pub fn into_mapped_pages(self) -> MappedPages {    
+        let f = Pages {
+            frames: self.frames.clone(),
+        };
+        core::mem::forget(self);
+        f
+    }
+}
 
 	/// Returns a new `Chunk` with an empty range of pages. 
 	fn empty() -> Chunk {
