@@ -18,6 +18,7 @@ use core::{
     slice,
 };
 use log::{error, warn, debug, trace};
+use page_allocator::PagesMapped;
 use crate::{BROADCAST_TLB_SHOOTDOWN_FUNC, VirtualAddress, PhysicalAddress, Page, Frame, FrameRange, AllocatedPages, AllocatedFrames, UnmappedFrames}; 
 use crate::paging::{
     get_current_p4,
@@ -235,7 +236,7 @@ impl Mapper {
         Ok((
             MappedPages {
                 page_table_p4: self.target_p4,
-                pages,
+                pages: pages.into_mapped_pages(),
                 flags: actual_flags,
             },
             frames,
@@ -301,7 +302,7 @@ impl Mapper {
 
         Ok(MappedPages {
             page_table_p4: self.target_p4,
-            pages,
+            pages: pages.into_mapped_pages(),
             flags: actual_flags,
         })
     }
@@ -352,13 +353,13 @@ pub struct MappedPages {
     /// The Frame containing the top-level P4 page table that this MappedPages was originally mapped into. 
     page_table_p4: Frame,
     /// The range of allocated virtual pages contained by this mapping.
-    pages: AllocatedPages,
+    pages: PagesMapped,
     // The PTE flags that define the page permissions of this mapping.
     flags: PteFlagsArch,
 }
 impl Deref for MappedPages {
-    type Target = AllocatedPages;
-    fn deref(&self) -> &AllocatedPages {
+    type Target = PagesMapped;
+    fn deref(&self) -> &PagesMapped {
         &self.pages
     }
 }
@@ -369,7 +370,7 @@ impl MappedPages {
     pub const fn empty() -> MappedPages {
         MappedPages {
             page_table_p4: Frame::containing_address(PhysicalAddress::zero()),
-            pages: AllocatedPages::empty(),
+            pages: PagesMapped::empty(),
             flags: PteFlagsArch::new(),
         }
     }
@@ -409,7 +410,7 @@ impl MappedPages {
 
         // Attempt to merge the page ranges together, which will fail if they're not contiguous.
         // First, take ownership of the AllocatedPages inside of the `mp` argument.
-        let second_alloc_pages_owned = core::mem::replace(&mut mp.pages, AllocatedPages::empty());
+        let second_alloc_pages_owned = core::mem::replace(&mut mp.pages, PagesMapped::empty());
         if let Err(orig) = self.pages.merge(second_alloc_pages_owned) {
             // Upon error, restore the `mp.pages` AllocatedPages that we took ownership of.
             mp.pages = orig;
@@ -441,9 +442,9 @@ impl MappedPages {
     /// [`core::slice::split_at()`]: https://doc.rust-lang.org/core/primitive.slice.html#method.split_at
     pub fn split(mut self, at_page: Page) -> Result<(MappedPages, MappedPages), MappedPages> {
         // Take ownership of the `AllocatedPages` inside of the `MappedPages` so we can split it.
-        let alloc_pages_owned = core::mem::replace(&mut self.pages, AllocatedPages::empty());
+        let alloc_pages_owned = core::mem::replace(&mut self.pages, PagesMapped::empty());
 
-        match alloc_pages_owned.split(at_page) {
+        match alloc_pages_owned.split_at(at_page) {
             Ok((first_ap, second_ap)) => Ok((
                 MappedPages {
                     page_table_p4: self.page_table_p4,
@@ -565,9 +566,12 @@ impl MappedPages {
     /// This is due to how frame deallocation works.
     pub fn unmap_into_parts(mut self, active_table_mapper: &mut Mapper) -> Result<(AllocatedPages, Option<AllocatedFrames>), Self> {
         match self.unmap(active_table_mapper) {
-            Ok(first_frames) => {
-                let pages = mem::replace(&mut self.pages, AllocatedPages::empty());
-                Ok((pages, first_frames))
+            Ok((first_frames, pages)) => {
+                // let pages = mem::replace(&mut self.pages, AllocatedPages::empty());
+                Ok((pages.unwrap_or_else(|| {
+                    let mapped = mem::replace(&mut self.pages, PagesMapped::empty());
+                    mapped.into_unmapped_pages().into_allocated_pages()
+                }), first_frames))
             }
             Err(e) => {
                 error!("MappedPages::unmap_into_parts(): failed to unmap {:?}, error: {}", self, e);
@@ -595,8 +599,8 @@ impl MappedPages {
     ///       We could then use `mem::replace(&mut self, MappedPages::empty())` in the drop handler 
     ///       to obtain ownership of `self`, which would allow us to transfer ownership of the dropped `MappedPages` here.
     ///
-    fn unmap(&mut self, active_table_mapper: &mut Mapper) -> Result<Option<AllocatedFrames>, &'static str> {
-        if self.size_in_pages() == 0 { return Ok(None); }
+    fn unmap(&mut self, active_table_mapper: &mut Mapper) -> Result<(Option<AllocatedFrames>, Option<AllocatedPages>), &'static str> {
+        if self.size_in_pages() == 0 { return Ok((None, None)); }
 
         if active_table_mapper.target_p4 != self.page_table_p4 {
             error!("BUG: MappedPages::unmap(): {:?}\n    current P4 {:?} must equal original P4 {:?}, \
@@ -671,6 +675,8 @@ impl MappedPages {
                 }
             }
         }
+
+        let unmapped_pages = core::mem::replace(&mut self.pages, PagesMapped::empty()).into_unmapped_pages();
     
         #[cfg(not(bm_map))]
         {
@@ -680,8 +686,9 @@ impl MappedPages {
         }
 
         // Ensure that we return at least some frame range, even if we broke out of the above loop early.
-        Ok(first_frame_range.map(|f| f.into_allocated_frames())
-            .or(current_frame_range.map(|f| f.into_allocated_frames())))
+        Ok((first_frame_range.map(|f| f.into_allocated_frames())
+            .or(current_frame_range.map(|f| f.into_allocated_frames())),
+            Some(unmapped_pages.into_allocated_pages())))
     }
 
 
