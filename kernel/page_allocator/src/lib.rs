@@ -17,6 +17,9 @@
 //! or when needed to fulfill a specific request.
 
 #![no_std]
+#![feature(adt_const_params)]
+#![allow(incomplete_features)]
+
 
 extern crate alloc;
 #[macro_use] extern crate log;
@@ -32,7 +35,7 @@ mod static_array_rb_tree;
 
 use core::{borrow::Borrow, cmp::{Ordering, max, min}, fmt, ops::{Deref, DerefMut}};
 use kernel_config::memory::*;
-use memory_structs::{VirtualAddress, Page, PageRange};
+use memory_structs::{VirtualAddress, Page, PageRange, MemoryState};
 use spin::{Mutex, Once};
 use static_array_rb_tree::*;
 
@@ -61,7 +64,7 @@ const MIN_PAGE: Page = Page::containing_address(VirtualAddress::zero());
 const MAX_PAGE: Page = Page::containing_address(VirtualAddress::new_canonical(MAX_VIRTUAL_ADDRESS));
 
 /// The single, system-wide list of free chunks of virtual memory pages.
-static FREE_PAGE_LIST: Mutex<StaticArrayRBTree<Chunk>> = Mutex::new(StaticArrayRBTree::empty());
+static FREE_PAGE_LIST: Mutex<StaticArrayRBTree<FreePages>> = Mutex::new(StaticArrayRBTree::empty());
 
 
 /// Initialize the page allocator.
@@ -93,42 +96,42 @@ pub fn init(end_vaddr_of_low_designated_region: VirtualAddress) -> Result<(), &'
 	let initial_free_chunks = [
 		// The first region contains all pages from address zero to the end of the low designated region,
 		// which is generally reserved for identity-mapped bootloader stuff and base kernel image sections.
-		Some(Chunk {
-			pages: PageRange::new(
+		Some(FreePages::new(
+			PageRange::new(
 				Page::containing_address(VirtualAddress::zero()),
 				designated_low_end,
 			)
-		}),
+		)),
 		// The second region contains the massive range from the end of the low designated region
 		// to the beginning of the high designated region, which comprises the majority of the address space.
 		// The beginning of the high designated region starts at the reserved P4 entry used to
 		// recursively map the "upcoming" page table (i.e., UPCOMING_PAGE_TABLE_RECURSIVE_P4_INDEX).
-		Some(Chunk {
-			pages: PageRange::new(
+		Some(FreePages::new(
+			PageRange::new(
 				designated_low_end + 1,
 				DESIGNATED_PAGES_HIGH_START - 1,
 			)
-		}),
+		)),
 		// Here, we skip the addresses covered by the `UPCOMING_PAGE_TABLE_RECURSIVE_P4_INDEX`.
 
 		// The third region contains the range of addresses reserved for the heap,
 		// which ends at the beginning of the addresses covered by the `RECURSIVE_P4_INDEX`,
-		Some(Chunk {
-			pages: PageRange::new(
+		Some(FreePages::new(
+			PageRange::new(
 				Page::containing_address(VirtualAddress::new_canonical(KERNEL_HEAP_START)),
 				// This is the page right below the beginning of the 510th entry of the top-level P4 page table.
 				Page::containing_address(VirtualAddress::new_canonical(RECURSIVE_P4_START - 1)),
 			)
-		}),
+		)),
 		// Here, we skip the addresses covered by the `RECURSIVE_P4_INDEX`.
 
 		// The fourth region contains all pages in the 511th (last) entry of P4.
-		Some(Chunk {
-			pages: PageRange::new(
+		Some(FreePages::new(
+			PageRange::new(
 				Page::containing_address(VirtualAddress::new_canonical(KERNEL_TEXT_START)),
 				MAX_PAGE,
 			)
-		}),
+		)),
 		None, None, None, None,
 		None, None, None, None, None, None, None, None,
 		None, None, None, None, None, None, None, None,
@@ -140,6 +143,13 @@ pub fn init(end_vaddr_of_low_designated_region: VirtualAddress) -> Result<(), &'
 }
 
 
+/// Represents a range of allocated `VirtualAddress`es, specified in `Page`s. 
+/// 
+/// These pages are not initially mapped to any physical memory frames, you must do that separately
+/// in order to actually use their memory; see the `MappedPages` type for more. 
+/// 
+/// This object represents ownership of the allocated virtual pages;
+/// if this object falls out of scope, its allocated pages will be auto-deallocated upon drop. 
 /// A range of contiguous pages.
 ///
 /// # Ordering and Equality
@@ -151,7 +161,7 @@ pub fn init(end_vaddr_of_low_designated_region: VirtualAddress) -> Result<(), &'
 /// both of which are also based ONLY on the **starting** `Page` of the `Chunk`.
 /// Thus, comparing two `Chunk`s with the `==` or `!=` operators may not work as expected.
 /// since it ignores their actual range of pages.
-#[derive(Debug, Eq)]
+#[derive(Eq)]
 struct Pages<const S: MemoryState> {
 	/// The Pages covered by this chunk, an inclusive range. 
 	pages: PageRange,
@@ -162,7 +172,7 @@ pub type FreePages = Pages<{MemoryState::Free}>;
 /// A type alias for `Pages` in the `Allocated` state.
 pub type AllocatedPages = Pages<{MemoryState::Allocated}>;
 /// A type alias for `Pages` in the `Mapped` state.
-pub type MappedPages = Pages<{MemoryState::Mapped}>;
+pub type PagesMapped = Pages<{MemoryState::Mapped}>;
 /// A type alias for `Pages` in the `Unmapped` state.
 pub type UnmappedPages = Pages<{MemoryState::Unmapped}>;
 
@@ -197,75 +207,70 @@ impl FreePages {
 impl AllocatedPages {
     /// Consumes this `Frames` in the `Allocated` state and converts them into the `Mapped` state.
     /// This should only be called once a `MappedPages` has been created from the `Frames`.
-    pub fn into_mapped_pages(self) -> MappedPages {    
+    pub fn into_mapped_pages(self) -> PagesMapped {    
         let f = Pages {
-            frames: self.frames.clone(),
+            pages: self.pages.clone(),
         };
         core::mem::forget(self);
         f
     }
 }
 
-	/// Returns a new `Chunk` with an empty range of pages. 
-	fn empty() -> Chunk {
-		Chunk {
-			pages: PageRange::empty(),
-		}
-	}
+impl UnmappedPages {
+    /// Consumes this `Frames` in the `Unmapped` state and converts them into the `Allocated` state.
+    pub fn into_allocated_pages(self) -> AllocatedPages {    
+        let f = Pages {
+            pages: self.pages.clone(),
+        };
+        core::mem::forget(self);
+        f
+    }
 }
-impl Deref for Chunk {
+
+impl<const S: MemoryState> Deref for Pages<S> {
     type Target = PageRange;
     fn deref(&self) -> &PageRange {
         &self.pages
     }
 }
-impl Ord for Chunk {
+impl<const S: MemoryState> Ord for Pages<S> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.pages.start().cmp(other.pages.start())
     }
 }
-impl PartialOrd for Chunk {
+impl<const S: MemoryState> PartialOrd for Pages<S> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
-impl PartialEq for Chunk {
+impl<const S: MemoryState> PartialEq for Pages<S> {
     fn eq(&self, other: &Self) -> bool {
         self.pages.start() == other.pages.start()
     }
 }
-impl Borrow<Page> for &'_ Chunk {
+impl<const S: MemoryState> Borrow<Page> for &'_ Pages<S> {
 	fn borrow(&self) -> &Page {
 		self.pages.start()
 	}
 }
-
-
-/// Represents a range of allocated `VirtualAddress`es, specified in `Page`s. 
-/// 
-/// These pages are not initially mapped to any physical memory frames, you must do that separately
-/// in order to actually use their memory; see the `MappedPages` type for more. 
-/// 
-/// This object represents ownership of the allocated virtual pages;
-/// if this object falls out of scope, its allocated pages will be auto-deallocated upon drop. 
-pub struct AllocatedPages {
-	pages: PageRange,
-}
-
-// AllocatedPages must not be Cloneable, and it must not expose its inner pages as mutable.
-assert_not_impl_any!(AllocatedPages: DerefMut, Clone);
-
-impl fmt::Debug for AllocatedPages {
+impl<const S: MemoryState> fmt::Debug for Pages <S>{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		write!(f, "AllocatedPages({:?})", self.pages)
+		write!(f, "Pages({:?})", self.pages)
 	}
 }
 
-impl AllocatedPages {
-	/// Returns an empty AllocatedPages object that performs no page allocation. 
+/// The result of splitting a `Pages` object into multiple smaller `Pages` objects.
+pub struct SplitPages<const S: MemoryState>  {
+    before_start:   Option<Pages<S>>,
+    start_to_end:   Pages<S>,
+    after_end:      Option<Pages<S>>,
+}
+
+impl<const S: MemoryState> Pages<S> {
+	/// Returns an empty `Pages` object that performs no page allocation. 
     /// Can be used as a placeholder, but will not permit any real usage. 
-    pub const fn empty() -> AllocatedPages {
-        AllocatedPages {
+    pub const fn empty() -> Pages<S> {
+        Pages {
 			pages: PageRange::empty()
 		}
 	}
@@ -332,7 +337,7 @@ impl AllocatedPages {
 	/// that is, `self.end` must equal `ap.start`. 
 	/// If this condition is met, `self` is modified and `Ok(())` is returned,
 	/// otherwise `Err(ap)` is returned.
-	pub fn merge(&mut self, ap: AllocatedPages) -> Result<(), AllocatedPages> {
+	pub fn merge(&mut self, ap: Pages<S>) -> Result<(), Pages<S>> {
 		// make sure the pages are contiguous
 		if *ap.start() != (*self.end() + 1) {
 			return Err(ap);
@@ -342,6 +347,43 @@ impl AllocatedPages {
 		core::mem::forget(ap); 
 		Ok(())
 	}
+
+	/// Splits up the given `Frames` into multiple smaller `Frames`.
+    /// 
+    /// Returns a `SplitFrames` instance containing three `Frames`:
+    /// 1. The range of frames in `self` that are before the beginning of `frames_to_extract`.
+    /// 2. The `Frames` containing the requested range of frames, `frames_to_extract`.
+    /// 3. The range of frames in `self` that are after the end of `frames_to_extract`.
+    /// 
+    /// If `frames_to_extract` is not contained within `self`, then `self` is returned unchanged within an `Err`.
+    pub fn split_range(
+        self,
+        pages_to_extract: PageRange
+    ) -> Result<SplitPages<S>, Self> {
+        
+        if !self.contains_range(&pages_to_extract) {
+            return Err(self);
+        }
+        
+        let start_page = *pages_to_extract.start();
+        let start_to_end = Pages { pages: pages_to_extract, ..self };
+        
+        let before_start = if start_page == MIN_PAGE || start_page == *self.start() {
+            None
+        } else {
+            Some(Pages { pages: PageRange::new(*self.start(), *start_to_end.start() - 1), ..self })
+        };
+
+        let after_end = if *start_to_end.end() == MAX_PAGE || *start_to_end.end() == *self.end() {
+            None
+        } else {
+            Some(Pages { pages: PageRange::new(*start_to_end.end() + 1, *self.end()), ..self })
+        };
+
+        core::mem::forget(self);
+        Ok(SplitPages { before_start, start_to_end, after_end })
+    }
+
 
 	/// Splits this `AllocatedPages` into two separate `AllocatedPages` objects:
     /// * `[beginning : at_page - 1]`
@@ -355,8 +397,10 @@ impl AllocatedPages {
     /// Returns an `Err` containing this `AllocatedPages` if `at_page` is otherwise out of bounds.
 	/// 
     /// [`core::slice::split_at()`]: https://doc.rust-lang.org/core/primitive.slice.html#method.split_at
-    pub fn split(self, at_page: Page) -> Result<(AllocatedPages, AllocatedPages), AllocatedPages> {
-        let end_of_first = at_page - 1;
+    pub fn split_at(self, at_page: Page) -> Result<(Self, Self), Self> {
+        if self.is_empty() { return Err(self); }
+        
+		let end_of_first = at_page - 1;
 
         let (first, second) = if at_page == *self.start() && at_page <= *self.end() {
             let first  = PageRange::empty();
@@ -380,63 +424,78 @@ impl AllocatedPages {
         // ensure the original AllocatedPages doesn't run its drop handler and free its pages.
         core::mem::forget(self);   
         Ok((
-            AllocatedPages { pages: first }, 
-            AllocatedPages { pages: second },
+            Pages { pages: first }, 
+            Pages { pages: second },
         ))
     }
 }
 
-impl Drop for AllocatedPages {
+impl<const S: MemoryState> Drop for Pages<S> {
     fn drop(&mut self) {
-		if self.size_in_pages() == 0 { return; }
-		// trace!("page_allocator: deallocating {:?}", self);
-
-		let chunk = Chunk {
-			pages: self.pages.clone(),
-		};
-		let mut list = FREE_PAGE_LIST.lock();
-		match &mut list.0 {
-			// For early allocations, just add the deallocated chunk to the free pages list.
-			Inner::Array(_) => {
-				if list.insert(chunk).is_ok() {
-					return;
-				}
-			}
-
-			// For full-fledged deallocations, use the entry API to efficiently determine if
-			// we can merge the deallocated pages with an existing contiguously-adjactent chunk
-			// or if we need to insert a new chunk.
-			Inner::RBTree(ref mut tree) => {
-				let mut cursor_mut = tree.lower_bound_mut(Bound::Included(chunk.start()));
-				if let Some(next_chunk) = cursor_mut.get() {
-					if *chunk.end() + 1 == *next_chunk.start() {
-						// trace!("Prepending {:?} onto beg of next {:?}", chunk, next_chunk.deref());
-						if cursor_mut.replace_with(Wrapper::new_link(Chunk {
-							pages: PageRange::new(*chunk.start(), *next_chunk.end()),
-						})).is_ok() {
+		match S {
+			MemoryState::Free => {
+				if self.size_in_pages() == 0 { return; }
+				// trace!("page_allocator: deallocating {:?}", self);
+	
+				let chunk = Chunk {
+					pages: self.pages.clone(),
+				};
+				let mut list = FREE_PAGE_LIST.lock();
+				match &mut list.0 {
+					// For early allocations, just add the deallocated chunk to the free pages list.
+					Inner::Array(_) => {
+						if list.insert(chunk).is_ok() {
 							return;
 						}
 					}
-				}
-				if let Some(prev_chunk) = cursor_mut.peek_prev().get() {
-					if *prev_chunk.end() + 1 == *chunk.start() {
-						// trace!("Appending {:?} onto end of prev {:?}", chunk, prev_chunk.deref());
-						let new_page_range = PageRange::new(*prev_chunk.start(), *chunk.end());
-						cursor_mut.move_prev();
-						if cursor_mut.replace_with(Wrapper::new_link(Chunk {
-							pages: new_page_range,
-						})).is_ok() {
-							return;
+	
+					// For full-fledged deallocations, use the entry API to efficiently determine if
+					// we can merge the deallocated pages with an existing contiguously-adjactent chunk
+					// or if we need to insert a new chunk.
+					Inner::RBTree(ref mut tree) => {
+						let mut cursor_mut = tree.lower_bound_mut(Bound::Included(chunk.start()));
+						if let Some(next_chunk) = cursor_mut.get() {
+							if *chunk.end() + 1 == *next_chunk.start() {
+								// trace!("Prepending {:?} onto beg of next {:?}", chunk, next_chunk.deref());
+								if cursor_mut.replace_with(Wrapper::new_link(Chunk {
+									pages: PageRange::new(*chunk.start(), *next_chunk.end()),
+								})).is_ok() {
+									return;
+								}
+							}
 						}
+						if let Some(prev_chunk) = cursor_mut.peek_prev().get() {
+							if *prev_chunk.end() + 1 == *chunk.start() {
+								// trace!("Appending {:?} onto end of prev {:?}", chunk, prev_chunk.deref());
+								let new_page_range = PageRange::new(*prev_chunk.start(), *chunk.end());
+								cursor_mut.move_prev();
+								if cursor_mut.replace_with(Wrapper::new_link(Chunk {
+									pages: new_page_range,
+								})).is_ok() {
+									return;
+								}
+							}
+						}
+	
+						// trace!("Inserting new chunk for deallocated {:?} ", chunk.pages);
+						cursor_mut.insert(Wrapper::new_link(chunk));
+						return;
 					}
 				}
+				log::error!("BUG: couldn't insert deallocated {:?} into free page list", self.pages);
+			},
+            MemoryState::Allocated => { 
+                // trace!("Converting AllocatedPages to FreePages. Drop handler will be called again {:?}", self.pages);
+                let _to_drop = FreePages::new(self.pages.clone()); 
+            }
+            MemoryState::Mapped => {
+			    let _to_drop = UnmappedPages { pages: self.pages.clone() };
+			}	
+            MemoryState::Unmapped => {
+                let _to_drop = AllocatedPages { pages: self.pages.clone() };
+            }
 
-				// trace!("Inserting new chunk for deallocated {:?} ", chunk.pages);
-				cursor_mut.insert(Wrapper::new_link(chunk));
-				return;
-			}
 		}
-		log::error!("BUG: couldn't insert deallocated {:?} into free page list", self.pages);
     }
 }
 
@@ -456,31 +515,34 @@ impl Drop for AllocatedPages {
 /// with a `let _ = ...` binding to instantly drop it. 
 pub struct DeferredAllocAction<'list> {
 	/// A reference to the list into which we will insert the free `Chunk`s.
-	free_list: &'list Mutex<StaticArrayRBTree<Chunk>>,
+	free_list: &'list Mutex<StaticArrayRBTree<FreePages>>,
 	/// A free chunk that needs to be added back to the free list.
-	free1: Chunk,
+	free1: FreePages,
 	/// Another free chunk that needs to be added back to the free list.
-	free2: Chunk,
+	free2: FreePages,
 }
 impl<'list> DeferredAllocAction<'list> {
 	fn new<F1, F2>(free1: F1, free2: F2) -> DeferredAllocAction<'list> 
-		where F1: Into<Option<Chunk>>,
-			  F2: Into<Option<Chunk>>,
+		where F1: Into<Option<FreePages>>,
+			  F2: Into<Option<FreePages>>,
 	{
 		let free_list = &FREE_PAGE_LIST;
-		let free1 = free1.into().unwrap_or_else(Chunk::empty);
-		let free2 = free2.into().unwrap_or_else(Chunk::empty);
+		let free1 = free1.into().unwrap_or_else(FreePages::empty);
+		let free2 = free2.into().unwrap_or_else(FreePages::empty);
 		DeferredAllocAction { free_list, free1, free2 }
 	}
 }
 impl<'list> Drop for DeferredAllocAction<'list> {
 	fn drop(&mut self) {
+		let pages1 = core::mem::replace(&mut self.free1, Pages::empty());
+        let pages2 = core::mem::replace(&mut self.free2, Pages::empty());
+        
 		// Insert all of the chunks, both allocated and free ones, into the list. 
-		if self.free1.size_in_pages() > 0 {
-			self.free_list.lock().insert(self.free1.clone()).unwrap();
+		if pages1.size_in_pages() > 0 {
+			self.free_list.lock().insert(pages1).unwrap();
 		}
-		if self.free2.size_in_pages() > 0 {
-			self.free_list.lock().insert(self.free2.clone()).unwrap();
+		if pages2.size_in_pages() > 0 {
+			self.free_list.lock().insert(pages2).unwrap();
 		}
 	}
 }
@@ -513,7 +575,7 @@ impl From<AllocationError> for &'static str {
 /// Searches the given `list` for the chunk that contains the range of pages from
 /// `requested_page` to `requested_page + num_pages`.
 fn find_specific_chunk(
-	list: &mut StaticArrayRBTree<Chunk>,
+	list: &mut StaticArrayRBTree<FreePages>,
 	requested_page: Page,
 	num_pages: usize
 ) -> Result<(AllocatedPages, DeferredAllocAction<'static>), AllocationError> {
@@ -580,7 +642,7 @@ fn find_specific_chunk(
 /// that is **not** within the designated regions,
 /// and only allocates from the designated regions as a backup option.
 fn find_any_chunk(
-	list: &mut StaticArrayRBTree<Chunk>,
+	list: &mut StaticArrayRBTree<FreePages>,
 	num_pages: usize,
 	within_range: Option<&PageRange>,
 ) -> Result<(AllocatedPages, DeferredAllocAction<'static>), AllocationError> {
