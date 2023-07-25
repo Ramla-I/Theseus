@@ -623,9 +623,9 @@ fn find_specific_chunk(
 				if let Some(chunk) = elem {
 					if requested_page >= *chunk.start() && requested_end_page <= *chunk.end() {
 						// Here: `chunk` was big enough and did contain the requested address.
-						warn!("1 {:?}, num_pages = {}", requested_page, num_pages);
-						warn!("1 {:?}", requested_page + num_pages);
-						warn!("1 {:?}", requested_page + num_pages -1);
+						// warn!("1 {:?}, num_pages = {}", requested_page, num_pages);
+						// warn!("1 {:?}", requested_page + num_pages);
+						// warn!("1 {:?}", requested_page + num_pages -1);
 						return adjust_chosen_chunk(PageRange::new(requested_page, requested_page + (num_pages - 1)), ValueRefMut::Array(elem));
 					}
 				}
@@ -636,7 +636,7 @@ fn find_specific_chunk(
 			if let Some(chunk) = cursor_mut.get().map(|w| w.deref()) {
 				if requested_page >= *chunk.start() {
 					if requested_end_page <= *chunk.end() {
-						warn!("2 {:?}, num_pages = {}", requested_page, num_pages);
+						// warn!("2 {:?}, num_pages = {}", requested_page, num_pages);
 						return adjust_chosen_chunk(PageRange::new(requested_page, requested_page + (num_pages - 1)), ValueRefMut::RBTree(cursor_mut));
 					} else {
 						// // Here, we've found a chunk that includes the requested start page, but it's too small
@@ -690,7 +690,7 @@ fn find_specific_chunk(
 						if let Some(combined_chunk) = cursor_mut.get().map(|w| w.deref()) {
 							if requested_page >= *combined_chunk.start() {
 								if requested_end_page <= *combined_chunk.end() {
-									warn!("3 {:?}, num_pages = {}", requested_page, num_pages);
+									// warn!("3 {:?}, num_pages = {}", requested_page, num_pages);
 									return adjust_chosen_chunk(PageRange::new(requested_page, requested_page + (num_pages - 1)), ValueRefMut::RBTree(cursor_mut));
 								}
 							}
@@ -736,7 +736,7 @@ fn find_any_chunk(
 					let lowest_possible_start_page = *max(chunk.start(), range.start());
 					let highest_possible_end_page  = *min(chunk.end(), range.end());
 					if lowest_possible_start_page + num_pages <= highest_possible_end_page { // ToDO: should there be a -1
-						warn!("4 {:?}, num_pages = {}", lowest_possible_start_page, num_pages);
+						// warn!("4 {:?}, num_pages = {}", lowest_possible_start_page, num_pages);
 					
 						return adjust_chosen_chunk(
 							PageRange::new(
@@ -773,7 +773,7 @@ fn find_any_chunk(
 				let lowest_possible_start_page = *max(chunk.start(), range.start());
 				let highest_possible_end_page  = *min(chunk.end(), range.end());
 				if lowest_possible_start_page + num_pages <= highest_possible_end_page {
-					warn!("5 {:?}, num_pages = {}", lowest_possible_start_page, num_pages);				
+					// warn!("5 {:?}, num_pages = {}", lowest_possible_start_page, num_pages);				
 					return adjust_chosen_chunk(
 						PageRange::new(
 							lowest_possible_start_page,
@@ -805,7 +805,7 @@ fn find_any_chunk(
 			for elem in arr.iter_mut() {
 				if let Some(chunk) = elem {
 					if num_pages <= chunk.size_in_pages() {
-						warn!("6 {:?}, num_pages = {}", *chunk.start(), num_pages);
+						// warn!("6 {:?}, num_pages = {}", *chunk.start(), num_pages);
 						return adjust_chosen_chunk(PageRange::new(*chunk.start(), *chunk.start() + (num_pages - 1)), ValueRefMut::Array(elem));
 					}
 				}
@@ -829,7 +829,7 @@ fn find_any_chunk(
 			let mut cursor = tree.upper_bound_mut(Bound::Included(designated_low_end));
 			while let Some(chunk) = cursor.get().map(|w| w.deref()) {
 				if num_pages < chunk.size_in_pages() {
-					warn!("7 {:?}, num_pages = {}", *chunk.start(), num_pages);
+					// warn!("7 {:?}, num_pages = {}", *chunk.start(), num_pages);
 					return adjust_chosen_chunk(PageRange::new(*chunk.start(), *chunk.start() + (num_pages - 1)), ValueRefMut::RBTree(cursor));
 				}
 				cursor.move_prev();
@@ -843,7 +843,7 @@ fn find_any_chunk(
 					break; 
 				}
 				if num_pages < chunk.size_in_pages() {
-					warn!("8 {:?}, num_pages = {}", *chunk.start(), num_pages);
+					// warn!("8 {:?}, num_pages = {}", *chunk.start(), num_pages);
 					return adjust_chosen_chunk(PageRange::new(*chunk.start(), *chunk.start() + (num_pages - 1)), ValueRefMut::RBTree(cursor));
 				}
 				cursor.move_prev();
@@ -883,7 +883,7 @@ fn adjust_chosen_chunk(
 	let chosen_chunk = retrieve_pages_from_ref(chosen_chunk_ref)
 		.expect("BUG: Failed to retrieve chunk from free list");
 
-	trace!("to allocate: {:?}, chosen_chunk: {:?}", pages_to_allocate, chosen_chunk);
+	// trace!("to allocate: {:?}, chosen_chunk: {:?}", pages_to_allocate, chosen_chunk);
 	let SplitPages{ before_start, start_to_end: new_allocation, after_end } = chosen_chunk.split_range(pages_to_allocate)
         .expect("BUG: Failed to split chunk");
 
