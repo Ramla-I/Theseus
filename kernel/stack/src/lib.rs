@@ -41,7 +41,7 @@ fn inner_alloc_stack(
     page_table: &mut Mapper, 
 ) -> Option<Stack> {
     let start_of_stack_pages = *pages.start() + 1; 
-    let (guard_page, stack_pages) = pages.split(start_of_stack_pages).ok()?;
+    let (guard_page, stack_pages) = pages.split_at(start_of_stack_pages).ok()?;
 
     // For stack memory, the minimum required flag is WRITABLE.
     let flags = PteFlags::new().writable(true);

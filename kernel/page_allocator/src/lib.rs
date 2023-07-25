@@ -162,7 +162,7 @@ pub fn init(end_vaddr_of_low_designated_region: VirtualAddress) -> Result<(), &'
 /// Thus, comparing two `Chunk`s with the `==` or `!=` operators may not work as expected.
 /// since it ignores their actual range of pages.
 #[derive(Eq)]
-struct Pages<const S: MemoryState> {
+pub struct Pages<const S: MemoryState> {
 	/// The Pages covered by this chunk, an inclusive range. 
 	pages: PageRange,
 }
@@ -219,6 +219,17 @@ impl AllocatedPages {
 impl UnmappedPages {
     /// Consumes this `Frames` in the `Unmapped` state and converts them into the `Allocated` state.
     pub fn into_allocated_pages(self) -> AllocatedPages {    
+        let f = Pages {
+            pages: self.pages.clone(),
+        };
+        core::mem::forget(self);
+        f
+    }
+}
+
+impl PagesMapped {
+    /// Consumes this `Frames` in the `Unmapped` state and converts them into the `Allocated` state.
+    pub fn into_unmapped_pages(self) -> UnmappedPages {    
         let f = Pages {
             pages: self.pages.clone(),
         };
@@ -437,14 +448,14 @@ impl<const S: MemoryState> Drop for Pages<S> {
 				if self.size_in_pages() == 0 { return; }
 				// trace!("page_allocator: deallocating {:?}", self);
 	
-				let chunk = Chunk {
+				let mut free_pages = Pages {
 					pages: self.pages.clone(),
 				};
 				let mut list = FREE_PAGE_LIST.lock();
 				match &mut list.0 {
 					// For early allocations, just add the deallocated chunk to the free pages list.
 					Inner::Array(_) => {
-						if list.insert(chunk).is_ok() {
+						if list.insert(free_pages).is_ok() {
 							return;
 						}
 					}
@@ -453,32 +464,55 @@ impl<const S: MemoryState> Drop for Pages<S> {
 					// we can merge the deallocated pages with an existing contiguously-adjactent chunk
 					// or if we need to insert a new chunk.
 					Inner::RBTree(ref mut tree) => {
-						let mut cursor_mut = tree.lower_bound_mut(Bound::Included(chunk.start()));
-						if let Some(next_chunk) = cursor_mut.get() {
-							if *chunk.end() + 1 == *next_chunk.start() {
-								// trace!("Prepending {:?} onto beg of next {:?}", chunk, next_chunk.deref());
-								if cursor_mut.replace_with(Wrapper::new_link(Chunk {
-									pages: PageRange::new(*chunk.start(), *next_chunk.end()),
-								})).is_ok() {
-									return;
-								}
+						let mut cursor_mut = tree.lower_bound_mut(Bound::Included(free_pages.start()));
+						if let Some(next_pages_ref) = cursor_mut.get() {
+							if *free_pages.end() + 1 == *next_pages_ref.start() {
+								// extract the next chunk from the list
+                                let mut next_pages: FreePages = cursor_mut
+                                    .replace_with(Wrapper::new_link(Pages::empty()))
+                                    .expect("BUG: couldn't remove next pages from free list in drop handler")
+									.into_inner();						
+			
+								// trace!("Prepending {:?} onto beg of next {:?}", free_pages, next_pages.deref());
+								if free_pages.merge(next_pages).is_ok() {
+                                    // trace!("newly merged next chunk: {:?}", next_pages);
+                                    // now return newly merged chunk into list
+                                    match cursor_mut.replace_with(Wrapper::new_link(free_pages)) { 
+                                        Ok(_) => { return; }
+                                        Err(f) => free_pages = f.into_inner(), 
+                                    }
+                                } else {
+                                    panic!("BUG: couldn't merge deallocated chunk into next chunk");
+                                }
 							}
 						}
-						if let Some(prev_chunk) = cursor_mut.peek_prev().get() {
-							if *prev_chunk.end() + 1 == *chunk.start() {
-								// trace!("Appending {:?} onto end of prev {:?}", chunk, prev_chunk.deref());
-								let new_page_range = PageRange::new(*prev_chunk.start(), *chunk.end());
+						if let Some(prev_pages_ref) = cursor_mut.peek_prev().get() {
+							if *prev_pages_ref.end() + 1 == *free_pages.start() {
+								// trace!("Appending {:?} onto end of prev {:?}", free_pages, prev_pages.deref());
 								cursor_mut.move_prev();
-								if cursor_mut.replace_with(Wrapper::new_link(Chunk {
-									pages: new_page_range,
-								})).is_ok() {
-									return;
-								}
+								if let Some(_prev_pages_ref) = cursor_mut.get() {
+                                    // extract the next chunk from the list
+                                    let mut prev_pages = cursor_mut
+                                        .replace_with(Wrapper::new_link(Pages::empty()))
+                                        .expect("BUG: couldn't remove next frames from free list in drop handler")
+                                        .into_inner();
+
+                                    if prev_pages.merge(free_pages).is_ok() {
+                                        // trace!("newly merged prev chunk: {:?}", prev_pages);
+                                        // now return newly merged chunk into list
+                                        match cursor_mut.replace_with(Wrapper::new_link(prev_pages)) { 
+                                            Ok(_) => { return; }
+                                            Err(f) => free_pages = f.into_inner(), 
+                                        }
+                                    } else {
+                                        panic!("BUG: couldn't merge deallocated chunk into prev chunk");
+                                    }
+                                }
 							}
 						}
 	
-						// trace!("Inserting new chunk for deallocated {:?} ", chunk.pages);
-						cursor_mut.insert(Wrapper::new_link(chunk));
+						// trace!("Inserting new chunk for deallocated {:?} ", free_pages.pages);
+						cursor_mut.insert(Wrapper::new_link(free_pages));
 						return;
 					}
 				}
@@ -589,7 +623,10 @@ fn find_specific_chunk(
 				if let Some(chunk) = elem {
 					if requested_page >= *chunk.start() && requested_end_page <= *chunk.end() {
 						// Here: `chunk` was big enough and did contain the requested address.
-						return adjust_chosen_chunk(requested_page, num_pages, &chunk.clone(), ValueRefMut::Array(elem));
+						warn!("1 {:?}, num_pages = {}", requested_page, num_pages);
+						warn!("1 {:?}", requested_page + num_pages);
+						warn!("1 {:?}", requested_page + num_pages -1);
+						return adjust_chosen_chunk(PageRange::new(requested_page, requested_page + (num_pages - 1)), ValueRefMut::Array(elem));
 					}
 				}
 			}
@@ -599,30 +636,66 @@ fn find_specific_chunk(
 			if let Some(chunk) = cursor_mut.get().map(|w| w.deref()) {
 				if requested_page >= *chunk.start() {
 					if requested_end_page <= *chunk.end() {
-						return adjust_chosen_chunk(requested_page, num_pages, &chunk.clone(), ValueRefMut::RBTree(cursor_mut));
+						warn!("2 {:?}, num_pages = {}", requested_page, num_pages);
+						return adjust_chosen_chunk(PageRange::new(requested_page, requested_page + (num_pages - 1)), ValueRefMut::RBTree(cursor_mut));
 					} else {
-						// Here, we've found a chunk that includes the requested start page, but it's too small
-						// to cover the number of requested pages. 
-						// Thus, we attempt to merge this chunk with the next contiguous chunk(s) to create one single larger chunk.
-						let chunk = chunk.clone(); // ends the above borrow on `cursor_mut`
-						let mut new_end_page = *chunk.end();
-						cursor_mut.move_next();
-						while let Some(next_chunk) = cursor_mut.get().map(|w| w.deref()) {
-							if *next_chunk.start() - 1 == new_end_page {
-								new_end_page = *next_chunk.end();
-								cursor_mut.remove().expect("BUG: page_allocator failed to merge contiguous chunks.");
-								// The above call to `cursor_mut.remove()` advances the cursor to the next chunk.
+						// // Here, we've found a chunk that includes the requested start page, but it's too small
+						// // to cover the number of requested pages. 
+						// // Thus, we attempt to merge this chunk with the next contiguous chunk(s) to create one single larger chunk.
+						// let chunk = chunk.clone(); // ends the above borrow on `cursor_mut`
+						// let mut new_end_page = *chunk.end();
+						// cursor_mut.move_next();
+						// while let Some(next_chunk) = cursor_mut.get().map(|w| w.deref()) {
+						// 	if *next_chunk.start() - 1 == new_end_page {
+						// 		new_end_page = *next_chunk.end();
+						// 		cursor_mut.remove().expect("BUG: page_allocator failed to merge contiguous chunks.");
+						// 		// The above call to `cursor_mut.remove()` advances the cursor to the next chunk.
+						// 	} else {
+						// 		break; // the next chunk wasn't contiguous, so stop iterating.
+						// 	}
+						// }
+
+						// if new_end_page > *chunk.end() {
+						// 	cursor_mut.move_prev(); // move the cursor back to the original chunk
+						// 	let _removed_chunk = cursor_mut.replace_with(Wrapper::new_link(Chunk { pages: PageRange::new(*chunk.start(), new_end_page) }))
+						// 		.expect("BUG: page_allocator failed to replace the current chunk while merging contiguous chunks.");
+						// 	return adjust_chosen_chunk(PageRange::new(requested_page, requested_page + num_pages - 1), ValueRefMut::RBTree(cursor_mut));
+						// }
+						
+						let mut first_chunk = cursor_mut.remove().expect("BUG: page_allocator failed to merge contiguous chunks.");
+						let mut found_contiguous = true;
+						let mut new_end_page = *first_chunk.end();
+						while found_contiguous {
+							found_contiguous = false;
+							if let Some(next_chunk) = cursor_mut.get().map(|w| w.deref()) {
+								if *next_chunk.start() - 1 == new_end_page {
+									found_contiguous = true;
+									new_end_page = *next_chunk.end();
+								} else {
+									trace!("Page allocator: next {:?} was not contiguously above initial too-small {:?}", next_chunk, first_chunk);
+								}
 							} else {
-								break; // the next chunk wasn't contiguous, so stop iterating.
+								trace!("Page allocator: couldn't get next chunk above initial too-small {:?}", first_chunk);
+							}
+							
+							if found_contiguous {
+								let chunk2 = cursor_mut.remove().expect("BUG: page_allocator failed to merge contiguous chunks.").into_inner();
+								first_chunk.merge(chunk2).expect("BUG: page_allocator failed to merge contiguous chunks.");							
+							}
+						}
+						// ToDo: put in conditional
+						cursor_mut.insert_before(first_chunk);
+						cursor_mut.move_prev(); //back to original chunk that has now been combined to the max
+
+						if let Some(combined_chunk) = cursor_mut.get().map(|w| w.deref()) {
+							if requested_page >= *combined_chunk.start() {
+								if requested_end_page <= *combined_chunk.end() {
+									warn!("3 {:?}, num_pages = {}", requested_page, num_pages);
+									return adjust_chosen_chunk(PageRange::new(requested_page, requested_page + (num_pages - 1)), ValueRefMut::RBTree(cursor_mut));
+								}
 							}
 						}
 
-						if new_end_page > *chunk.end() {
-							cursor_mut.move_prev(); // move the cursor back to the original chunk
-							let _removed_chunk = cursor_mut.replace_with(Wrapper::new_link(Chunk { pages: PageRange::new(*chunk.start(), new_end_page) }))
-								.expect("BUG: page_allocator failed to replace the current chunk while merging contiguous chunks.");
-							return adjust_chosen_chunk(requested_page, num_pages, &chunk, ValueRefMut::RBTree(cursor_mut));
-						}
 					}
 				}
 			}
@@ -662,11 +735,14 @@ fn find_any_chunk(
 					// is within *both* the current chunk's bounds and the range's bounds.
 					let lowest_possible_start_page = *max(chunk.start(), range.start());
 					let highest_possible_end_page  = *min(chunk.end(), range.end());
-					if lowest_possible_start_page + num_pages <= highest_possible_end_page {
+					if lowest_possible_start_page + num_pages <= highest_possible_end_page { // ToDO: should there be a -1
+						warn!("4 {:?}, num_pages = {}", lowest_possible_start_page, num_pages);
+					
 						return adjust_chosen_chunk(
-							lowest_possible_start_page,
-							num_pages,
-							&chunk.clone(),
+							PageRange::new(
+								lowest_possible_start_page, 
+								lowest_possible_start_page + (num_pages - 1)
+							),
 							ValueRefMut::Array(elem),
 						);
 					}
@@ -697,10 +773,12 @@ fn find_any_chunk(
 				let lowest_possible_start_page = *max(chunk.start(), range.start());
 				let highest_possible_end_page  = *min(chunk.end(), range.end());
 				if lowest_possible_start_page + num_pages <= highest_possible_end_page {
+					warn!("5 {:?}, num_pages = {}", lowest_possible_start_page, num_pages);				
 					return adjust_chosen_chunk(
-						lowest_possible_start_page,
-						num_pages,
-						&chunk.clone(),
+						PageRange::new(
+							lowest_possible_start_page,
+							lowest_possible_start_page + (num_pages - 1),
+						),
 						ValueRefMut::RBTree(cursor)
 					);
 				}
@@ -727,7 +805,8 @@ fn find_any_chunk(
 			for elem in arr.iter_mut() {
 				if let Some(chunk) = elem {
 					if num_pages <= chunk.size_in_pages() {
-						return adjust_chosen_chunk(*chunk.start(), num_pages, &chunk.clone(), ValueRefMut::Array(elem));
+						warn!("6 {:?}, num_pages = {}", *chunk.start(), num_pages);
+						return adjust_chosen_chunk(PageRange::new(*chunk.start(), *chunk.start() + (num_pages - 1)), ValueRefMut::Array(elem));
 					}
 				}
 			}
@@ -750,20 +829,22 @@ fn find_any_chunk(
 			let mut cursor = tree.upper_bound_mut(Bound::Included(designated_low_end));
 			while let Some(chunk) = cursor.get().map(|w| w.deref()) {
 				if num_pages < chunk.size_in_pages() {
-					return adjust_chosen_chunk(*chunk.start(), num_pages, &chunk.clone(), ValueRefMut::RBTree(cursor));
+					warn!("7 {:?}, num_pages = {}", *chunk.start(), num_pages);
+					return adjust_chosen_chunk(PageRange::new(*chunk.start(), *chunk.start() + (num_pages - 1)), ValueRefMut::RBTree(cursor));
 				}
 				cursor.move_prev();
 			}
 
 			// The second iterates over the higher designated region, from the highest (max) address down to the designated region boundary.
-			let mut cursor = tree.upper_bound_mut::<Chunk>(Bound::Unbounded);
+			let mut cursor = tree.upper_bound_mut::<FreePages>(Bound::Unbounded);
 			while let Some(chunk) = cursor.get().map(|w| w.deref()) {
 				if chunk.start() < &DESIGNATED_PAGES_HIGH_START {
 					// we already iterated over non-designated pages in the first match statement above, so we're out of memory. 
 					break; 
 				}
 				if num_pages < chunk.size_in_pages() {
-					return adjust_chosen_chunk(*chunk.start(), num_pages, &chunk.clone(), ValueRefMut::RBTree(cursor));
+					warn!("8 {:?}, num_pages = {}", *chunk.start(), num_pages);
+					return adjust_chosen_chunk(PageRange::new(*chunk.start(), *chunk.start() + (num_pages - 1)), ValueRefMut::RBTree(cursor));
 				}
 				cursor.move_prev();
 			}
@@ -774,62 +855,54 @@ fn find_any_chunk(
 }
 
 
-/// The final part of the main allocation routine. 
+/// Removes a `Pages` object from the RBTree. 
+/// `pages_ref` is basically a wrapper over the cursor which stores the position of the pages.
+fn retrieve_pages_from_ref(mut pages_ref: ValueRefMut<FreePages>) -> Option<FreePages> {
+    // Remove the chosen chunk from the free frame list.
+    let removed_val = pages_ref.remove();
+    
+    match removed_val {
+        RemovedValue::Array(c) => c,
+        RemovedValue::RBTree(option_frames) => {
+            option_frames.map(|c| c.into_inner())
+        }
+    }
+}
+
+
+/// The final part of the main allocation routine that optionally merges two contiguous chunks and 
+/// then splits the resulting chunk into multiple smaller chunks, thereby "allocating" pages from it.
 ///
-/// The given chunk is the one we've chosen to allocate from. 
 /// This function breaks up that chunk into multiple ones and returns an `AllocatedPages` 
-/// from (part of) that chunk, ranging from `start_page` to `start_page + num_pages`.
+/// from (part of) that chunk that has the same range as `pages_to_allocate`.
 fn adjust_chosen_chunk(
-	start_page: Page,
-	num_pages: usize,
-	chosen_chunk: &Chunk,
-	mut chosen_chunk_ref: ValueRefMut<Chunk>,
+	pages_to_allocate: PageRange,
+	chosen_chunk_ref: ValueRefMut<FreePages>,
 ) -> Result<(AllocatedPages, DeferredAllocAction<'static>), AllocationError> {
 
-	// The new allocated chunk might start in the middle of an existing chunk,
-	// so we need to break up that existing chunk into 3 possible chunks: before, newly-allocated, and after.
-	//
-	// Because Pages and VirtualAddresses use saturating add and subtract, we need to double-check that we're not creating
-	// an overlapping duplicate Chunk at either the very minimum or the very maximum of the address space.
-	let new_allocation = Chunk {
-		// The end page is an inclusive bound, hence the -1. Parentheses are needed to avoid overflow.
-		pages: PageRange::new(start_page, start_page + (num_pages - 1)),
-	};
-	let before = if start_page == MIN_PAGE {
-		None
-	} else {
-		Some(Chunk {
-			pages: PageRange::new(*chosen_chunk.start(), *new_allocation.start() - 1),
-		})
-	};
-	let after = if new_allocation.end() == &MAX_PAGE { 
-		None
-	} else {
-		Some(Chunk {
-			pages: PageRange::new(*new_allocation.end() + 1, *chosen_chunk.end()),
-		})
-	};
+	let chosen_chunk = retrieve_pages_from_ref(chosen_chunk_ref)
+		.expect("BUG: Failed to retrieve chunk from free list");
+
+	trace!("to allocate: {:?}, chosen_chunk: {:?}", pages_to_allocate, chosen_chunk);
+	let SplitPages{ before_start, start_to_end: new_allocation, after_end } = chosen_chunk.split_range(pages_to_allocate)
+        .expect("BUG: Failed to split chunk");
 
 	// some sanity checks -- these can be removed or disabled for better performance
-	if let Some(ref b) = before {
+	if let Some(ref b) = before_start {
 		assert!(!new_allocation.contains(b.end()));
 		assert!(!b.contains(new_allocation.start()));
 	}
-	if let Some(ref a) = after {
+	if let Some(ref a) = after_end {
 		assert!(!new_allocation.contains(a.start()));
 		assert!(!a.contains(new_allocation.end()));
 	}
-
-	// Remove the chosen chunk from the free page list.
-	let _removed_chunk = chosen_chunk_ref.remove();
-	assert_eq!(Some(chosen_chunk), _removed_chunk.as_ref()); // sanity check
 
 	// TODO: Re-use the allocated wrapper if possible, rather than allocate a new one entirely.
 	// if let RemovedValue::RBTree(Some(wrapper_adapter)) = _removed_chunk { ... }
 
 	Ok((
-		new_allocation.as_allocated_pages(),
-		DeferredAllocAction::new(before, after),
+		new_allocation.into_allocated_pages(),
+		DeferredAllocAction::new(before_start, after_end),
 	))
 }
 
