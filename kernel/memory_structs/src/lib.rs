@@ -493,6 +493,11 @@ macro_rules! implement_page_frame_range {
                     && (other.start() >= self.start())
                     && (other.end() <= self.end())
                 }
+
+                #[doc = "Returns a `RangeInclusive<usize>` with the same bounds."]
+                pub fn to_range_inclusive(&self) -> RangeInclusive<usize> {
+                    RangeInclusive::new(self.start().number(), self.end().number())
+                }
             }
             impl fmt::Debug for $TypeName {
                 fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
