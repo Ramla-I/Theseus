@@ -6,6 +6,7 @@ extern crate apic;
 extern crate getopts;
 extern crate task;
 extern crate runqueue;
+extern crate log;
 
 use getopts::Options;
 use alloc::{
@@ -17,6 +18,8 @@ use alloc::{
     vec::Vec,
 };
 use apic::get_lapics;
+use log::{error, warn, debug, trace};
+
 
 pub fn main(args: Vec<String>) -> isize {
     let mut opts = Options::new();
@@ -41,8 +44,9 @@ pub fn main(args: Vec<String>) -> isize {
         let core_type = if is_bootstrap_cpu { "Boot CPU" } else { "Secondary CPU" };
 
         println!("\n{} (apic: {}, proc: {})", core_type, apic_id, processor); 
+        error!("\n{} (apic: {}, proc: {})", core_type, apic_id, processor); 
         
-        if let Some(runqueue) = runqueue::get_runqueue(apic_id.value() as u8).map(|rq| rq.read()) {
+        if let Some(runqueue) = runqueue::get_runqueue(apic_id.value() as u8).map(|rq| rq.read().clone()) {
             let mut runqueue_contents = String::new();
             for task in runqueue.iter() {
                 writeln!(runqueue_contents, "    {} ({}) {}", 
@@ -53,6 +57,7 @@ pub fn main(args: Vec<String>) -> isize {
                 .expect("Failed to write to runqueue_contents");
             }
             print!("{}", runqueue_contents);
+            error!("{}", runqueue_contents);
         }
         
         else {

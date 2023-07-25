@@ -1,0 +1,40 @@
+[package]
+name = "mm_eval"
+version = "0.1.0"
+description = "A application that microbenchmarks various memory mapping implementations"
+authors = ["Kevin Boos <kevinaboos@gmail.com>"]
+
+[dependencies]
+getopts = "0.2.21"
+libm = "0.2.1"
+pte_flags = { path = "../../kernel/pte_flags" }
+
+[dependencies.log]
+version = "0.4.8"
+
+[dependencies.hpet]
+path = "../../kernel/acpi/hpet"
+
+[dependencies.tsc]
+path = "../../kernel/tsc"
+
+[dependencies.kernel_config]
+path = "../../kernel/kernel_config"
+
+[dependencies.memory]
+path = "../../kernel/memory"
+
+[dependencies.memory_structs]
+path = "../../kernel/memory_structs"
+
+[dependencies.apic]
+path = "../../kernel/apic"
+
+[dependencies.runqueue]
+path = "../../kernel/runqueue"
+
+[dependencies.libtest]
+path = "../../kernel/libtest"
+
+[dependencies.app_io]
+path = "../../kernel/app_io"

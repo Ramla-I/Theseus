@@ -55,7 +55,7 @@ pub use pte_flags::*;
 use boot_info::{BootInformation, MemoryRegion};
 use log::debug;
 use spin::Once;
-use irq_safety::MutexIrqSafe;
+use sync_irq::IrqSafeMutex;
 use alloc::{sync::Arc, vec::Vec};
 use frame_allocator::{PhysicalMemoryRegion, MemoryRegionType};
 use no_drop::NoDrop;
@@ -65,7 +65,7 @@ pub use kernel_config::memory::PAGE_SIZE;
 static KERNEL_MMI: Once<MmiRef> = Once::new();
 
 /// A shareable reference to a `MemoryManagementInfo` struct wrapper in a lock.
-pub type MmiRef = Arc<MutexIrqSafe<MemoryManagementInfo>>;
+pub type MmiRef = Arc<IrqSafeMutex<MemoryManagementInfo>>;
 
 /// Returns a reference to the kernel's `MemoryManagementInfo`, if initialized.
 /// If not, it returns `None`.
@@ -311,7 +311,7 @@ pub fn init_post_heap(
     };
 
     let kernel_mmi_ref = KERNEL_MMI.call_once( || {
-        Arc::new(MutexIrqSafe::new(kernel_mmi))
+        Arc::new(IrqSafeMutex::new(kernel_mmi))
     });
 
     kernel_mmi_ref.clone()
