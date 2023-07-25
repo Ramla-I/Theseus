@@ -1191,6 +1191,22 @@ dependencies = [
  "range_inclusive",
  "spin 0.9.4",
  "static_assertions",
+ "trusted_chunk",
+]
+
+[[package]]
+name = "frame_range_callbacks"
+version = "0.1.0"
+dependencies = [
+ "core2",
+ "frame_allocator",
+ "log",
+ "memory_structs",
+ "page_table_entry",
+ "range_inclusive",
+ "spin 0.9.4",
+ "trusted_chunk",
+ "x86_64",
 ]
 
 [[package]]
@@ -1989,6 +2005,7 @@ dependencies = [
  "bitflags",
  "boot_info",
  "frame_allocator",
+ "frame_range_callbacks",
  "kernel_config",
  "lazy_static",
  "log",
