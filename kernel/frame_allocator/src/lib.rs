@@ -396,26 +396,28 @@ impl FreeFrames {
     }
 
     /// Consumes this `Frames` in the `Free` state and converts them into the `Allocated` state.
-    pub fn into_allocated_frames(self) -> AllocatedFrames {    
-        let f = Frames {
+    pub fn into_allocated_frames(mut self) -> AllocatedFrames {  
+        let frames = core::mem::replace(&mut self.frames, FrameRange::empty());  
+        let af = Frames {
             typ: self.typ,
-            frames: self.frames.clone(),
+            frames,
         };
         core::mem::forget(self);
-        f
+        af
     }
 }
 
 impl AllocatedFrames {
     /// Consumes this `Frames` in the `Allocated` state and converts them into the `Mapped` state.
     /// This should only be called once a `MappedPages` has been created from the `Frames`.
-    pub fn into_mapped_frames(self) -> MappedFrames {    
-        let f = Frames {
+    pub fn into_mapped_frames(mut self) -> MappedFrames {    
+        let frames = core::mem::replace(&mut self.frames, FrameRange::empty());  
+        let mf = Frames {
             typ: self.typ,
-            frames: self.frames.clone(),
+            frames,
         };
         core::mem::forget(self);
-        f
+        mf
     }
 
     /// Returns an `AllocatedFrame` if this `AllocatedFrames` object contains only one frame.
@@ -433,13 +435,14 @@ impl AllocatedFrames {
 
 impl UnmappedFrames {
     /// Consumes this `Frames` in the `Unmapped` state and converts them into the `Allocated` state.
-    pub fn into_allocated_frames(self) -> AllocatedFrames {    
-        let f = Frames {
+    pub fn into_allocated_frames(mut self) -> AllocatedFrames {    
+        let frames = core::mem::replace(&mut self.frames, FrameRange::empty());  
+        let af = Frames {
             typ: self.typ,
-            frames: self.frames.clone(),
+            frames
         };
         core::mem::forget(self);
-        f
+        af
     }
 }
 
@@ -469,10 +472,8 @@ impl<const S: MemoryState> Drop for Frames<S> {
             MemoryState::Free => {
                 if self.size_in_frames() == 0 { return; }
         
-                let mut free_frames: FreeFrames = Frames {
-                    typ: self.typ,
-                    frames: self.frames.clone(),
-                };
+                let frames = core::mem::replace(&mut self.frames, FrameRange::empty());  
+                let free_frames: FreeFrames = Frames { typ: self.typ, frames };
         
                 let mut list = if free_frames.typ == MemoryRegionType::Reserved {
                     FREE_RESERVED_FRAMES_LIST.lock()
@@ -485,19 +486,20 @@ impl<const S: MemoryState> Drop for Frames<S> {
                     Inner::Array(_) => {
                         if list.insert(free_frames).is_ok() {
                             return;
+                        } else {
+                            error!("Failed to insert deallocated frames into the list (array). The initial static array should be created with a larger size.");
                         }
                     }
                     
-                    // For full-fledged deallocations, use the entry API to efficiently determine if
-                    // we can merge the deallocated frames with an existing contiguously-adjacent chunk
-                    // or if we need to insert a new chunk.
+                    // For full-fledged deallocations, determine if we can merge the deallocated frames 
+                    // with an existing contiguously-adjacent chunk or if we need to insert a new chunk.
                     Inner::RBTree(ref mut tree) => {
                         let mut cursor_mut = tree.lower_bound_mut(Bound::Included(free_frames.start()));
                         if let Some(next_frames_ref) = cursor_mut.get() {
                             if *free_frames.end() + 1 == *next_frames_ref.start() {
                                 // extract the next chunk from the list
                                 let mut next_frames = cursor_mut
-                                    .replace_with(Wrapper::new_link(Frames::empty()))
+                                    .remove()
                                     .expect("BUG: couldn't remove next frames from free list in drop handler")
                                     .into_inner();
 
@@ -505,10 +507,8 @@ impl<const S: MemoryState> Drop for Frames<S> {
                                 if next_frames.merge(free_frames).is_ok() {
                                     // trace!("newly merged next chunk: {:?}", next_frames);
                                     // now return newly merged chunk into list
-                                    match cursor_mut.replace_with(Wrapper::new_link(next_frames)) { 
-                                        Ok(_) => { return; }
-                                        Err(f) => free_frames = f.into_inner(), 
-                                    }
+                                    cursor_mut.insert_before(Wrapper::new_link(next_frames));
+                                    return;
                                 } else {
                                     panic!("BUG: couldn't merge deallocated chunk into next chunk");
                                 }
@@ -521,17 +521,15 @@ impl<const S: MemoryState> Drop for Frames<S> {
                                 if let Some(_prev_frames_ref) = cursor_mut.get() {
                                     // extract the next chunk from the list
                                     let mut prev_frames = cursor_mut
-                                        .replace_with(Wrapper::new_link(Frames::empty()))
-                                        .expect("BUG: couldn't remove next frames from free list in drop handler")
+                                        .remove()
+                                        .expect("BUG: couldn't remove previous frames from free list in drop handler")
                                         .into_inner();
 
                                     if prev_frames.merge(free_frames).is_ok() {
                                         // trace!("newly merged prev chunk: {:?}", prev_frames);
                                         // now return newly merged chunk into list
-                                        match cursor_mut.replace_with(Wrapper::new_link(prev_frames)) { 
-                                            Ok(_) => { return; }
-                                            Err(f) => free_frames = f.into_inner(), 
-                                        }
+                                        cursor_mut.insert_before(Wrapper::new_link(prev_frames));
+                                        return;
                                     } else {
                                         panic!("BUG: couldn't merge deallocated chunk into prev chunk");
                                     }
@@ -548,11 +546,13 @@ impl<const S: MemoryState> Drop for Frames<S> {
             }
             MemoryState::Allocated => { 
                 // trace!("Converting AllocatedFrames to FreeFrames. Drop handler will be called again {:?}", self.frames);
-                let _to_drop = FreeFrames::new(self.typ, self.frames.clone()); 
+                let frames = core::mem::replace(&mut self.frames, FrameRange::empty());  
+                let _to_drop = FreeFrames { typ: self.typ, frames }; 
             }
             MemoryState::Mapped => panic!("We should never drop a mapped frame! It should be forgotten instead."),
             MemoryState::Unmapped => {
-                let _to_drop = AllocatedFrames { typ: self.typ, frames: self.frames.clone() };
+                let frames = core::mem::replace(&mut self.frames, FrameRange::empty());  
+                let _to_drop = AllocatedFrames { typ: self.typ, frames };
             }
         }
     }
@@ -645,21 +645,22 @@ impl<const S: MemoryState> Frames<S> {
             return Err(other);
         }
 
-        if *self.start() == *other.end() + 1 {
+        let frames = if *self.start() == *other.end() + 1 {
             // `other` comes contiguously before `self`
-            self.frames = FrameRange::new(*other.start(), *self.end());
+            FrameRange::new(*other.start(), *self.end())
         } 
         else if *self.end() + 1 == *other.start() {
             // `self` comes contiguously before `other`
-            self.frames = FrameRange::new(*self.start(), *other.end());
+            FrameRange::new(*self.start(), *other.end())
         }
         else {
             // non-contiguous
             return Err(other);
-        }
+        };
 
         // ensure the now-merged Frames doesn't run its drop handler
         core::mem::forget(other); 
+        self.frames = frames;
         Ok(())
     }
 
@@ -681,22 +682,28 @@ impl<const S: MemoryState> Frames<S> {
         }
         
         let start_frame = *frames_to_extract.start();
-        let start_to_end = Frames { frames: frames_to_extract, ..self };
+        let start_to_end = frames_to_extract;
         
         let before_start = if start_frame == MIN_FRAME || start_frame == *self.start() {
             None
         } else {
-            Some(Frames { frames: FrameRange::new(*self.start(), *start_to_end.start() - 1), ..self })
+            Some(FrameRange::new(*self.start(), *start_to_end.start() - 1))
         };
 
         let after_end = if *start_to_end.end() == MAX_FRAME || *start_to_end.end() == *self.end() {
             None
         } else {
-            Some(Frames { frames: FrameRange::new(*start_to_end.end() + 1, *self.end()), ..self })
+            Some(FrameRange::new(*start_to_end.end() + 1, *self.end()))
         };
 
+        let typ = self.typ;
+        // ensure the original Frames doesn't run its drop handler and free its frames.
         core::mem::forget(self);
-        Ok(SplitFrames { before_start, start_to_end, after_end })
+        Ok(SplitFrames { 
+            before_start: before_start.map(|frames| Frames { typ, frames }),
+            start_to_end: Frames { typ, frames: start_to_end }, 
+            after_end: after_end.map(|frames| Frames { typ, frames }),
+        })
     }
 
     /// Splits this `Frames` into two separate `Frames` objects:
@@ -937,7 +944,7 @@ fn find_specific_chunk(
                             // We would like to merge it into the initial chunk with just the reference (since we have a cursor pointing to it already),
                             // but we can't get a mutable reference to the element the cursor is pointing to.
                             // So both chunks will be removed and then merged. 
-                            return allocate_from_chosen_chunk(FrameRange::new(requested_frame, requested_frame + num_frames -1), ValueRefMut::RBTree(cursor_mut), Some(next_chunk));
+                            return allocate_from_chosen_chunk(FrameRange::new(requested_frame, requested_frame + num_frames - 1), ValueRefMut::RBTree(cursor_mut), Some(next_chunk));
                         }
                     }
                 }
@@ -1030,7 +1037,8 @@ fn allocate_from_chosen_chunk(
         chosen_chunk.merge(chunk).expect("BUG: Failed to merge adjacent chunks");
     }
 
-    let SplitFrames{ before_start, start_to_end: new_allocation, after_end } = chosen_chunk.split_range(frames_to_allocate)
+    let SplitFrames { before_start, start_to_end: new_allocation, after_end } = chosen_chunk
+        .split_range(frames_to_allocate)
         .expect("BUG: Failed to split merged chunk");
 
     // TODO: Re-use the allocated wrapper if possible, rather than allocate a new one entirely.
@@ -1093,48 +1101,49 @@ fn add_reserved_region_to_lists(
     // first check the regions list for overlaps and proceed only if there are none.
     if contains_any(regions_list, &frames){
         return Err("Failed to add reserved region that overlapped with existing reserved regions.");
-    } else {
-        // Check whether the reserved region overlaps any existing regions.
-        match &mut frames_list.0 {
-            Inner::Array(ref mut arr) => {
-                for chunk in arr.iter().flatten() {
-                    if let Some(_overlap) = chunk.overlap(&frames) {
-                        // trace!("Failed to add reserved region {:?} due to overlap {:?} with existing chunk {:?}",
-                        //     frames, _overlap, chunk
-                        // );
-                        return Err("Failed to add free frames that overlapped with existing frames (array).");
-                    }
-                }
-            }
-            Inner::RBTree(ref mut tree) => {
-                let mut cursor_mut = tree.upper_bound_mut(Bound::Included(frames.start()));
-                while let Some(chunk) = cursor_mut.get().map(|w| w.deref()) {
-                    if chunk.start() > frames.end() {
-                        // We're iterating in ascending order over a sorted tree,
-                        // so we can stop looking for overlapping regions once we pass the end of the new frames to add.
-                        break;
-                    }
-                    if let Some(_overlap) = chunk.overlap(&frames) {
-                        // trace!("Failed to add reserved region {:?} due to overlap {:?} with existing chunk {:?}",
-                        //     frames, _overlap, chunk
-                        // );
-                        return Err("Failed to add free frames that overlapped with existing frames (RBTree).");
-                    }
-                    cursor_mut.move_next();
+    }
+
+    // Check whether the reserved region overlaps any existing regions.
+    match &mut frames_list.0 {
+        Inner::Array(ref mut arr) => {
+            for chunk in arr.iter().flatten() {
+                if let Some(_overlap) = chunk.overlap(&frames) {
+                    // trace!("Failed to add reserved region {:?} due to overlap {:?} with existing chunk {:?}",
+                    //     frames, _overlap, chunk
+                    // );
+                    return Err("Failed to add free frames that overlapped with existing frames (array).");
                 }
             }
         }
-        
-        regions_list.insert(PhysicalMemoryRegion {
-                typ: MemoryRegionType::Reserved,
-                frames: frames.clone(),
-        }).map_err(|_c| "BUG: Failed to insert non-overlapping physical memory region into reserved regions list.")?;
-
-        frames_list.insert(Frames::new(
-            MemoryRegionType::Reserved,
-            frames.clone(),
-        )).map_err(|_c| "BUG: Failed to insert non-overlapping frames into list.")?;
+        Inner::RBTree(ref mut tree) => {
+            let mut cursor_mut = tree.upper_bound_mut(Bound::Included(frames.start()));
+            while let Some(chunk) = cursor_mut.get().map(|w| w.deref()) {
+                if chunk.start() > frames.end() {
+                    // We're iterating in ascending order over a sorted tree,
+                    // so we can stop looking for overlapping regions once we pass the end of the new frames to add.
+                    break;
+                }
+                if let Some(_overlap) = chunk.overlap(&frames) {
+                    // trace!("Failed to add reserved region {:?} due to overlap {:?} with existing chunk {:?}",
+                    //     frames, _overlap, chunk
+                    // );
+                    return Err("Failed to add free frames that overlapped with existing frames (RBTree).");
+                }
+                cursor_mut.move_next();
+            }
+        }
     }
+
+    regions_list.insert(PhysicalMemoryRegion {
+        typ: MemoryRegionType::Reserved,
+        frames: frames.clone(),
+    }).map_err(|_c| "BUG: Failed to insert non-overlapping physical memory region into reserved regions list.")?;
+
+    frames_list.insert(Frames::new(
+        MemoryRegionType::Reserved,
+        frames.clone(),
+    )).map_err(|_c| "BUG: Failed to insert non-overlapping frames into list.")?;
+
     Ok(frames)
 }
 
