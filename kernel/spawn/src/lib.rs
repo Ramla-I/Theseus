@@ -35,7 +35,7 @@ use task::{Task, TaskRef, RestartInfo, RunState, JoinableTaskRef, ExitableTaskRe
 use mod_mgmt::{CrateNamespace, SectionType, SECTION_HASH_DELIMITER};
 use path::Path;
 use fs_node::FileOrDir;
-use cpu_local_preemption::{hold_preemption, PreemptionGuard};
+use preemption::{hold_preemption, PreemptionGuard};
 use no_drop::NoDrop;
 
 #[cfg(simd_personality)]
@@ -270,6 +270,7 @@ pub fn new_application_task_builder(
 /// 
 /// [tb]:  fn.new_task_builder.html
 /// [atb]: fn.new_application_task_builder.html
+#[must_use = "a `TaskBuilder` does nothing until `spawn()` is invoked on it"]
 pub struct TaskBuilder<F, A, R> {
     func: F,
     argument: A,

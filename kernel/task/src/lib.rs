@@ -46,13 +46,14 @@ use core::{
 };
 use cpu::CpuId;
 use crossbeam_utils::atomic::AtomicCell;
-use irq_safety::{hold_interrupts, MutexIrqSafe};
+use irq_safety::hold_interrupts;
 use log::error;
 use environment::Environment;
 use memory::MmiRef;
 use no_drop::NoDrop;
-use cpu_local_preemption::PreemptionGuard;
+use preemption::PreemptionGuard;
 use spin::Mutex;
+use sync_irq::IrqSafeMutex;
 use stack::Stack;
 use task_struct::ExposedTask;
 
@@ -67,7 +68,7 @@ pub use task_struct::SimdExt;
 
 
 /// The list of all Tasks in the system.
-static TASKLIST: MutexIrqSafe<BTreeMap<usize, TaskRef>> = MutexIrqSafe::new(BTreeMap::new());
+static TASKLIST: IrqSafeMutex<BTreeMap<usize, TaskRef>> = IrqSafeMutex::new(BTreeMap::new());
 
 /// Returns a `WeakTaskRef` (shared reference) to the `Task` specified by the given `task_id`.
 pub fn get_task(task_id: usize) -> Option<WeakTaskRef> {
@@ -602,7 +603,7 @@ mod scheduler {
     ///    meaning the current task will continue running.
     #[doc(alias("yield"))]
     pub fn schedule() -> bool {
-        let preemption_guard = cpu_local_preemption::hold_preemption();
+        let preemption_guard = preemption::hold_preemption();
         // If preemption was not previously enabled (before we disabled it above),
         // then we shouldn't perform a task switch here.
         if !preemption_guard.preemption_was_enabled() {
@@ -969,7 +970,8 @@ fn post_context_switch_action() -> PreemptionGuard {
 pub use cpu_local_task_switch::*;
 /// CPU-local data related to task switching.
 mod cpu_local_task_switch {
-    use cpu_local_preemption::{CpuLocal, CpuLocalField, PerCpuField, PreemptionGuard};
+    use cpu_local::{CpuLocal, CpuLocalField, PerCpuField};
+    use preemption::PreemptionGuard;
 
     /// The preemption guard that was used for safe task switching on each CPU.
     ///
