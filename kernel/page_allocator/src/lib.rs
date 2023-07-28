@@ -599,7 +599,7 @@ impl<const S: MemoryState> Drop for Pages<S> {
 							if *free_pages.end() + 1 == *next_pages_ref.start() {
 								// extract the next chunk from the list
                                 let next_pages: FreePages = cursor_mut
-                                    .replace_with(Wrapper::new_link(Pages::empty()))
+                                    .remove()
                                     .expect("BUG: couldn't remove next pages from free list in drop handler")
 									.into_inner();						
 			
@@ -607,10 +607,8 @@ impl<const S: MemoryState> Drop for Pages<S> {
 								if free_pages.merge(next_pages).is_ok() {
                                     // trace!("newly merged next chunk: {:?}", next_pages);
                                     // now return newly merged chunk into list
-                                    match cursor_mut.replace_with(Wrapper::new_link(free_pages)) { 
-                                        Ok(_) => { return; }
-                                        Err(f) => free_pages = f.into_inner(), 
-                                    }
+                                    cursor_mut.insert_before(Wrapper::new_link(free_pages));
+									return;
                                 } else {
                                     panic!("BUG: couldn't merge deallocated chunk into next chunk");
                                 }
@@ -623,17 +621,15 @@ impl<const S: MemoryState> Drop for Pages<S> {
 								if let Some(_prev_pages_ref) = cursor_mut.get() {
                                     // extract the next chunk from the list
                                     let mut prev_pages = cursor_mut
-                                        .replace_with(Wrapper::new_link(Pages::empty()))
+                                        .remove()
                                         .expect("BUG: couldn't remove next frames from free list in drop handler")
                                         .into_inner();
 
                                     if prev_pages.merge(free_pages).is_ok() {
                                         // trace!("newly merged prev chunk: {:?}", prev_pages);
                                         // now return newly merged chunk into list
-                                        match cursor_mut.replace_with(Wrapper::new_link(prev_pages)) { 
-                                            Ok(_) => { return; }
-                                            Err(f) => free_pages = f.into_inner(), 
-                                        }
+                                        cursor_mut.insert_before(Wrapper::new_link(prev_pages));
+										return;
                                     } else {
                                         panic!("BUG: couldn't merge deallocated chunk into prev chunk");
                                     }
