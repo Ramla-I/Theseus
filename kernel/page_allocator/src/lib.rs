@@ -195,9 +195,10 @@ impl FreePages {
     }
 
     /// Consumes this `Pages` in the `Free` state and converts them into the `Allocated` state.
-    pub fn into_allocated_pages(self) -> AllocatedPages {    
+    pub fn into_allocated_pages(mut self) -> AllocatedPages {  
+        let pages = core::mem::replace(&mut self.pages, PageRange::empty());  
         let f = Pages {
-            pages: self.pages.clone(),
+            pages
         };
         core::mem::forget(self);
         f
@@ -207,9 +208,10 @@ impl FreePages {
 impl AllocatedPages {
     /// Consumes this `Frames` in the `Allocated` state and converts them into the `Mapped` state.
     /// This should only be called once a `MappedPages` has been created from the `Frames`.
-    pub fn into_mapped_pages(self) -> PagesMapped {    
+    pub fn into_mapped_pages(mut self) -> PagesMapped {    
+        let pages = core::mem::replace(&mut self.pages, PageRange::empty());  
         let f = Pages {
-            pages: self.pages.clone(),
+            pages
         };
         core::mem::forget(self);
         f
@@ -218,9 +220,10 @@ impl AllocatedPages {
 
 impl UnmappedPages {
     /// Consumes this `Frames` in the `Unmapped` state and converts them into the `Allocated` state.
-    pub fn into_allocated_pages(self) -> AllocatedPages {    
+    pub fn into_allocated_pages(mut self) -> AllocatedPages {    
+        let pages = core::mem::replace(&mut self.pages, PageRange::empty());  
         let f = Pages {
-            pages: self.pages.clone(),
+            pages
         };
         core::mem::forget(self);
         f
@@ -229,9 +232,10 @@ impl UnmappedPages {
 
 impl PagesMapped {
     /// Consumes this `Frames` in the `Unmapped` state and converts them into the `Allocated` state.
-    pub fn into_unmapped_pages(self) -> UnmappedPages {    
+    pub fn into_unmapped_pages(mut self) -> UnmappedPages {    
+        let pages = core::mem::replace(&mut self.pages, PageRange::empty());  
         let f = Pages {
-            pages: self.pages.clone(),
+            pages
         };
         core::mem::forget(self);
         f
@@ -353,9 +357,11 @@ impl<const S: MemoryState> Pages<S> {
 		if *ap.start() != (*self.end() + 1) {
 			return Err(ap);
 		}
-		self.pages = PageRange::new(*self.start(), *ap.end());
-		// ensure the now-merged AllocatedPages doesn't run its drop handler and free its pages.
+
+		let pages = PageRange::new(*self.start(), *ap.end());
 		core::mem::forget(ap); 
+		self.pages = pages;
+		// ensure the now-merged AllocatedPages doesn't run its drop handler and free its pages.
 		Ok(())
 	}
 
@@ -377,22 +383,26 @@ impl<const S: MemoryState> Pages<S> {
         }
         
         let start_page = *pages_to_extract.start();
-        let start_to_end = Pages { pages: pages_to_extract, ..self };
+        let start_to_end = pages_to_extract;
         
         let before_start = if start_page == MIN_PAGE || start_page == *self.start() {
             None
         } else {
-            Some(Pages { pages: PageRange::new(*self.start(), *start_to_end.start() - 1), ..self })
+            Some(PageRange::new(*self.start(), *start_to_end.start() - 1))
         };
 
         let after_end = if *start_to_end.end() == MAX_PAGE || *start_to_end.end() == *self.end() {
             None
         } else {
-            Some(Pages { pages: PageRange::new(*start_to_end.end() + 1, *self.end()), ..self })
+            Some(PageRange::new(*start_to_end.end() + 1, *self.end()))
         };
 
         core::mem::forget(self);
-        Ok(SplitPages { before_start, start_to_end, after_end })
+        Ok(SplitPages { 
+			before_start: before_start.map(|pages| Pages { pages }), 
+			start_to_end: Pages { pages: start_to_end }, 
+			after_end: after_end.map(|pages| Pages { pages })
+		})
     }
 
 
@@ -448,9 +458,9 @@ impl<const S: MemoryState> Drop for Pages<S> {
 				if self.size_in_pages() == 0 { return; }
 				// trace!("page_allocator: deallocating {:?}", self);
 	
-				let mut free_pages = Pages {
-					pages: self.pages.clone(),
-				};
+				let pages = core::mem::replace(&mut self.pages, PageRange::empty());  
+                let mut free_pages: FreePages = Pages { pages };
+        
 				let mut list = FREE_PAGE_LIST.lock();
 				match &mut list.0 {
 					// For early allocations, just add the deallocated chunk to the free pages list.
@@ -468,8 +478,8 @@ impl<const S: MemoryState> Drop for Pages<S> {
 						if let Some(next_pages_ref) = cursor_mut.get() {
 							if *free_pages.end() + 1 == *next_pages_ref.start() {
 								// extract the next chunk from the list
-                                let mut next_pages: FreePages = cursor_mut
-                                    .replace_with(Wrapper::new_link(Pages::empty()))
+                                let next_pages: FreePages = cursor_mut
+                                    .remove()
                                     .expect("BUG: couldn't remove next pages from free list in drop handler")
 									.into_inner();						
 			
@@ -477,10 +487,8 @@ impl<const S: MemoryState> Drop for Pages<S> {
 								if free_pages.merge(next_pages).is_ok() {
                                     // trace!("newly merged next chunk: {:?}", next_pages);
                                     // now return newly merged chunk into list
-                                    match cursor_mut.replace_with(Wrapper::new_link(free_pages)) { 
-                                        Ok(_) => { return; }
-                                        Err(f) => free_pages = f.into_inner(), 
-                                    }
+                                    cursor_mut.insert_before(Wrapper::new_link(free_pages));
+									return;
                                 } else {
                                     panic!("BUG: couldn't merge deallocated chunk into next chunk");
                                 }
@@ -493,17 +501,15 @@ impl<const S: MemoryState> Drop for Pages<S> {
 								if let Some(_prev_pages_ref) = cursor_mut.get() {
                                     // extract the next chunk from the list
                                     let mut prev_pages = cursor_mut
-                                        .replace_with(Wrapper::new_link(Pages::empty()))
+                                        .remove()
                                         .expect("BUG: couldn't remove next frames from free list in drop handler")
                                         .into_inner();
 
                                     if prev_pages.merge(free_pages).is_ok() {
                                         // trace!("newly merged prev chunk: {:?}", prev_pages);
                                         // now return newly merged chunk into list
-                                        match cursor_mut.replace_with(Wrapper::new_link(prev_pages)) { 
-                                            Ok(_) => { return; }
-                                            Err(f) => free_pages = f.into_inner(), 
-                                        }
+                                        cursor_mut.insert_before(Wrapper::new_link(prev_pages));
+										return;
                                     } else {
                                         panic!("BUG: couldn't merge deallocated chunk into prev chunk");
                                     }
@@ -520,13 +526,16 @@ impl<const S: MemoryState> Drop for Pages<S> {
 			},
             MemoryState::Allocated => { 
                 // trace!("Converting AllocatedPages to FreePages. Drop handler will be called again {:?}", self.pages);
-                let _to_drop = FreePages::new(self.pages.clone()); 
+                let pages = core::mem::replace(&mut self.pages, PageRange::empty());  
+				let _to_drop = FreePages { pages }; 
             }
             MemoryState::Mapped => {
-			    let _to_drop = UnmappedPages { pages: self.pages.clone() };
+                let pages = core::mem::replace(&mut self.pages, PageRange::empty());  
+			    let _to_drop = UnmappedPages { pages };
 			}	
             MemoryState::Unmapped => {
-                let _to_drop = AllocatedPages { pages: self.pages.clone() };
+                let pages = core::mem::replace(&mut self.pages, PageRange::empty());  
+                let _to_drop = AllocatedPages { pages };
             }
 
 		}
