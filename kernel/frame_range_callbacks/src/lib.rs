@@ -7,15 +7,15 @@
 
 extern crate page_table_entry;
 extern crate frame_allocator;
-extern crate trusted_chunk;
+// extern crate trusted_chunk;
 extern crate memory_structs;
 extern crate spin;
 extern crate range_inclusive;
 
 use core::ops::{Deref};
 use page_table_entry::UnmappedFrameRange;
-use frame_allocator::UnmappedFrames;
-use trusted_chunk::trusted_chunk::TrustedChunk;
+use frame_allocator::{UnmappedFrames, trusted_chunk::TrustedChunk};
+// use trusted_chunk::trusted_chunk::TrustedChunk;
 use memory_structs::FrameRange;
 use spin::Once;
 use range_inclusive::RangeInclusive;
@@ -26,7 +26,7 @@ use range_inclusive::RangeInclusive;
 /// This is safe because the init function in the `trusted_chunk` crate returns this callback only once,
 /// and only this crate has access to the callback. The callback function has been verified with the 
 /// invariant that the new `TrustedChunk` has the same bounds as the range passed as an argument.
-static INTO_TRUSTED_CHUNK_FUNC: Once<fn(RangeInclusive<usize>) -> TrustedChunk> = Once::new();
+static INTO_TRUSTED_CHUNK_FUNC: Once<fn(FrameRange) -> TrustedChunk> = Once::new();
 
 /// This is a private callback used to convert `UnmappedFrames` into `UnmappedFrames`.
 /// 
@@ -46,7 +46,7 @@ static INTO_TRUSTED_CHUNK_FUNC: Once<fn(RangeInclusive<usize>) -> TrustedChunk> 
 /// that it is only invoked for `UnmappedFrames`.
 static INTO_ALLOCATED_FRAMES_FUNC: Once<fn(TrustedChunk, FrameRange) -> UnmappedFrames> = Once::new();
 
-pub fn init(into_trusted_chunk_fn: fn(RangeInclusive<usize>) -> TrustedChunk, into_alloc_frames_fn: fn(TrustedChunk, FrameRange) -> UnmappedFrames) {
+pub fn init(into_trusted_chunk_fn: fn(FrameRange) -> TrustedChunk, into_alloc_frames_fn: fn(TrustedChunk, FrameRange) -> UnmappedFrames) {
     INTO_TRUSTED_CHUNK_FUNC.call_once(|| into_trusted_chunk_fn);
     INTO_ALLOCATED_FRAMES_FUNC.call_once(|| into_alloc_frames_fn);
 }
@@ -55,7 +55,7 @@ pub fn from_unmapped(unmapped_frames: UnmappedFrameRange) -> Result<UnmappedFram
     let frames = unmapped_frames.deref().clone();
     let tc = INTO_TRUSTED_CHUNK_FUNC.get()
         .ok_or("BUG: Mapper::unmap(): the `INTO_TRUSTED_CHUNK_FUNC` callback was not initialized")
-        .map(|into_func| into_func(unmapped_frames.deref().to_range_inclusive()))?;
+        .map(|into_func| into_func(unmapped_frames.deref().clone()))?;
 
     INTO_ALLOCATED_FRAMES_FUNC.get()
         .ok_or("BUG: Mapper::unmap(): the `INTO_ALLOCATED_FRAMES_FUNC` callback was not initialized")
