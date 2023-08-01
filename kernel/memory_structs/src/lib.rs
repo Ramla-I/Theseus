@@ -381,7 +381,7 @@ macro_rules! implement_page_frame_range {
         paste! { // using the paste crate's macro for easy concatenation
                         
             #[doc = "A range of [`" $chunk "`]s that are contiguous in " $desc " memory."]
-            #[derive(Clone, PartialEq, Eq)]
+            #[derive(Copy, Clone, PartialEq, Eq)]
             pub struct $TypeName(RangeInclusive<$chunk>);
 
             impl $TypeName {
@@ -487,12 +487,12 @@ macro_rules! implement_page_frame_range {
                     }
                 }
 
-                #[doc = "Returns `true` if the `other` `" $TypeName "` is fully contained within this `" $TypeName "`."]
-                pub fn contains_range(&self, other: &$TypeName) -> bool {
-                    !other.is_empty()
-                    && (other.start() >= self.start())
-                    && (other.end() <= self.end())
-                }
+                // #[doc = "Returns `true` if the `other` `" $TypeName "` is fully contained within this `" $TypeName "`."]
+                // pub fn contains_range(&self, other: &$TypeName) -> bool {
+                //     !other.is_empty()
+                //     && (other.start() >= self.start())
+                //     && (other.end() <= self.end())
+                // }
 
                 #[doc = "Returns a `RangeInclusive<usize>` with the same bounds."]
                 pub fn to_range_inclusive(&self) -> RangeInclusive<usize> {
@@ -546,3 +546,290 @@ macro_rules! implement_page_frame_range {
 
 implement_page_frame_range!(PageRange, "virtual", virt, Page, VirtualAddress);
 implement_page_frame_range!(FrameRange, "physical", phys, Frame, PhysicalAddress);
+
+
+// The newly added methods for Frame required for verification
+impl Frame {
+    pub fn plus(self, rhs: usize) -> Self {
+        self + rhs
+    }
+
+    pub fn minus(self, rhs: usize) -> Self {
+        self - rhs
+    }
+
+    pub fn less_than(self, rhs: &Self) -> bool {
+        self < *rhs
+    }
+
+    pub fn less_than_equal(self, rhs: &Self) -> bool {
+        self <= *rhs
+    }
+
+    pub fn greater_than(self, rhs: &Self) -> bool {
+        self > *rhs
+    }
+
+    pub fn greater_than_equal(self, rhs: &Self) -> bool {
+        self >= *rhs
+    }
+}
+
+pub(crate) const MIN_FRAME_NUMBER: usize = 0;
+pub(crate) const MAX_FRAME_NUMBER: usize = 0xFF_FFFF_FFFF; // usize::MAX & 0x000F_FFFF_FFFF_FFFF / PAGE_SIZE
+
+fn min_frame(a: Frame, b: Frame) -> Frame {
+    if a.less_than(&b) { a } else { b }
+}
+
+fn max_frame(a: Frame, b: Frame) -> Frame {
+    if a.greater_than(&b) { a } else { b }
+}
+
+// The newly added methods for FrameRange required for verification
+impl FrameRange {
+    pub fn start_frame(&self) -> Frame {
+        *self.0.start()
+    }
+
+    pub fn end_frame(&self) -> Frame {
+        *self.0.end()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        !(self.start_frame().less_than_equal(&self.end_frame()))
+    }
+
+
+    pub fn range_overlaps(&self, other: &FrameRange) -> bool {
+        let starts = max_frame(self.start_frame(), other.start_frame());
+        let ends   = min_frame(self.end_frame(), other.end_frame());
+        starts.less_than_equal(&ends)
+    }
+
+    pub fn contains_range(&self, other: &FrameRange) -> bool {
+        !other.is_empty()
+        && (other.start_frame().greater_than_equal(&self.start_frame()))
+        && (other.end_frame().less_than_equal(&self.end_frame()))
+    }
+
+    pub fn split_range(self, frames_to_extract: FrameRange) -> Result<(Option<FrameRange>, FrameRange, Option<FrameRange>), FrameRange> {
+        let min_frame = Frame { number: MIN_FRAME_NUMBER };
+        let max_frame = Frame { number: MAX_FRAME_NUMBER };
+
+        if !self.contains_range(&frames_to_extract) {
+            return Err(self);
+        }
+
+        let start_frame = frames_to_extract.start_frame();
+        let end_frame = frames_to_extract.end_frame();
+
+        let before_start = if start_frame == min_frame || start_frame == self.start_frame() {
+            None
+        } else {
+            Some(FrameRange::new(self.start_frame(), start_frame.minus(1)))
+        };
+
+        let start_to_end = frames_to_extract;
+
+        let after_end = if end_frame == max_frame || end_frame == self.end_frame() {
+            None
+        } else {
+            Some(FrameRange::new(end_frame.plus(1), self.end_frame())) 
+        };
+
+        Ok((before_start, start_to_end, after_end))
+    }
+
+    pub fn split_at(mut self, at_frame: Frame) -> Result<(Self, Self), Self> {
+        if self.is_empty() {
+            return Err(self);
+        }
+        let end_of_first = at_frame.minus(1);
+
+        let (first, second) = if at_frame == self.start_frame() && at_frame.less_than_equal(&self.end_frame()) {
+            let first  = FrameRange::empty();
+            let second = FrameRange::new(at_frame, self.end_frame());
+            (first, second)
+        } 
+        else if at_frame == self.end_frame().plus(1) && end_of_first.greater_than_equal(&self.start_frame()) {
+            let first  = FrameRange::new(self.start_frame(), self.end_frame()); 
+            let second = FrameRange::empty();
+            (first, second)
+        }
+        else if at_frame.greater_than(&self.start_frame()) && end_of_first.less_than_equal(&self.end_frame()) {
+            let first  = FrameRange::new(self.start_frame(), end_of_first);
+            let second = FrameRange::new(at_frame, self.end_frame());
+            (first, second)
+        }
+        else {
+            return Err(self);
+        };
+ 
+        Ok(( first, second ))
+    }
+
+
+    pub fn merge(&mut self, other: Self) -> Result<(), Self> {
+        if self.is_empty() || other.is_empty() {
+            return Err(other);
+        }
+
+        if self.start_frame() == other.end_frame().plus(1) {
+            // `other` comes contiguously before `self`
+            *self = FrameRange::new(other.start_frame(), self.end_frame());
+        } 
+        else if self.end_frame().plus(1) == other.start_frame() {
+            // `self` comes contiguously before `other`
+            *self = FrameRange::new(self.start_frame(), other.end_frame());
+        }
+        else {
+            // non-contiguous
+            return Err(other);
+        } 
+        Ok(())
+    }
+}
+
+// The newly added methods for Page required for verification
+impl Page {
+    pub fn plus(self, rhs: usize) -> Self {
+        self + rhs
+    }
+
+    pub fn minus(self, rhs: usize) -> Self {
+        self - rhs
+    }
+
+    pub fn less_than(self, rhs: &Self) -> bool {
+        self < *rhs
+    }
+
+    pub fn less_than_equal(self, rhs: &Self) -> bool {
+        self <= *rhs
+    }
+
+    pub fn greater_than(self, rhs: &Self) -> bool {
+        self > *rhs
+    }
+
+    pub fn greater_than_equal(self, rhs: &Self) -> bool {
+        self >= *rhs
+    }
+}
+
+pub(crate) const MIN_PAGE_NUMBER: usize = 0;
+// pub(crate) const MAX_PAGE_NUMBER: usize = 0xFF_FFFF_FFFF; // usize::MAX & 0x000F_FFFF_FFFF_FFFF / PAGE_SIZE
+
+fn min_page(a: Page, b: Page) -> Page {
+    if a.less_than(&b) { a } else { b }
+}
+
+fn max_page(a: Page, b: Page) -> Page {
+    if a.greater_than(&b) { a } else { b }
+}
+
+// The newly added methods for PageRange required for verification
+impl PageRange {
+    pub fn start_page(&self) -> Page {
+        *self.0.start()
+    }
+
+    pub fn end_page(&self) -> Page {
+        *self.0.end()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        !(self.start_page().less_than_equal(&self.end_page()))
+    }
+
+    pub fn range_overlaps(&self, other: &PageRange) -> bool {
+        let starts = max_page(self.start_page(), other.start_page());
+        let ends   = min_page(self.end_page(), other.end_page());
+        starts.less_than_equal(&ends)
+    }
+
+    pub fn contains_range(&self, other: &PageRange) -> bool {
+        !other.is_empty()
+        && (other.start_page().greater_than_equal(&self.start_page()))
+        && (other.end_page().less_than_equal(&self.end_page()))
+    }
+
+    pub fn split_range(self, pages_to_extract: PageRange) -> Result<(Option<PageRange>, PageRange, Option<PageRange>), PageRange> {
+        let min_page = Page { number: MIN_PAGE_NUMBER };
+        let max_page = Page { number: MAX_PAGE_NUMBER };
+
+        if !self.contains_range(&pages_to_extract) {
+            return Err(self);
+        }
+
+        let start_page = pages_to_extract.start_page();
+        let end_page = pages_to_extract.end_page();
+
+        let before_start = if start_page == min_page || start_page == self.start_page() {
+            None
+        } else {
+            Some(PageRange::new(self.start_page(), start_page.minus(1)))
+        };
+
+        let start_to_end = pages_to_extract;
+
+        let after_end = if end_page == max_page || end_page == self.end_page() {
+            None
+        } else {
+            Some(PageRange::new(end_page.plus(1), self.end_page())) 
+        };
+
+        Ok((before_start, start_to_end, after_end))
+    }
+
+
+    pub fn split_at(mut self, at_page: Page) -> Result<(Self, Self), Self> {
+        if self.is_empty() {
+            return Err(self);
+        }
+        let end_of_first = at_page.minus(1);
+
+        let (first, second) = if at_page == self.start_page() && at_page.less_than_equal(&self.end_page()) {
+            let first  = PageRange::empty();
+            let second = PageRange::new(at_page, self.end_page());
+            (first, second)
+        } 
+        else if at_page == self.end_page().plus(1) && end_of_first.greater_than_equal(&self.start_page()) {
+            let first  = PageRange::new(self.start_page(), self.end_page()); 
+            let second = PageRange::empty();
+            (first, second)
+        }
+        else if at_page.greater_than(&self.start_page()) && end_of_first.less_than_equal(&self.end_page()) {
+            let first  = PageRange::new(self.start_page(), end_of_first);
+            let second = PageRange::new(at_page, self.end_page());
+            (first, second)
+        }
+        else {
+            return Err(self);
+        };
+ 
+        Ok(( first, second ))
+    }
+
+
+    pub fn merge(&mut self, other: Self) -> Result<(), Self> {
+        if self.is_empty() || other.is_empty() {
+            return Err(other);
+        }
+
+        if self.start_page() == other.end_page().plus(1) {
+            // `other` comes contiguously before `self`
+            *self = PageRange::new(other.start_page(), self.end_page());
+        } 
+        else if self.end_page().plus(1) == other.start_page() {
+            // `self` comes contiguously before `other`
+            *self = PageRange::new(self.start_page(), other.end_page());
+        }
+        else {
+            // non-contiguous
+            return Err(other);
+        } 
+        Ok(())
+    }
+}

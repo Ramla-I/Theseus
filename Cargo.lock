@@ -4206,6 +4206,7 @@ name = "trusted_chunk"
 version = "0.1.0"
 dependencies = [
  "cfg-if 1.0.0",
+ "memory_structs",
  "prusti-contracts",
  "range_inclusive",
  "spin 0.9.4",
