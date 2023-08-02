@@ -19,7 +19,7 @@
 #![no_std]
 #![feature(adt_const_params)]
 #![allow(incomplete_features)]
-
+#![feature(type_changing_struct_update)]
 
 extern crate alloc;
 #[macro_use] extern crate log;
@@ -28,7 +28,11 @@ extern crate memory_structs;
 extern crate spin;
 #[macro_use] extern crate static_assertions;
 extern crate intrusive_collections;
+extern crate trusted_chunk;
+extern crate range_inclusive;
+
 use intrusive_collections::Bound;
+use trusted_chunk::page_chunk::{PageChunk, PageChunkAllocator, ChunkCreationError};
 
 mod static_array_rb_tree;
 // mod static_array_linked_list;
@@ -66,6 +70,7 @@ const MAX_PAGE: Page = Page::containing_address(VirtualAddress::new_canonical(MA
 /// The single, system-wide list of free chunks of virtual memory pages.
 static FREE_PAGE_LIST: Mutex<StaticArrayRBTree<FreePages>> = Mutex::new(StaticArrayRBTree::empty());
 
+static CHUNK_ALLOCATOR: Mutex<PageChunkAllocator> = Mutex::new(PageChunkAllocator::new());
 
 /// Initialize the page allocator.
 ///
@@ -101,7 +106,7 @@ pub fn init(end_vaddr_of_low_designated_region: VirtualAddress) -> Result<(), &'
 				Page::containing_address(VirtualAddress::zero()),
 				designated_low_end,
 			)
-		)),
+		)?),
 		// The second region contains the massive range from the end of the low designated region
 		// to the beginning of the high designated region, which comprises the majority of the address space.
 		// The beginning of the high designated region starts at the reserved P4 entry used to
@@ -111,7 +116,7 @@ pub fn init(end_vaddr_of_low_designated_region: VirtualAddress) -> Result<(), &'
 				designated_low_end + 1,
 				DESIGNATED_PAGES_HIGH_START - 1,
 			)
-		)),
+		)?),
 		// Here, we skip the addresses covered by the `UPCOMING_PAGE_TABLE_RECURSIVE_P4_INDEX`.
 
 		// The third region contains the range of addresses reserved for the heap,
@@ -122,7 +127,7 @@ pub fn init(end_vaddr_of_low_designated_region: VirtualAddress) -> Result<(), &'
 				// This is the page right below the beginning of the 510th entry of the top-level P4 page table.
 				Page::containing_address(VirtualAddress::new_canonical(RECURSIVE_P4_START - 1)),
 			)
-		)),
+		)?),
 		// Here, we skip the addresses covered by the `RECURSIVE_P4_INDEX`.
 
 		// The fourth region contains all pages in the 511th (last) entry of P4.
@@ -131,7 +136,7 @@ pub fn init(end_vaddr_of_low_designated_region: VirtualAddress) -> Result<(), &'
 				Page::containing_address(VirtualAddress::new_canonical(KERNEL_TEXT_START)),
 				MAX_PAGE,
 			)
-		)),
+		)?),
 		None, None, None, None,
 		None, None, None, None, None, None, None, None,
 		None, None, None, None, None, None, None, None,
@@ -163,8 +168,8 @@ pub fn init(end_vaddr_of_low_designated_region: VirtualAddress) -> Result<(), &'
 /// since it ignores their actual range of pages.
 #[derive(Eq)]
 pub struct Pages<const S: MemoryState> {
-	/// The Pages covered by this chunk, an inclusive range. 
-	pages: PageRange,
+	/// The actual verified chunk
+    verified_chunk: PageChunk
 }
 
 /// A type alias for `Pages` in the `Free` state.
@@ -188,18 +193,27 @@ impl FreePages {
 	/// Creates a new `Pages` object in the `Free` state.
     ///
     /// The page allocator logic is responsible for ensuring that no two `Pages` objects overlap.
-    pub(crate) fn new(pages: PageRange) -> Self {
-        Pages {
-            pages,
-        }
+    pub(crate) fn new(pages: PageRange) -> Result<Self, &'static str> {
+        let verified_chunk = CHUNK_ALLOCATOR.lock().create_chunk(pages)
+            .map(|(chunk, _)| chunk)
+            .map_err(|chunk_error|{
+                match chunk_error {
+                    ChunkCreationError::Overlap(_idx) => "Failed to create a verified chunk due to an overlap",
+                    ChunkCreationError::NoSpace => "Before the heap is initialized, requested more chunks than there is space for (64)",
+                    ChunkCreationError::InvalidRange => "Could not create a chunk for an empty range, use the empty() function"
+                }
+            })?;
+        
+        let f = Pages {
+            verified_chunk
+        };
+        Ok(f)
     }
 
     /// Consumes this `Pages` in the `Free` state and converts them into the `Allocated` state.
-    pub fn into_allocated_pages(mut self) -> AllocatedPages {  
-        let pages = core::mem::replace(&mut self.pages, PageRange::empty());  
-        let f = Pages {
-            pages
-        };
+    pub fn into_allocated_pages(mut self) -> AllocatedPages {    
+        let verified_chunk = core::mem::replace(&mut self.verified_chunk, PageChunk::empty());
+        let f = Pages { verified_chunk };
         core::mem::forget(self);
         f
     }
@@ -208,11 +222,9 @@ impl FreePages {
 impl AllocatedPages {
     /// Consumes this `Frames` in the `Allocated` state and converts them into the `Mapped` state.
     /// This should only be called once a `MappedPages` has been created from the `Frames`.
-    pub fn into_mapped_pages(mut self) -> PagesMapped {    
-        let pages = core::mem::replace(&mut self.pages, PageRange::empty());  
-        let f = Pages {
-            pages
-        };
+    pub fn into_mapped_pages(mut self) -> PagesMapped { 
+		let verified_chunk = core::mem::replace(&mut self.verified_chunk, PageChunk::empty());  
+        let f = Pages { verified_chunk };
         core::mem::forget(self);
         f
     }
@@ -221,10 +233,8 @@ impl AllocatedPages {
 impl UnmappedPages {
     /// Consumes this `Frames` in the `Unmapped` state and converts them into the `Allocated` state.
     pub fn into_allocated_pages(mut self) -> AllocatedPages {    
-        let pages = core::mem::replace(&mut self.pages, PageRange::empty());  
-        let f = Pages {
-            pages
-        };
+        let verified_chunk = core::mem::replace(&mut self.verified_chunk, PageChunk::empty());
+        let f = Pages { verified_chunk };
         core::mem::forget(self);
         f
     }
@@ -233,10 +243,8 @@ impl UnmappedPages {
 impl PagesMapped {
     /// Consumes this `Frames` in the `Unmapped` state and converts them into the `Allocated` state.
     pub fn into_unmapped_pages(mut self) -> UnmappedPages {    
-        let pages = core::mem::replace(&mut self.pages, PageRange::empty());  
-        let f = Pages {
-            pages
-        };
+        let verified_chunk = core::mem::replace(&mut self.verified_chunk, PageChunk::empty());
+        let f = Pages { verified_chunk };
         core::mem::forget(self);
         f
     }
@@ -245,12 +253,12 @@ impl PagesMapped {
 impl<const S: MemoryState> Deref for Pages<S> {
     type Target = PageRange;
     fn deref(&self) -> &PageRange {
-        &self.pages
+        &self.verified_chunk
     }
 }
 impl<const S: MemoryState> Ord for Pages<S> {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.pages.start().cmp(other.pages.start())
+        self.verified_chunk.start().cmp(&other.verified_chunk.start())
     }
 }
 impl<const S: MemoryState> PartialOrd for Pages<S> {
@@ -260,17 +268,17 @@ impl<const S: MemoryState> PartialOrd for Pages<S> {
 }
 impl<const S: MemoryState> PartialEq for Pages<S> {
     fn eq(&self, other: &Self) -> bool {
-        self.pages.start() == other.pages.start()
+        self.verified_chunk.start() == other.verified_chunk.start()
     }
 }
 impl<const S: MemoryState> Borrow<Page> for &'_ Pages<S> {
 	fn borrow(&self) -> &Page {
-		self.pages.start()
+		self.verified_chunk.start()
 	}
 }
 impl<const S: MemoryState> fmt::Debug for Pages <S>{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		write!(f, "Pages({:?})", self.pages)
+		write!(f, "Pages({:?})", self.verified_chunk.deref())
 	}
 }
 
@@ -286,38 +294,45 @@ impl<const S: MemoryState> Pages<S> {
     /// Can be used as a placeholder, but will not permit any real usage. 
     pub const fn empty() -> Pages<S> {
         Pages {
-			pages: PageRange::empty()
+			verified_chunk: PageChunk::empty()
 		}
 	}
 
+	/// Returns the `pages` and `verified_chunk` fields of this `Pages` object,
+    /// and replaces them with an empty range of pages and an empty `PageChunk`.
+    /// It's a convenience function to make sure these two fields are always changed together.
+    fn replace_with_empty(&mut self) -> PageChunk {
+        core::mem::replace(&mut self.verified_chunk, PageChunk::empty())
+    }
+
 	/// Returns the starting `VirtualAddress` in this range of pages.
     pub fn start_address(&self) -> VirtualAddress {
-        self.pages.start_address()
+        self.verified_chunk.start_address()
     }
 
 	/// Returns the size in bytes of this range of pages.
     pub fn size_in_bytes(&self) -> usize {
-        self.pages.size_in_bytes()
+        self.verified_chunk.size_in_bytes()
     }
 
 	/// Returns the size in number of pages of this range of pages.
     pub fn size_in_pages(&self) -> usize {
-        self.pages.size_in_pages()
+        self.verified_chunk.size_in_pages()
     }
 
 	/// Returns the starting `Page` in this range of pages.
 	pub fn start(&self) -> &Page {
-		self.pages.start()
+		&self.verified_chunk.start()
 	}
 
 	/// Returns the ending `Page` (inclusive) in this range of pages.
 	pub fn end(&self) -> &Page {
-		self.pages.end()
+		&self.verified_chunk.end()
 	}
 
 	/// Returns a reference to the inner `PageRange`, which is cloneable/iterable.
 	pub fn range(&self) -> &PageRange {
-		&self.pages
+		&self.verified_chunk
 	}
 
 	/// Returns the offset of the given `VirtualAddress` within this range of pages,
@@ -329,7 +344,7 @@ impl<const S: MemoryState> Pages<S> {
 	/// If the range covers addresses `0x2000` to `0x4000`,
 	/// then `offset_of_address(0x3500)` would return `Some(0x1500)`.
 	pub const fn offset_of_address(&self, addr: VirtualAddress) -> Option<usize> {
-		self.pages.offset_of_address(addr)
+		self.verified_chunk.pages().offset_of_address(addr)
 	}
 
 	/// Returns the `VirtualAddress` at the given offset into this range of pages,
@@ -342,7 +357,7 @@ impl<const S: MemoryState> Pages<S> {
 	/// then `address_at_offset(0x1500)` would return `Some(0x3500)`,
 	/// and `address_at_offset(0x2000)` would return `None`.
 	pub const fn address_at_offset(&self, offset: usize) -> Option<VirtualAddress> {
-		self.pages.address_at_offset(offset)
+		self.verified_chunk.pages().address_at_offset(offset)
 	}
 
 	/// Merges the given `AllocatedPages` object `ap` into this `AllocatedPages` object (`self`).
@@ -352,17 +367,19 @@ impl<const S: MemoryState> Pages<S> {
 	/// that is, `self.end` must equal `ap.start`. 
 	/// If this condition is met, `self` is modified and `Ok(())` is returned,
 	/// otherwise `Err(ap)` is returned.
-	pub fn merge(&mut self, ap: Pages<S>) -> Result<(), Pages<S>> {
-		// make sure the pages are contiguous
-		if *ap.start() != (*self.end() + 1) {
-			return Err(ap);
+	pub fn merge(&mut self, mut other: Pages<S>) -> Result<(), Pages<S>> {
+		let other_verified_chunk = core::mem::replace(&mut other.verified_chunk, PageChunk::empty());
+		
+		match self.verified_chunk.merge(other_verified_chunk){
+			Ok(_) => {
+				core::mem::forget(other);
+				Ok(())
+			},
+			Err(other_verified_chunk) => {
+				other.verified_chunk = other_verified_chunk;
+				Err(other)
+			}
 		}
-
-		let pages = PageRange::new(*self.start(), *ap.end());
-		core::mem::forget(ap); 
-		self.pages = pages;
-		// ensure the now-merged AllocatedPages doesn't run its drop handler and free its pages.
-		Ok(())
 	}
 
 	/// Splits up the given `Frames` into multiple smaller `Frames`.
@@ -374,35 +391,36 @@ impl<const S: MemoryState> Pages<S> {
     /// 
     /// If `frames_to_extract` is not contained within `self`, then `self` is returned unchanged within an `Err`.
     pub fn split_range(
-        self,
+        mut self,
         pages_to_extract: PageRange
     ) -> Result<SplitPages<S>, Self> {
-        
-        if !self.contains_range(&pages_to_extract) {
-            return Err(self);
-        }
-        
-        let start_page = *pages_to_extract.start();
-        let start_to_end = pages_to_extract;
-        
-        let before_start = if start_page == MIN_PAGE || start_page == *self.start() {
-            None
-        } else {
-            Some(PageRange::new(*self.start(), *start_to_end.start() - 1))
+		// take out the PageChunk
+        let verified_chunk = core::mem::replace(&mut self.verified_chunk, PageChunk::empty());
+
+        let (before, new_allocation, after) = match verified_chunk.split_range(pages_to_extract) {
+            Ok(x) => x,
+            Err(vchunk) => {
+                self.verified_chunk = vchunk;
+                return Err(self);
+            }
         };
 
-        let after_end = if *start_to_end.end() == MAX_PAGE || *start_to_end.end() == *self.end() {
-            None
-        } else {
-            Some(PageRange::new(*start_to_end.end() + 1, *self.end()))
+        let allocation = Self {
+            verified_chunk: new_allocation
         };
+        let before_start = before.map(|vchunk| 
+            Self{
+                verified_chunk: vchunk
+            }
+        );
+        let after_end = after.map(|vchunk| 
+            Self{
+                verified_chunk: vchunk
+            }
+        );
 
-        core::mem::forget(self);
-        Ok(SplitPages { 
-			before_start: before_start.map(|pages| Pages { pages }), 
-			start_to_end: Pages { pages: start_to_end }, 
-			after_end: after_end.map(|pages| Pages { pages })
-		})
+		core::mem::forget(self);
+		Ok(SplitPages{ before_start, start_to_end: allocation, after_end })
     }
 
 
@@ -418,36 +436,28 @@ impl<const S: MemoryState> Pages<S> {
     /// Returns an `Err` containing this `AllocatedPages` if `at_page` is otherwise out of bounds.
 	/// 
     /// [`core::slice::split_at()`]: https://doc.rust-lang.org/core/primitive.slice.html#method.split_at
-    pub fn split_at(self, at_page: Page) -> Result<(Self, Self), Self> {
-        if self.is_empty() { return Err(self); }
-        
-		let end_of_first = at_page - 1;
+    pub fn split_at(mut self, at_page: Page) -> Result<(Self, Self), Self> {
+		// take out the PageChunk
+        let verified_chunk = core::mem::replace(&mut self.verified_chunk, PageChunk::empty());
 
-        let (first, second) = if at_page == *self.start() && at_page <= *self.end() {
-            let first  = PageRange::empty();
-            let second = PageRange::new(at_page, *self.end());
-            (first, second)
-        } 
-        else if at_page == (*self.end() + 1) && end_of_first >= *self.start() {
-            let first  = PageRange::new(*self.start(), *self.end()); 
-            let second = PageRange::empty();
-            (first, second)
-        }
-        else if at_page > *self.start() && end_of_first <= *self.end() {
-            let first  = PageRange::new(*self.start(), end_of_first);
-            let second = PageRange::new(at_page, *self.end());
-            (first, second)
-        }
-        else {
-            return Err(self);
+        let (first, second) = match verified_chunk.split_at(at_page){
+            Ok((first, second)) => (first, second),
+            Err(vchunk) => {
+                self.verified_chunk = vchunk;
+                return Err(self);
+            }
         };
 
-        // ensure the original AllocatedPages doesn't run its drop handler and free its pages.
-        core::mem::forget(self);   
-        Ok((
-            Pages { pages: first }, 
-            Pages { pages: second },
-        ))
+        let c1 = Self {
+            verified_chunk: first
+        };
+        let c2 = Self {
+            verified_chunk: second
+        };
+
+        core::mem::forget(self);
+
+        Ok((c1, c2))
     }
 }
 
@@ -457,10 +467,11 @@ impl<const S: MemoryState> Drop for Pages<S> {
 			MemoryState::Free => {
 				if self.size_in_pages() == 0 { return; }
 				// trace!("page_allocator: deallocating {:?}", self);
-	
-				let pages = core::mem::replace(&mut self.pages, PageRange::empty());  
-                let mut free_pages: FreePages = Pages { pages };
-        
+				
+				let verified_chunk = core::mem::replace(&mut self.verified_chunk, PageChunk::empty());
+				
+				let mut free_pages = Pages { verified_chunk };
+
 				let mut list = FREE_PAGE_LIST.lock();
 				match &mut list.0 {
 					// For early allocations, just add the deallocated chunk to the free pages list.
@@ -522,20 +533,20 @@ impl<const S: MemoryState> Drop for Pages<S> {
 						return;
 					}
 				}
-				log::error!("BUG: couldn't insert deallocated {:?} into free page list", self.pages);
+				log::error!("BUG: couldn't insert deallocated {:?} into free page list", self.verified_chunk.deref());
 			},
             MemoryState::Allocated => { 
                 // trace!("Converting AllocatedPages to FreePages. Drop handler will be called again {:?}", self.pages);
-                let pages = core::mem::replace(&mut self.pages, PageRange::empty());  
-				let _to_drop = FreePages { pages }; 
+				let verified_chunk = core::mem::replace(&mut self.verified_chunk, PageChunk::empty());
+                let _to_drop = FreePages{ verified_chunk}; 
             }
             MemoryState::Mapped => {
-                let pages = core::mem::replace(&mut self.pages, PageRange::empty());  
-			    let _to_drop = UnmappedPages { pages };
+				let verified_chunk = core::mem::replace(&mut self.verified_chunk, PageChunk::empty());
+			    let _to_drop = UnmappedPages { verified_chunk };
 			}	
             MemoryState::Unmapped => {
-                let pages = core::mem::replace(&mut self.pages, PageRange::empty());  
-                let _to_drop = AllocatedPages { pages };
+				let verified_chunk = core::mem::replace(&mut self.verified_chunk, PageChunk::empty());
+                let _to_drop = AllocatedPages { verified_chunk };
             }
 
 		}
@@ -1066,6 +1077,9 @@ pub fn allocate_pages_by_bytes_in_range(
 #[doc(hidden)] 
 pub fn convert_page_allocator_to_heap_based() {
 	FREE_PAGE_LIST.lock().convert_to_heap_allocated();
+
+	CHUNK_ALLOCATOR.lock().switch_to_heap_allocated()
+		.expect("BUG: Failed to switch the chunk allocator to heap allocated. May have been called twice.");
 }
 
 /// A debugging function used to dump the full internal state of the page allocator. 

@@ -1196,6 +1196,22 @@ dependencies = [
  "range_inclusive",
  "spin 0.9.4",
  "static_assertions",
+ "trusted_chunk",
+]
+
+[[package]]
+name = "frame_range_callbacks"
+version = "0.1.0"
+dependencies = [
+ "core2",
+ "frame_allocator",
+ "log",
+ "memory_structs",
+ "page_table_entry",
+ "range_inclusive",
+ "spin 0.9.4",
+ "trusted_chunk",
+ "x86_64",
 ]
 
 [[package]]
@@ -1987,6 +2003,7 @@ dependencies = [
  "bitflags",
  "boot_info",
  "frame_allocator",
+ "frame_range_callbacks",
  "kernel_config",
  "lazy_static",
  "log",
@@ -2515,8 +2532,10 @@ dependencies = [
  "kernel_config",
  "log",
  "memory_structs",
+ "range_inclusive",
  "spin 0.9.4",
  "static_assertions",
+ "trusted_chunk",
 ]
 
 [[package]]
@@ -2796,6 +2815,21 @@ checksum = "18fb31db3f9bddb2ea821cde30a9f70117e3f119938b5ee630b7403aa6e2ead9"
 dependencies = [
  "unicode-ident",
 ]
+
+[[package]]
+name = "prusti-contracts"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab8f1bbcf5cb6a88a773307727b37164c03f0586c39d4d05d1006f5ee7398fe9"
+dependencies = [
+ "prusti-contracts-proc-macros",
+]
+
+[[package]]
+name = "prusti-contracts-proc-macros"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa5778f2309a848972eb08b5b0f6b3be12aff4d99944dbcb7a9d827ff600c070"
 
 [[package]]
 name = "ps"
@@ -4166,6 +4200,17 @@ name = "tock-registers"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ee8fba06c1f4d0b396ef61a54530bb6b28f0dc61c38bc8bc5a5a48161e6282e"
+
+[[package]]
+name = "trusted_chunk"
+version = "0.1.0"
+dependencies = [
+ "cfg-if 1.0.0",
+ "memory_structs",
+ "prusti-contracts",
+ "range_inclusive",
+ "spin 0.9.4",
+]
 
 [[package]]
 name = "tsc"

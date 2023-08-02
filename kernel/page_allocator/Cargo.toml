@@ -18,5 +18,11 @@ path = "../kernel_config"
 [dependencies.memory_structs]
 path = "../memory_structs"
 
+[dependencies.range_inclusive]
+path = "../../libs/range_inclusive"
+
+[dependencies.trusted_chunk]
+path = "../../libs/trusted_chunk"
+
 [lib]
 crate-type = ["rlib"]
