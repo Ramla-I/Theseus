@@ -1,0 +1,9 @@
+[package]
+authors = ["Ramla Ijaz <ijazramla@gmail.com>"]
+name = "unique_trait"
+description = "Trait to define an overlap function to use when checking uniqueness of a resource"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+

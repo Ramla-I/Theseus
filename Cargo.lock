@@ -2060,6 +2060,7 @@ dependencies = [
  "kernel_config",
  "paste",
  "range_inclusive",
+ "unique_trait",
  "zerocopy",
 ]
 
@@ -4210,6 +4211,7 @@ dependencies = [
  "prusti-contracts",
  "range_inclusive",
  "spin 0.9.4",
+ "unique_trait",
 ]
 
 [[package]]
@@ -4285,6 +4287,10 @@ dependencies = [
  "cfg-if 0.1.10",
  "rendezvous",
 ]
+
+[[package]]
+name = "unique_trait"
+version = "0.1.0"
 
 [[package]]
 name = "unreachable"
