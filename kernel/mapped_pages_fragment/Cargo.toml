@@ -1,0 +1,17 @@
+[package]
+name = "mapped_pages_fragments"
+version = "0.1.0"
+description = "A struct to split a MappedPages into fragments smaller than a page size"
+authors = ["Ramla <ijazramla@gmail.com>"]
+
+[dependencies]
+zerocopy = "0.5.0"
+
+[dependencies.log]
+version = "0.4.8"
+
+[dependencies.memory]
+path = "../memory"
+
+[lib]
+crate-type = ["rlib"] # "lib" does the same thing I think
