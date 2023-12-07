@@ -66,13 +66,13 @@ exclude = [
 	## to enable it in a non-workspace build (i.e., when not calling `cargo build --all`).
 
 	## Exclude kernel crates that exist purely for testing or benchmarking purposes.
-	"kernel/libtest",
+	## "kernel/libtest",
 	"kernel/test_thread_local",
 	"kernel/unified_channel",
 
 	## Exclude benchmark-related crates in all builds; they must be explicitly included via features.
 	## TODO: move these to a specific "benches" folder so we can exclude that entire folder.
-	"applications/bm",
+	## "applications/bm",
 	"applications/heap_eval",
 	"applications/rq_eval",
 	"applications/scheduler_eval",
