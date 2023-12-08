@@ -70,6 +70,10 @@ dependencies = [
 [[package]]
 name = "kernel_config"
 version = "0.1.0"
+dependencies = [
+ "cfg-if",
+ "prusti-contracts",
+]
 
 [[package]]
 name = "libc"
@@ -91,6 +95,21 @@ checksum = "c54b25569025b7fc9651de43004ae593a75ad88543b17178aa5e1b9c4f15f56f"
 dependencies = [
  "unicode-ident",
 ]
+
+[[package]]
+name = "prusti-contracts"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c6e618695ddeec4c85c216d887ef958f2706c6fbafe824ba39ac260466c3043"
+dependencies = [
+ "prusti-contracts-proc-macros",
+]
+
+[[package]]
+name = "prusti-contracts-proc-macros"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f4d18a93d2e7feb85b057978063c3abd0848a63c1b8386046f52e66e796a99e"
 
 [[package]]
 name = "quote"

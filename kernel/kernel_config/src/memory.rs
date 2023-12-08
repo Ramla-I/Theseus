@@ -8,11 +8,14 @@
 //!        of an upcoming new page table.
 //! * 507 down to 0: available for general usage.
 
+use prusti_contracts::*;
+
 // On x86_64, addresses must be sign-extended.
 // On theseus, we choose to have all addresses
 // with the sign bit set, i.e. the 16 most
 // important bits must be set.
 #[cfg(target_arch = "x86_64")]
+#[trusted]
 const fn canonicalize(addr: usize) -> usize {
     addr | 0xFFFF_0000_0000_0000
 }
@@ -23,6 +26,7 @@ const fn canonicalize(addr: usize) -> usize {
 // our ASID is currently zero: these bits must
 // be cleared.
 #[cfg(target_arch = "aarch64")]
+#[trusted]
 const fn canonicalize(addr: usize) -> usize {
     addr & !0xFFFF_0000_0000_0000
 }
@@ -47,7 +51,14 @@ pub const P4_INDEX_SHIFT: usize = P3_INDEX_SHIFT + 9;
 /// Value: 512 GiB.
 pub const ADDRESSABILITY_PER_P4_ENTRY: usize = 1 << (PAGE_SHIFT + P4_INDEX_SHIFT);
 
+#[cfg(not(prusti))]
 pub const MAX_VIRTUAL_ADDRESS: usize = canonicalize(usize::MAX);
+
+#[cfg(all(prusti,target_arch = "aarch64"))]
+pub const MAX_VIRTUAL_ADDRESS: usize = 0x0000_FFFF_FFFF_FFFF;
+
+#[cfg(all(prusti,target_arch = "x86_64"))]
+pub const MAX_VIRTUAL_ADDRESS: usize = 0xFFFF_FFFF_FFFF_FFFF;
 
 pub const TEMPORARY_PAGE_VIRT_ADDR: usize = MAX_VIRTUAL_ADDRESS;
 

@@ -4,5 +4,9 @@ name = "kernel_config"
 description = "configuration values and settings used in the Theseus kernel, e.g., timeslices, memory layouts, etc"
 version = "0.1.0"
 
+[dependencies]
+prusti-contracts = "0.2"
+cfg-if = "1.0.0"
+
 [lib]
 crate-type = ["rlib"]
