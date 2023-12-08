@@ -17,9 +17,12 @@
 #[cfg(test)]
 mod test;
 
+extern crate prusti_contracts;
+
 use core::fmt;
 use core::iter::Step;
 use core::ops::{RangeBounds, Bound, Bound::Included};
+use prusti_contracts::*;
 
 /// A range bounded inclusively below and above (`start..=end`).
 ///
@@ -27,12 +30,14 @@ use core::ops::{RangeBounds, Bound, Bound::Included};
 /// and `x <= end`. It is empty unless `start <= end`.
 ///
 /// See the crate-level docs for more information.
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq)]
+#[cfg_attr(not(prusti), derive(Hash))]
 pub struct RangeInclusive<Idx: Clone + PartialOrd> {
     pub(crate) start: Idx,
     pub(crate) end: Idx
 }
 
+#[cfg(not(prusti))]
 impl<Idx: Clone + PartialOrd + fmt::Debug> fmt::Debug for RangeInclusive<Idx> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}..={:?}", self.start, self.end)
@@ -42,18 +47,22 @@ impl<Idx: Clone + PartialOrd + fmt::Debug> fmt::Debug for RangeInclusive<Idx> {
 impl<Idx: Clone + PartialOrd> RangeInclusive<Idx> {
     /// Creates a new inclusive range.
     #[inline]
+    #[ensures(result.start == start)]
+    #[ensures(result.end == end)]
     pub const fn new(start: Idx, end: Idx) -> Self {
         Self{ start, end }
     }
 
     /// Returns the lower bound of the range (inclusive).
     #[inline]
+    #[pure]
     pub const fn start(&self) -> &Idx {
         &self.start
     }
 
     /// Returns the upper bound of the range (inclusive).
     #[inline]
+    #[pure]
     pub const fn end(&self) -> &Idx {
         &self.end
     }
@@ -75,6 +84,7 @@ impl<Idx: Clone + PartialOrd> RangeInclusive<Idx> {
     }
 
     /// Returns `true` if `item` is contained in the range.
+    #[cfg(not(prusti))]
     pub fn contains<U>(&self, item: &U) -> bool
     where
         Idx: PartialOrd<U>,
@@ -84,6 +94,7 @@ impl<Idx: Clone + PartialOrd> RangeInclusive<Idx> {
     }
 }
 
+#[cfg(not(prusti))]
 impl<T: Clone + PartialOrd> RangeBounds<T> for RangeInclusive<T> {
     fn start_bound(&self) -> Bound<&T> {
         Included(&self.start)
@@ -93,6 +104,7 @@ impl<T: Clone + PartialOrd> RangeBounds<T> for RangeInclusive<T> {
     }
 }
 
+#[cfg(not(prusti))]
 impl<'a, Idx: Clone + PartialOrd + Step> IntoIterator for &'a RangeInclusive<Idx> {
     type Item = Idx;
     type IntoIter = RangeInclusiveIterator<Idx>;
@@ -112,6 +124,7 @@ pub struct RangeInclusiveIterator<Idx> {
     end: Idx
 }
 
+#[cfg(not(prusti))]
 impl<A: Step> Iterator for RangeInclusiveIterator<A> {
     type Item = A;
 
@@ -125,12 +138,14 @@ impl<A: Step> Iterator for RangeInclusiveIterator<A> {
     }
 }
 
+#[cfg(not(prusti))]
 impl<A: Step> ExactSizeIterator for RangeInclusiveIterator<A> {
     fn len(&self) -> usize {
         Step::steps_between(&self.current, &self.end).map(|x| x+1).unwrap_or(0)
     }
 }
 
+#[cfg(not(prusti))]
 impl<A: Step> DoubleEndedIterator for RangeInclusiveIterator<A>  {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.current > self.end {
