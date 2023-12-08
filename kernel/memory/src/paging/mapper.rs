@@ -444,7 +444,7 @@ impl MappedPages {
         // Take ownership of the `AllocatedPages` inside of the `MappedPages` so we can split it.
         let alloc_pages_owned = core::mem::replace(&mut self.pages, AllocatedPages::empty());
 
-        match alloc_pages_owned.split(at_page) {
+        match alloc_pages_owned.split_at(at_page) {
             Ok((first_ap, second_ap)) => Ok((
                 MappedPages {
                     page_table_p4: self.page_table_p4,

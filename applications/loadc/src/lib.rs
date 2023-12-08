@@ -269,7 +269,7 @@ fn parse_and_load_elf_executable(
 
         // debug!("Splitting {:?} after end page {:?}", all_pages, end_page);
 
-        let (this_ap, remaining_pages) = all_pages.split(end_page + 1).map_err(|_ap|
+        let (this_ap, remaining_pages) = all_pages.split_at(end_page + 1).map_err(|_ap|
             format!("Failed to split allocated pages {_ap:?} at page {start_vaddr:#X}")
         )?;
         all_pages = remaining_pages;

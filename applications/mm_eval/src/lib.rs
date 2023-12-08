@@ -44,7 +44,7 @@ fn create_mappings(
     let mut remaining_chunk = allocated_pages;
     for _i in 0..num_mappings {
         let split_at_page = *remaining_chunk.start() + size_in_pages;
-        let (small_chunk, big_chunk) = remaining_chunk.split(split_at_page)
+        let (small_chunk, big_chunk) = remaining_chunk.split_at(split_at_page)
             .map_err(|_ap| "failed to split allocated pages")?;
         remaining_chunk = big_chunk;
         allocated_pages_list.push(small_chunk);

@@ -42,6 +42,11 @@ impl <T: Ord> Wrapper<T> {
             inner: value,
         })
     }
+
+	/// Returns the inner value, consuming this wrapper.
+	pub(crate) fn into_inner(self) -> T {
+		self.inner
+	}
 }
 
 
@@ -77,6 +82,7 @@ impl<T: Ord> StaticArrayRBTree<T> {
 	}
 
 	/// Create a new collection based on the given array of values.
+	#[allow(dead_code)]
 	pub const fn new(arr: [Option<T>; 32]) -> Self {
 		StaticArrayRBTree(Inner::Array(arr))
 	}
@@ -89,7 +95,7 @@ impl<T: Ord + 'static> StaticArrayRBTree<T> {
     /// If the inner collection is an array, it is pushed onto the back of the array.
 	/// If there is no space left in the array, an `Err` containing the given `value` is returned.
 	///
-	/// Upon success, a reference to the newly-inserted value is returned.
+	/// If success
 	pub fn insert(&mut self, value: T) -> Result<ValueRefMut<T>, T> {
 		match &mut self.0 {
 			Inner::Array(arr) => {
@@ -99,7 +105,7 @@ impl<T: Ord + 'static> StaticArrayRBTree<T> {
 						return Ok(ValueRefMut::Array(elem));
 					}
 				}
-				error!("Out of space in StaticArrayRBTree's inner array, failed to insert value.");
+				log::error!("Out of space in StaticArrayRBTree's inner array, failed to insert value.");
 				Err(value)
 			}
 			Inner::RBTree(tree) => {
@@ -130,12 +136,23 @@ impl<T: Ord + 'static> StaticArrayRBTree<T> {
 		*self = StaticArrayRBTree(Inner::RBTree(new_tree));
 	}
 
+	/// Returns the number of elements in this collection. 
+	///
+	/// Note that this an O(N) linear-time operation, not an O(1) constant-time operation. 
+	/// This is because the internal collection types do not separately maintain their current length.
+	pub fn len(&self) -> usize {
+		match &self.0 {
+			Inner::Array(arr) => arr.iter().filter(|e| e.is_some()).count(),
+			Inner::RBTree(tree) => tree.iter().count(),
+		}
+	}
+
 	/// Returns a forward iterator over immutable references to items in this collection.
 	pub fn iter(&self) -> impl Iterator<Item = &T> {
 		let mut iter_a = None;
 		let mut iter_b = None;
 		match &self.0 {
-			Inner::Array(arr)   => iter_a = Some(arr.iter().flatten()),
+			Inner::Array(arr)     => iter_a = Some(arr.iter().flatten()),
 			Inner::RBTree(tree) => iter_b = Some(tree.iter()),
 		}
         iter_a.into_iter()
@@ -165,6 +182,7 @@ pub enum RemovedValue<T: Ord> {
 	RBTree(Option<Box<Wrapper<T>>>),
 }
 impl<T: Ord> RemovedValue<T> {
+	#[allow(dead_code)]
 	pub fn as_ref(&self) -> Option<&T> {
 		match self {
 			Self::Array(opt) => opt.as_ref(),
