@@ -2057,9 +2057,13 @@ dependencies = [
 name = "memory_structs"
 version = "0.1.0"
 dependencies = [
+ "cfg-if 1.0.0",
  "derive_more",
  "kernel_config",
  "paste",
+ "prusti-contracts",
+ "prusti_external_spec",
+ "prusti_representation_creator",
  "range_inclusive",
  "zerocopy",
 ]
@@ -2825,6 +2829,30 @@ name = "prusti_external_spec"
 version = "0.1.0"
 dependencies = [
  "prusti-contracts",
+]
+
+[[package]]
+name = "prusti_frame_chunk"
+version = "0.1.0"
+dependencies = [
+ "kernel_config",
+ "memory_structs",
+ "prusti-contracts",
+ "prusti_external_spec",
+ "prusti_representation_creator",
+ "range_inclusive",
+]
+
+[[package]]
+name = "prusti_page_chunk"
+version = "0.1.0"
+dependencies = [
+ "kernel_config",
+ "memory_structs",
+ "prusti-contracts",
+ "prusti_external_spec",
+ "prusti_representation_creator",
+ "range_inclusive",
 ]
 
 [[package]]

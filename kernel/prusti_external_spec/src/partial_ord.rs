@@ -44,4 +44,16 @@ impl PartialOrd<usize> for usize {
         result === Some(core::cmp::Ordering::Equal)
     })]
     fn partial_cmp(&self, other: &usize) -> Option<core::cmp::Ordering>;
+
+    #[pure]
+    fn gt(&self, other: &usize) -> bool;
+
+    #[pure]
+    fn ge(&self, other: &usize) -> bool;
+
+    #[pure]
+    fn lt(&self, other: &usize) -> bool;
+
+    #[pure]
+    fn le(&self, other: &usize) -> bool;
 }

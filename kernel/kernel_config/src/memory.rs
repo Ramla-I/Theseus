@@ -77,6 +77,7 @@ pub const UPCOMING_PAGE_TABLE_RECURSIVE_P4_INDEX: usize = ENTRIES_PER_PAGE_TABLE
 
 
 pub const MAX_PAGE_NUMBER: usize = MAX_VIRTUAL_ADDRESS / PAGE_SIZE;
+pub const MIN_PAGE_NUMBER: usize = 0;
 
 /// The size in pages of each kernel stack. 
 /// If it's too small, complex kernel functions will overflow, causing a page fault / double fault.

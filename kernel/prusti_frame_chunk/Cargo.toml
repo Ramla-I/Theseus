@@ -1,0 +1,19 @@
+[package]
+authors = ["Ramla Ijaz <ijazramla@gmail.com>"]
+name = "prusti_frame_chunk"
+description = "FrameChunk type that is proven to be unique."
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+prusti-contracts = "0.2"
+
+prusti_external_spec = { path = "../prusti_external_spec" }
+prusti_representation_creator = { path = "../prusti_representation_creator" }
+memory_structs = { path = "../memory_structs" }
+kernel_config = { path = "../kernel_config" }
+range_inclusive = {path = "../../libs/range_inclusive" }
+
+
+[lib]
+crate-type = ["rlib"]

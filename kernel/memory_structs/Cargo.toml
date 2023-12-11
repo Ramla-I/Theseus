@@ -9,6 +9,10 @@ edition = "2021"
 zerocopy = "0.5.0"
 derive_more = "0.99.0"
 paste = "1.0.5"
+prusti-contracts = "0.2"
+cfg-if = "1.0.0"
 
 kernel_config = { path = "../kernel_config" }
 range_inclusive = { path = "../../libs/range_inclusive" }
+prusti_external_spec = { path = "../prusti_external_spec" }
+prusti_representation_creator = { path = "../prusti_representation_creator" }

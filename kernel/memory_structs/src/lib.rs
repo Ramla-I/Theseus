@@ -11,18 +11,24 @@
 #![allow(incomplete_features)]
 #![feature(adt_const_params)]
 
+mod helper_fns;
+
 use core::{
-    cmp::{min, max},
+    cmp::{min, max, Ordering},
     fmt,
     iter::Step,
     marker::ConstParamTy,
     ops::{Add, AddAssign, Deref, DerefMut, Sub, SubAssign},
 };
-use kernel_config::memory::{MAX_PAGE_NUMBER, PAGE_SIZE};
+use kernel_config::memory::{MAX_PAGE_NUMBER, MIN_PAGE_NUMBER, PAGE_SIZE};
 use zerocopy::FromBytes;
 use paste::paste;
 use derive_more::*;
 use range_inclusive::{RangeInclusive, RangeInclusiveIterator};
+use cfg_if::cfg_if;
+use prusti_contracts::*;
+use prusti_external_spec::{cmp::*, partial_ord::*, trusted_option::*, trusted_result::*};
+use prusti_representation_creator::resource_identifier::ResourceIdentifier;
 
 /// The possible states that a range of exclusively-owned pages or frames can be in.
 #[derive(PartialEq, Eq, ConstParamTy)]
@@ -36,6 +42,8 @@ pub enum MemoryState {
     /// Memory has been unmapped (PTE has been cleared)
     Unmapped
 }
+
+cfg_if!{ if #[cfg(not(prusti))] {
 
 /// A macro for defining `VirtualAddress` and `PhysicalAddress` structs
 /// and implementing their common traits, which are generally identical.
@@ -255,8 +263,125 @@ implement_address!(
     canonicalize_physical_address,
     frame
 );
+}}
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Frame {
+    number: usize
+}
 
+impl Deref for Frame {
+    type Target = usize;
+    #[pure]
+    fn deref(&self) -> &Self::Target {
+        &self.number
+    }
+}
+
+#[extern_spec]
+impl PartialOrd for Frame {
+    #[pure]
+    #[ensures(result == self.number.partial_cmp(&other.number))]
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering>;
+}
+
+#[refine_trait_spec]
+impl Add<usize> for Frame {
+    type Output = Frame;
+    #[pure]
+    #[trusted] // this function itself verifies without trusted, but then I get prusti errors when using it in other functions
+    #[ensures(result.number == min(MAX_PAGE_NUMBER, helper_fns::saturating_add(self.number, rhs)))]
+    #[ensures(result >= self)]
+    #[ensures(rhs == 0 ==> result == self)]
+    fn add(self, rhs: usize) -> Frame {
+        Frame {
+            number: min(MAX_PAGE_NUMBER, helper_fns::saturating_add(self.number, rhs)),
+        }
+    }
+}
+
+#[refine_trait_spec]
+impl Sub<usize> for Frame {
+    type Output = Frame;
+    #[pure]
+    #[trusted] // this function itself verifies without trusted, but then I get prusti errors when using it in other functions
+    #[ensures(result.number == helper_fns::saturating_sub(self.number, rhs))]
+    #[ensures(result <= self)]
+    #[ensures(rhs == 0 ==> result == self)]
+    fn sub(self, rhs: usize) -> Frame {
+        Frame {
+            number: helper_fns::saturating_sub(self.number, rhs),
+        }
+    }
+}
+
+impl Frame {
+    #[pure]
+    #[inline(always)]
+    pub const fn number(&self) -> usize {
+        self.number
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Page {
+    number: usize
+}
+
+impl Deref for Page {
+    type Target = usize;
+    #[pure]
+    fn deref(&self) -> &Self::Target {
+        &self.number
+    }
+}
+
+#[extern_spec]
+impl PartialOrd for Page {
+    #[pure]
+    #[ensures(result == self.number.partial_cmp(&other.number))]
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering>;
+}
+
+#[refine_trait_spec]
+impl Add<usize> for Page {
+    type Output = Page;
+    #[pure]
+    #[trusted]
+    #[ensures(result.number == min(MAX_PAGE_NUMBER, helper_fns::saturating_add(self.number, rhs)))]
+    #[ensures(result >= self)]
+    #[ensures(rhs == 0 ==> result == self)]
+    fn add(self, rhs: usize) -> Page {
+        Page {
+            number: min(MAX_PAGE_NUMBER, helper_fns::saturating_add(self.number, rhs)),
+        }
+    }
+}
+
+#[refine_trait_spec]
+impl Sub<usize> for Page {
+    type Output = Page;
+    #[pure]
+    #[trusted]
+    #[ensures(result.number == helper_fns::saturating_sub(self.number, rhs))]
+    #[ensures(result <= self)]
+    #[ensures(rhs == 0 ==> result == self)]
+    fn sub(self, rhs: usize) -> Page {
+        Page {
+            number: helper_fns::saturating_sub(self.number, rhs),
+        }
+    }
+}
+
+impl Page {
+    #[pure]
+    #[inline(always)]
+    pub const fn number(&self) -> usize {
+        self.number
+    }
+}
+
+cfg_if!{ if #[cfg(not(prusti))] {
 
 /// A macro for defining `Page` and `Frame` structs
 /// and implementing their common traits, which are generally identical.
@@ -264,11 +389,11 @@ macro_rules! implement_page_frame {
     ($TypeName:ident, $desc:literal, $prefix:literal, $address:ident) => {
         paste! { // using the paste crate's macro for easy concatenation
 
-            #[doc = "A `" $TypeName "` is a chunk of **" $desc "** memory aligned to a [`PAGE_SIZE`] boundary."]
-            #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-            pub struct $TypeName {
-                number: usize,
-            }
+            // #[doc = "A `" $TypeName "` is a chunk of **" $desc "** memory aligned to a [`PAGE_SIZE`] boundary."]
+            // #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+            // pub struct $TypeName {
+            //     number: usize,
+            // }
 
             impl $TypeName {
                 #[doc = "Returns the `" $address "` at the start of this `" $TypeName "`."]
@@ -276,11 +401,11 @@ macro_rules! implement_page_frame {
                     $address::new_canonical(self.number * PAGE_SIZE)
                 }
 
-                #[doc = "Returns the number of this `" $TypeName "`."]
-                #[inline(always)]
-                pub const fn number(&self) -> usize {
-                    self.number
-                }
+                // #[doc = "Returns the number of this `" $TypeName "`."]
+                // #[inline(always)]
+                // pub const fn number(&self) -> usize {
+                //     self.number
+                // }
                 
                 #[doc = "Returns the `" $TypeName "` containing the given `" $address "`."]
                 pub const fn containing_address(addr: $address) -> $TypeName {
@@ -303,15 +428,15 @@ macro_rules! implement_page_frame {
                     write!(f, concat!(stringify!($TypeName), "(", $prefix, "{:#X})"), self.start_address())
                 }
             }
-            impl Add<usize> for $TypeName {
-                type Output = $TypeName;
-                fn add(self, rhs: usize) -> $TypeName {
-                    // cannot exceed max page number (which is also max frame number)
-                    $TypeName {
-                        number: core::cmp::min(MAX_PAGE_NUMBER, self.number.saturating_add(rhs)),
-                    }
-                }
-            }
+            // impl Add<usize> for $TypeName {
+            //     type Output = $TypeName;
+            //     fn add(self, rhs: usize) -> $TypeName {
+            //         // cannot exceed max page number (which is also max frame number)
+            //         $TypeName {
+            //             number: core::cmp::min(MAX_PAGE_NUMBER, self.number.saturating_add(rhs)),
+            //         }
+            //     }
+            // }
             impl AddAssign<usize> for $TypeName {
                 fn add_assign(&mut self, rhs: usize) {
                     *self = $TypeName {
@@ -319,14 +444,14 @@ macro_rules! implement_page_frame {
                     };
                 }
             }
-            impl Sub<usize> for $TypeName {
-                type Output = $TypeName;
-                fn sub(self, rhs: usize) -> $TypeName {
-                    $TypeName {
-                        number: self.number.saturating_sub(rhs),
-                    }
-                }
-            }
+            // impl Sub<usize> for $TypeName {
+            //     type Output = $TypeName;
+            //     fn sub(self, rhs: usize) -> $TypeName {
+            //         $TypeName {
+            //             number: self.number.saturating_sub(rhs),
+            //         }
+            //     }
+            // }
             impl SubAssign<usize> for $TypeName {
                 fn sub_assign(&mut self, rhs: usize) {
                     *self = $TypeName {
@@ -381,8 +506,488 @@ impl Page {
         self.number & 0x1FF
     }
 }
+}}
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub struct FrameRange(RangeInclusive<Frame>);
+
+impl Deref for FrameRange {
+    type Target = RangeInclusive<Frame>;
+    #[pure]
+    fn deref(&self) -> &RangeInclusive<Frame> {
+        &self.0
+    }
+}
+
+impl ResourceIdentifier for FrameRange {
+    #[pure]
+    fn overlaps(&self, other: &Self) -> bool {
+        self.range_overlaps(other)
+    }
+}
+
+impl FrameRange {
+    #[ensures(result.start_frame() == start)]
+    #[ensures(result.end_frame() == end)]
+    pub const fn new(start: Frame, end: Frame) -> FrameRange {
+        FrameRange(RangeInclusive::new(start, end))
+    }
+
+    // #[trusted] // otherwise use constructor with spec
+    #[ensures(result.is_empty())]
+    pub const fn empty() -> FrameRange {
+        FrameRange::new(Frame{ number: 1 }, Frame { number: 0 })
+    }
+
+    #[pure]
+    #[trusted]
+    #[ensures(result == *self.0.start())]
+    pub fn start_frame(&self) -> Frame {
+        *self.0.start()
+    }
+
+    #[pure]
+    #[trusted]
+    #[ensures(result == *self.0.end())]
+    pub fn end_frame(&self) -> Frame {
+        *self.0.end()
+    }
+
+    #[pure]
+    #[ensures(result == (self.start_frame() > self.end_frame()))]
+    #[ensures(result == !(self.start_frame() <= self.end_frame()))]
+    pub fn is_empty(&self) -> bool {
+        !(self.start_frame() <= self.end_frame())
+    }
+
+    #[pure]
+    #[trusted] // has to be trusted to call itself, which then requires us to define a spec for the fn as well :(
+    #[ensures(result == other.range_overlaps(&self))] // if we dont have this condition, then post-condition of push_unique_with_precond wont' verify
+    #[ensures({
+        let starts = helper_fns::max_frame(self.start_frame(), other.start_frame());
+        let ends   = helper_fns::min_frame(self.end_frame(), other.end_frame());
+        result == (starts <= ends) 
+   })]
+    /// Returning a FrameRange here requires use to set the RangeInclusive new function as pure which
+    /// requires Idx to be Copy, so just return bool.
+    pub fn range_overlaps(&self, other: &FrameRange) -> bool {
+        let starts = helper_fns::max_frame(self.start_frame(), other.start_frame());
+        let ends   = helper_fns::min_frame(self.end_frame(), other.end_frame());
+        starts <= ends
+    }
+
+    #[pure]
+    pub fn contains_range(&self, other: &FrameRange) -> bool {
+        !other.is_empty()
+        && (other.start_frame() >= self.start_frame())
+        && (other.end_frame() <= self.end_frame())
+    }
+
+    /// Splits a range into 1-3 ranges, depending on where the split is at.
+    /// It is formally verified that the resulting chunks are disjoint, contiguous and their start/end is equal to that of the original chunk.
+    /// 
+    /// # Post-conditions:
+    /// * If it succeeds, then the resulting chunks have no overlapping ranges
+    /// * If it succeeds, then the resulting chunks are contiguous
+    /// * If it succeeds, then the resulting chunks combined have the same range as `self`
+    /// * If it fails, then the original chunk is returned
+    #[ensures(result.is_ok() ==> {
+        let split_range = peek_result_ref(&result);
+        ((split_range.0).is_some() ==> !peek_option_ref(&split_range.0).range_overlaps(&split_range.1)) 
+        && ((split_range.2).is_some() ==> !split_range.1.range_overlaps(peek_option_ref(&split_range.2)))
+        && (((split_range.0).is_some() && (split_range.2).is_some()) ==> !peek_option_ref(&split_range.0).range_overlaps(peek_option_ref(&split_range.2)))
+    })]
+    #[ensures(result.is_ok() ==> {
+        let split_range = peek_result_ref(&result);
+        ((split_range.0).is_some() ==> peek_option_ref(&split_range.0).end_frame() == split_range.1.start_frame() - 1)
+        && ((split_range.2).is_some() ==> peek_option_ref(&split_range.2).start_frame() == split_range.1.end_frame() + 1)
+    })]
+    #[ensures(result.is_ok() ==> {
+        let split_range = peek_result_ref(&result);
+        ((split_range.0).is_some() ==> peek_option_ref(&split_range.0).start_frame() == self.start_frame())
+        && ((split_range.0).is_none() ==> (split_range.1.start_frame() == self.start_frame() || (split_range.1.start_frame().number == MIN_PAGE_NUMBER)))
+        && ((split_range.2).is_some() ==> peek_option_ref(&split_range.2).end_frame() == self.end_frame())
+        && ((split_range.2).is_none() ==> ((split_range.1.end_frame() == self.end_frame()) || (split_range.1.end_frame().number == MAX_PAGE_NUMBER)))
+    })]
+    #[ensures(result.is_err() ==> {
+        let orig_range = peek_err_ref(&result);
+        (orig_range.start_frame() == self.start_frame()) && (orig_range.end_frame() == self.end_frame())
+    })]
+    pub fn split_range(self, frames_to_extract: FrameRange) -> Result<(Option<FrameRange>, FrameRange, Option<FrameRange>), FrameRange> {
+        let min_frame = Frame { number: 0 };
+        let max_frame = Frame { number: MAX_PAGE_NUMBER };
+
+        if !self.contains_range(&frames_to_extract) {
+            return Err(self);
+        }
+
+        let start_frame = frames_to_extract.start_frame();
+        let end_frame = frames_to_extract.end_frame();
+        
+        let before_start = if start_frame == min_frame || start_frame == self.start_frame() {
+            None
+        } else {
+            let a = FrameRange::new(self.start_frame(), start_frame - 1);
+            Some(a)
+
+        };
+        
+        let start_to_end = frames_to_extract;
+        
+        let after_end = if end_frame == max_frame || end_frame == self.end_frame() {
+            None
+        } else {
+            Some(FrameRange::new(end_frame + 1, self.end_frame())) 
+        };
+
+        Ok((before_start, start_to_end, after_end))
+    }
+
+    /// Splits a chunk into 2 chunks at the frame with number `at_frame`.
+    /// It is formally verified that the resulting chunks are disjoint, contiguous and their start/end is equal to that of the original chunk.
+    /// 
+    /// # Post-conditions:
+    /// * If it succeeds, then both chunks can't be empty
+    /// * If it succeeds and the first chunk is empty, then the second chunk is equal to `self`
+    /// * If it succeeds and the second chunk is empty, then the first chunk is equal to `self`
+    /// * If it succeeds and both chunks aren't empty, then the chunks are contiguous and their combined range is equal to the range of `self`
+    /// * If it fails, then the original chunk is returned
+    #[ensures(result.is_ok() ==> {
+        let split_range = peek_result_ref(&result);
+        split_range.0.is_empty() && !split_range.1.is_empty() ||
+        !split_range.0.is_empty() && split_range.1.is_empty() ||
+        !split_range.0.is_empty() && !split_range.1.is_empty()
+    })]
+    #[ensures(result.is_ok() ==> {
+        let split_range = peek_result_ref(&result);
+        split_range.0.is_empty() ==> (split_range.1.start_frame() == self.start_frame() && split_range.1.end_frame() == self.end_frame())
+    })]
+    #[ensures(result.is_ok() ==> {
+        let split_range = peek_result_ref(&result);
+        split_range.1.is_empty() ==> (split_range.0.start_frame() == self.start_frame() && split_range.0.end_frame() == self.end_frame())
+    })]
+    #[ensures(result.is_ok() ==> {
+        let split_range = peek_result_ref(&result);
+        (!split_range.0.is_empty() && !split_range.1.is_empty()) ==> (
+            split_range.0.start_frame() == self.start_frame() 
+            && split_range.0.end_frame() == at_frame - 1
+            && split_range.1.start_frame() == at_frame 
+            && split_range.1.end_frame() == self.end_frame()
+        )
+    })]
+    #[ensures(result.is_err() ==> {
+        let orig_chunk = peek_err_ref(&result);
+        (orig_chunk.start_frame() == self.start_frame()) && (orig_chunk.end_frame() == self.end_frame())
+    })]
+    pub fn split_at(mut self, at_frame: Frame) -> Result<(Self, Self), Self> {
+        if self.is_empty() {
+            return Err(self);
+        }
+        let end_of_first = at_frame - 1;
+
+        let (first, second) = if (at_frame == self.start_frame()) && (at_frame <= self.end_frame()) {
+            let first  = FrameRange::empty();
+            let second = FrameRange::new(at_frame, self.end_frame());
+            (first, second)
+        } 
+        else if (at_frame == self.end_frame() + 1) && (end_of_first >= self.start_frame()) {
+            let first  = FrameRange::new(self.start_frame(), self.end_frame()); 
+            let second = FrameRange::empty();
+            (first, second)
+        }
+        else if (at_frame > self.start_frame()) && (end_of_first <= self.end_frame()) {
+            let first  = FrameRange::new(self.start_frame(), end_of_first);
+            let second = FrameRange::new(at_frame, self.end_frame());
+            (first, second)
+        }
+        else {
+            return Err(self);
+        };
+ 
+        Ok(( first, second ))
+    }
+
+    /// Merges `other` into `self`.
+    /// Succeeds if `other` lies right before `self` or right after.
+    /// 
+    /// # Post-conditions:
+    /// * If it succeeds, then `other` and `self` were contiguous, and either `self`'s start bound has been updated to `other`'s start 
+    /// or `self`s end has been updated to `other`'s end
+    /// * If it fails, then `self` remains unchanged and `other` is returned
+    #[ensures(result.is_ok() ==> 
+        (old(self.start_frame()) == other.end_frame() + 1 && self.start_frame() == other.start_frame() && self.end_frame() == old(self.end_frame())) 
+        || 
+        (old(self.end_frame()) + 1 == other.start_frame() && self.end_frame() == other.end_frame() && self.start_frame() == old(self.start_frame()))
+    )]
+    #[ensures(result.is_err() ==> {
+        let chunk = peek_err_ref(&result);
+        (chunk.start_frame() == other.start_frame()) && (chunk.end_frame() == other.end_frame()) 
+    })]
+    #[ensures(result.is_err() ==> {
+        (self.start_frame() == old(self.start_frame())) && (self.end_frame() == old(self.end_frame())) 
+    })]
+    pub fn merge(&mut self, other: Self) -> Result<(), Self> {
+        if self.is_empty() || other.is_empty() {
+            return Err(other);
+        }
+
+        if self.start_frame() == (other.end_frame() + 1) {
+            // `other` comes contiguously before `self`
+            *self = FrameRange::new(other.start_frame(), self.end_frame());
+        } 
+        else if (self.end_frame() + 1) == other.start_frame() {
+            // `self` comes contiguously before `other`
+            *self = FrameRange::new(self.start_frame(), other.end_frame());
+        }
+        else {
+            // non-contiguous
+            return Err(other);
+        } 
+        Ok(())
+    }
+}
 
 
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub struct PageRange(RangeInclusive<Page>);
+
+impl ResourceIdentifier for PageRange {
+    #[pure]
+    fn overlaps(&self, other: &Self) -> bool {
+        self.range_overlaps(other)
+    }
+}
+
+impl Deref for PageRange {
+    type Target = RangeInclusive<Page>;
+    #[pure]
+    fn deref(&self) -> &RangeInclusive<Page> {
+        &self.0
+    }
+}
+
+impl PageRange {
+    #[ensures(result.start_page() == start)]
+    #[ensures(result.end_page() == end)]
+    pub const fn new(start: Page, end: Page) -> PageRange {
+        PageRange(RangeInclusive::new(start, end))
+    }
+
+    // #[trusted] // otherwise use constructor with spec
+    #[ensures(result.is_empty())]
+    pub const fn empty() -> PageRange {
+        PageRange::new(Page{ number: 1 }, Page { number: 0 })
+    }
+
+    #[pure]
+    #[trusted]
+    #[ensures(result == *self.0.start())]
+    pub fn start_page(&self) -> Page {
+        *self.0.start()
+    }
+
+    #[pure]
+    #[trusted]
+    #[ensures(result == *self.0.end())]
+    pub fn end_page(&self) -> Page {
+        *self.0.end()
+    }
+
+    #[pure]
+    #[ensures(result == (self.start_page() > self.end_page()))]
+    #[ensures(result == !(self.start_page() <= self.end_page()))]
+    pub fn is_empty(&self) -> bool {
+        !(self.start_page() <= self.end_page())
+    }
+
+    #[pure]
+    #[trusted] // has to be trusted to call itself, which then requires us to define a spec for the fn as well :(
+    #[ensures(result == other.range_overlaps(&self))] // if we dont have this condition, then post-condition of push_unique_with_precond wont' verify
+    #[ensures({
+        let starts = helper_fns::max_page(self.start_page(), other.start_page());
+        let ends   = helper_fns::min_page(self.end_page(), other.end_page());
+        result == (starts <= ends) 
+   })]
+    /// Returning a PageRange here requires use to set the RangeInclusive new function as pure which
+    /// requires Idx to be Copy, so just return bool.
+    pub fn range_overlaps(&self, other: &PageRange) -> bool {
+        let starts = helper_fns::max_page(self.start_page(), other.start_page());
+        let ends   = helper_fns::min_page(self.end_page(), other.end_page());
+        starts <= ends
+    }
+
+    #[pure]
+    pub fn contains_range(&self, other: &PageRange) -> bool {
+        !other.is_empty()
+        && (other.start_page() >= self.start_page())
+        && (other.end_page() <= self.end_page())
+    }
+
+    /// Splits a range into 1-3 ranges, depending on where the split is at.
+    /// It is formally verified that the resulting chunks are disjoint, contiguous and their start/end is equal to that of the original chunk.
+    /// 
+    /// # Post-conditions:
+    /// * If it succeeds, then the resulting chunks have no overlapping ranges
+    /// * If it succeeds, then the resulting chunks are contiguous
+    /// * If it succeeds, then the resulting chunks combined have the same range as `self`
+    /// * If it fails, then the original chunk is returned
+    #[ensures(result.is_ok() ==> {
+        let split_range = peek_result_ref(&result);
+        ((split_range.0).is_some() ==> !peek_option_ref(&split_range.0).range_overlaps(&split_range.1)) 
+        && ((split_range.2).is_some() ==> !split_range.1.range_overlaps(peek_option_ref(&split_range.2)))
+        && (((split_range.0).is_some() && (split_range.2).is_some()) ==> !peek_option_ref(&split_range.0).range_overlaps(peek_option_ref(&split_range.2)))
+    })]
+    #[ensures(result.is_ok() ==> {
+        let split_range = peek_result_ref(&result);
+        ((split_range.0).is_some() ==> peek_option_ref(&split_range.0).end_page() == split_range.1.start_page() - 1)
+        && ((split_range.2).is_some() ==> peek_option_ref(&split_range.2).start_page() == split_range.1.end_page() + 1)
+    })]
+    #[ensures(result.is_ok() ==> {
+        let split_range = peek_result_ref(&result);
+        ((split_range.0).is_some() ==> peek_option_ref(&split_range.0).start_page() == self.start_page())
+        && ((split_range.0).is_none() ==> (split_range.1.start_page() == self.start_page() || (split_range.1.start_page().number == MIN_PAGE_NUMBER)))
+        && ((split_range.2).is_some() ==> peek_option_ref(&split_range.2).end_page() == self.end_page())
+        && ((split_range.2).is_none() ==> ((split_range.1.end_page() == self.end_page()) || (split_range.1.end_page().number == MAX_PAGE_NUMBER)))
+    })]
+    #[ensures(result.is_err() ==> {
+        let orig_range = peek_err_ref(&result);
+        (orig_range.start_page() == self.start_page()) && (orig_range.end_page() == self.end_page())
+    })]
+    pub fn split_range(self, frames_to_extract: PageRange) -> Result<(Option<PageRange>, PageRange, Option<PageRange>), PageRange> {
+        let min_frame = Page { number: 0 };
+        let max_frame = Page { number: MAX_PAGE_NUMBER };
+
+        if !self.contains_range(&frames_to_extract) {
+            return Err(self);
+        }
+
+        let start_page = frames_to_extract.start_page();
+        let end_page = frames_to_extract.end_page();
+        
+        let before_start = if start_page == min_frame || start_page == self.start_page() {
+            None
+        } else {
+            let a = PageRange::new(self.start_page(), start_page - 1);
+            Some(a)
+
+        };
+        
+        let start_to_end = frames_to_extract;
+        
+        let after_end = if end_page == max_frame || end_page == self.end_page() {
+            None
+        } else {
+            Some(PageRange::new(end_page + 1, self.end_page())) 
+        };
+
+        Ok((before_start, start_to_end, after_end))
+    }
+
+    /// Splits a chunk into 2 chunks at the frame with number `at_frame`.
+    /// It is formally verified that the resulting chunks are disjoint, contiguous and their start/end is equal to that of the original chunk.
+    /// 
+    /// # Post-conditions:
+    /// * If it succeeds, then both chunks can't be empty
+    /// * If it succeeds and the first chunk is empty, then the second chunk is equal to `self`
+    /// * If it succeeds and the second chunk is empty, then the first chunk is equal to `self`
+    /// * If it succeeds and both chunks aren't empty, then the chunks are contiguous and their combined range is equal to the range of `self`
+    /// * If it fails, then the original chunk is returned
+    #[ensures(result.is_ok() ==> {
+        let split_range = peek_result_ref(&result);
+        split_range.0.is_empty() && !split_range.1.is_empty() ||
+        !split_range.0.is_empty() && split_range.1.is_empty() ||
+        !split_range.0.is_empty() && !split_range.1.is_empty()
+    })]
+    #[ensures(result.is_ok() ==> {
+        let split_range = peek_result_ref(&result);
+        split_range.0.is_empty() ==> (split_range.1.start_page() == self.start_page() && split_range.1.end_page() == self.end_page())
+    })]
+    #[ensures(result.is_ok() ==> {
+        let split_range = peek_result_ref(&result);
+        split_range.1.is_empty() ==> (split_range.0.start_page() == self.start_page() && split_range.0.end_page() == self.end_page())
+    })]
+    #[ensures(result.is_ok() ==> {
+        let split_range = peek_result_ref(&result);
+        (!split_range.0.is_empty() && !split_range.1.is_empty()) ==> (
+            split_range.0.start_page() == self.start_page() 
+            && split_range.0.end_page() == at_frame - 1
+            && split_range.1.start_page() == at_frame 
+            && split_range.1.end_page() == self.end_page()
+        )
+    })]
+    #[ensures(result.is_err() ==> {
+        let orig_chunk = peek_err_ref(&result);
+        (orig_chunk.start_page() == self.start_page()) && (orig_chunk.end_page() == self.end_page())
+    })]
+    pub fn split_at(mut self, at_frame: Page) -> Result<(Self, Self), Self> {
+        if self.is_empty() {
+            return Err(self);
+        }
+        let end_of_first = at_frame - 1;
+
+        let (first, second) = if (at_frame == self.start_page()) && (at_frame <= self.end_page()) {
+            let first  = PageRange::empty();
+            let second = PageRange::new(at_frame, self.end_page());
+            (first, second)
+        } 
+        else if (at_frame == self.end_page() + 1) && (end_of_first >= self.start_page()) {
+            let first  = PageRange::new(self.start_page(), self.end_page()); 
+            let second = PageRange::empty();
+            (first, second)
+        }
+        else if (at_frame > self.start_page()) && (end_of_first <= self.end_page()) {
+            let first  = PageRange::new(self.start_page(), end_of_first);
+            let second = PageRange::new(at_frame, self.end_page());
+            (first, second)
+        }
+        else {
+            return Err(self);
+        };
+ 
+        Ok(( first, second ))
+    }
+
+    /// Merges `other` into `self`.
+    /// Succeeds if `other` lies right before `self` or right after.
+    /// 
+    /// # Post-conditions:
+    /// * If it succeeds, then `other` and `self` were contiguous, and either `self`'s start bound has been updated to `other`'s start 
+    /// or `self`s end has been updated to `other`'s end
+    /// * If it fails, then `self` remains unchanged and `other` is returned
+    #[ensures(result.is_ok() ==> 
+        (old(self.start_page()) == other.end_page() + 1 && self.start_page() == other.start_page() && self.end_page() == old(self.end_page())) 
+        || 
+        (old(self.end_page()) + 1 == other.start_page() && self.end_page() == other.end_page() && self.start_page() == old(self.start_page()))
+    )]
+    #[ensures(result.is_err() ==> {
+        let chunk = peek_err_ref(&result);
+        (chunk.start_page() == other.start_page()) && (chunk.end_page() == other.end_page()) 
+    })]
+    #[ensures(result.is_err() ==> {
+        (self.start_page() == old(self.start_page())) && (self.end_page() == old(self.end_page())) 
+    })]
+    pub fn merge(&mut self, other: Self) -> Result<(), Self> {
+        if self.is_empty() || other.is_empty() {
+            return Err(other);
+        }
+
+        if self.start_page() == (other.end_page() + 1) {
+            // `other` comes contiguously before `self`
+            *self = PageRange::new(other.start_page(), self.end_page());
+        } 
+        else if (self.end_page() + 1) == other.start_page() {
+            // `self` comes contiguously before `other`
+            *self = PageRange::new(self.start_page(), other.end_page());
+        }
+        else {
+            // non-contiguous
+            return Err(other);
+        } 
+        Ok(())
+    }
+}
+
+cfg_if!{ if #[cfg(not(prusti))] {
 
 /// A macro for defining `PageRange` and `FrameRange` structs
 /// and implementing their common traits, which are generally identical.
@@ -390,20 +995,20 @@ macro_rules! implement_page_frame_range {
     ($TypeName:ident, $desc:literal, $short:ident, $chunk:ident, $address:ident) => {
         paste! { // using the paste crate's macro for easy concatenation
                         
-            #[doc = "A range of [`" $chunk "`]s that are contiguous in " $desc " memory."]
-            #[derive(Clone, PartialEq, Eq)]
-            pub struct $TypeName(RangeInclusive<$chunk>);
+            // #[doc = "A range of [`" $chunk "`]s that are contiguous in " $desc " memory."]
+            // #[derive(Clone, PartialEq, Eq)]
+            // pub struct $TypeName(RangeInclusive<$chunk>);
 
             impl $TypeName {
-                #[doc = "Creates a new range of [`" $chunk "`]s that spans from `start` to `end`, both inclusive bounds."]
-                pub const fn new(start: $chunk, end: $chunk) -> $TypeName {
-                    $TypeName(RangeInclusive::new(start, end))
-                }
+                // #[doc = "Creates a new range of [`" $chunk "`]s that spans from `start` to `end`, both inclusive bounds."]
+                // pub const fn new(start: $chunk, end: $chunk) -> $TypeName {
+                //     $TypeName(RangeInclusive::new(start, end))
+                // }
 
-                #[doc = "Creates a `" $TypeName "` that will always yield `None` when iterated."]
-                pub const fn empty() -> $TypeName {
-                    $TypeName::new($chunk { number: 1 }, $chunk { number: 0 })
-                }
+                // #[doc = "Creates a `" $TypeName "` that will always yield `None` when iterated."]
+                // pub const fn empty() -> $TypeName {
+                //     $TypeName::new($chunk { number: 1 }, $chunk { number: 0 })
+                // }
 
                 #[doc = "A convenience method for creating a new `" $TypeName "` that spans \
                     all [`" $chunk "`]s from the given [`" $address "`] to an end bound based on the given size."]
@@ -497,24 +1102,24 @@ macro_rules! implement_page_frame_range {
                     }
                 }
 
-                #[doc = "Returns `true` if the `other` `" $TypeName "` is fully contained within this `" $TypeName "`."]
-                pub fn contains_range(&self, other: &$TypeName) -> bool {
-                    !other.is_empty()
-                    && (other.start() >= self.start())
-                    && (other.end() <= self.end())
-                }
+                // #[doc = "Returns `true` if the `other` `" $TypeName "` is fully contained within this `" $TypeName "`."]
+                // pub fn contains_range(&self, other: &$TypeName) -> bool {
+                //     !other.is_empty()
+                //     && (other.start() >= self.start())
+                //     && (other.end() <= self.end())
+                // }
             }
             impl fmt::Debug for $TypeName {
                 fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                     write!(f, "{:?}", self.0)
                 }
             }
-            impl Deref for $TypeName {
-                type Target = RangeInclusive<$chunk>;
-                fn deref(&self) -> &RangeInclusive<$chunk> {
-                    &self.0
-                }
-            }
+            // impl Deref for $TypeName {
+            //     type Target = RangeInclusive<$chunk>;
+            //     fn deref(&self) -> &RangeInclusive<$chunk> {
+            //         &self.0
+            //     }
+            // }
             impl DerefMut for $TypeName {
                 fn deref_mut(&mut self) -> &mut RangeInclusive<$chunk> {
                     &mut self.0
@@ -551,3 +1156,4 @@ macro_rules! implement_page_frame_range {
 
 implement_page_frame_range!(PageRange, "virtual", virt, Page, VirtualAddress);
 implement_page_frame_range!(FrameRange, "physical", phys, Frame, PhysicalAddress);
+}}
