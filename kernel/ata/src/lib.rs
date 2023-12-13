@@ -10,7 +10,7 @@
 extern crate alloc;
 #[macro_use] extern crate log;
 
-use core::fmt;
+use core::{fmt, ops::Deref};
 use bitflags::bitflags;
 use spin::Mutex;
 use alloc::{
@@ -789,7 +789,7 @@ impl IdeController {
 			--> primary slave:    {} \n\
 			--> secondary master: {} \n\
 			--> secondary slave:  {}",
-			pci_device.location,
+			pci_device.deref(),
 			drive_fmt(&primary_master),
 			drive_fmt(&primary_slave),
 			drive_fmt(&secondary_master),

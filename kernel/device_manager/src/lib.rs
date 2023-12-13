@@ -3,6 +3,8 @@
 
 extern crate alloc;
 
+use core::ops::Deref;
+
 use log::{info, debug};
 
 #[cfg(target_arch = "x86_64")]
@@ -87,7 +89,7 @@ pub fn init(
     }
 
     // Initialize/scan the PCI bus to discover PCI devices
-    for dev in pci::pci_device_iter()? {
+    for dev in pci::get_pci_buses()?.lock().iter().flat_map(|b| b.devices.iter()) {
         debug!("Found PCI device: {:X?}", dev);
     }
 
@@ -99,7 +101,7 @@ pub fn init(
 
     // Iterate over all PCI devices and initialize the drivers for the devices we support.
 
-    for dev in pci::pci_device_iter()? {
+    for dev in pci::get_pci_buses()?.lock().iter().flat_map(|b| b.devices.iter()) {
         // Currently we skip Bridge devices, since we have no use for them yet. 
         if dev.class == 0x06 {
             continue;
@@ -124,7 +126,7 @@ pub fn init(
         // Look for networking controllers, specifically ethernet cards
         if dev.class == 0x02 && dev.subclass == 0x00 {
             if dev.vendor_id == e1000::INTEL_VEND && dev.device_id == e1000::E1000_DEV {
-                info!("e1000 PCI device found at: {:?}", dev.location);
+                info!("e1000 PCI device found at: {:?}", dev);
                 let nic = e1000::E1000Nic::init(dev)?;
                 let interface = net::register_device(nic);
                 nic.lock().init_interrupts(interface)?;
@@ -132,7 +134,7 @@ pub fn init(
                 continue;
             }
             if dev.vendor_id == ixgbe::INTEL_VEND && dev.device_id == ixgbe::INTEL_82599 {
-                info!("ixgbe PCI device found at: {:?}", dev.location);
+                info!("ixgbe PCI device found at: {:?}", dev);
                 
                 // Initialization parameters of the NIC.
                 // These can be changed according to the requirements specified in the ixgbe init function.
@@ -143,7 +145,7 @@ pub fn init(
                 
                 let ixgbe_nic = ixgbe::IxgbeNic::init(
                     dev, 
-                    dev.location,
+                    *dev.deref(),
                     VIRT_ENABLED, 
                     None, 
                     RSS_ENABLED, 

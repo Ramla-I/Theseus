@@ -19,6 +19,7 @@ use volatile::Volatile;
 use zerocopy::FromBytes;
 use cpu::CpuId;
 use interrupts::InterruptNumber;
+use static_assertions::assert_not_impl_any;
 
 #[cfg(target_arch = "x86_64")]
 use port_io::Port;
@@ -175,37 +176,55 @@ pub enum InterruptPin {
 }
 
 
+static PCI_BUSES: Once<Mutex<Vec<PciBus>>> = Once::new();
 
 /// Returns a list of all PCI buses in this system.
 /// If the PCI bus hasn't been initialized, this initializes the PCI bus & scans it to enumerates devices.
-pub fn get_pci_buses() -> Result<&'static Vec<PciBus>, &'static str> {
-    static PCI_BUSES: Once<Vec<PciBus>> = Once::new();
+pub fn get_pci_buses() -> Result<&'static Mutex<Vec<PciBus>>, &'static str> {
     PCI_BUSES.try_call_once(scan_pci)
 }
 
 
+// /// Returns a reference to the `PciDevice` with the given bus, slot, func identifier.
+// /// If the PCI bus hasn't been initialized, this initializes the PCI bus & scans it to enumerates devices.
+// pub fn get_pci_device_bsf(bus: u8, slot: u8, func: u8) -> Result<Option<&'static PciDevice>, &'static str> {
+//     for b in get_pci_buses()? {
+//         if b.bus_number == bus {
+//             for d in &b.devices {
+//                 if d.slot == slot && d.func == func {
+//                     return Ok(Some(d));
+//                 }
+//             }
+//         }
+//     }
+
+//     Ok(None)
+// }
+
 /// Returns a reference to the `PciDevice` with the given bus, slot, func identifier.
 /// If the PCI bus hasn't been initialized, this initializes the PCI bus & scans it to enumerates devices.
-pub fn get_pci_device_bsf(bus: u8, slot: u8, func: u8) -> Result<Option<&'static PciDevice>, &'static str> {
-    for b in get_pci_buses()? {
+pub fn get_pci_device_bsf(bus: u8, slot: u8, func: u8) -> Result<Option<PciDevice>, &'static str> {
+    let mut pci_buses = get_pci_buses()?.lock();
+    let mut index = None;
+
+    for b in &*pci_buses {
         if b.bus_number == bus {
-            for d in &b.devices {
+            for (idx, d) in b.devices.iter().enumerate() {
                 if d.slot == slot && d.func == func {
-                    return Ok(Some(d));
+                    index = Some(idx);
                 }
             }
         }
     }
 
-    Ok(None)
+    Ok(index.map(|idx| pci_buses[bus as usize].devices.swap_remove(idx)))
 }
 
-
-/// Returns an iterator that iterates over all `PciDevice`s, in no particular guaranteed order. 
-/// If the PCI bus hasn't been initialized, this initializes the PCI bus & scans it to enumerates devices.
-pub fn pci_device_iter() -> Result<impl Iterator<Item = &'static PciDevice>, &'static str> {
-    Ok(get_pci_buses()?.iter().flat_map(|b| b.devices.iter()))
-}
+// /// Returns an iterator that iterates over all `PciDevice`s, in no particular guaranteed order. 
+// /// If the PCI bus hasn't been initialized, this initializes the PCI bus & scans it to enumerates devices.
+// pub fn pci_device_iter() -> Result<impl Iterator<Item = &'static PciDevice>, &'static str> {
+//     Ok(get_pci_buses()?.iter().flat_map(|b| b.devices.iter()))
+// }
 
 
 /// A PCI bus, which contains a list of PCI devices on that bus.
@@ -220,7 +239,7 @@ pub struct PciBus {
 
 /// Scans all PCI Buses (brute force iteration) to enumerate PCI Devices on each bus.
 /// Initializes structures containing this information. 
-fn scan_pci() -> Result<Vec<PciBus>, &'static str> {
+fn scan_pci() -> Result<Mutex<Vec<PciBus>>, &'static str> {
     #[cfg(target_arch = "aarch64")]
     PCI_CONFIG_SPACE.lock().try_call_once(|| {
         let config = BOARD_CONFIG.pci_ecam;
@@ -300,7 +319,7 @@ fn scan_pci() -> Result<Vec<PciBus>, &'static str> {
         }
     }
 
-    Ok(buses)   
+    Ok(Mutex::new(buses))   
 }
 
 impl RegisterSpan {
@@ -492,33 +511,7 @@ impl PciLocation {
         self.pci_write_raw(register, value as _)
     }
 
-    /// Sets the PCI device's bit 3 in the command portion, which is apparently needed to activate DMA (??)
-    pub fn pci_set_command_bus_master_bit(&self) {
-        let value = self.pci_read_16(PCI_COMMAND);
-        trace!("pci_set_command_bus_master_bit: PciDevice: {}, read value: {:#x}", self, value);
-
-        self.pci_write_16(PCI_COMMAND, value | (1 << 2));
-
-        trace!("pci_set_command_bus_master_bit: PciDevice: {}, read value AFTER WRITE CMD: {:#x}", 
-            self,
-            self.pci_read_16(PCI_COMMAND),
-        );
-    }
-
-    /// Sets the PCI device's command bit 10 to disable legacy interrupts
-    pub fn pci_set_interrupt_disable_bit(&self) {
-        let command = self.pci_read_16(PCI_COMMAND);
-        trace!("pci_set_interrupt_disable_bit: PciDevice: {}, read value: {:#x}", self, command);
-
-        const INTERRUPT_DISABLE: u16 = 1 << 10;
-        self.pci_write_16(PCI_COMMAND, command | INTERRUPT_DISABLE);
-
-        trace!("pci_set_interrupt_disable_bit: PciDevice: {} read value AFTER WRITE CMD: {:#x}", 
-            self,
-            self.pci_read_16(PCI_COMMAND),
-        );
-    }
-
+    
     /// Explores the PCI config space and returns address of requested capability, if present.
     /// PCI capabilities are stored as a linked list in the PCI config space,
     /// with each capability storing the pointer to the next capability right after its ID.
@@ -587,7 +580,7 @@ impl fmt::Debug for PciLocation {
 #[derive(Debug)]
 pub struct PciDevice {
     /// the bus, slot, and function number that locates this PCI device in the bus tree.
-    pub location: PciLocation,
+    location: PciLocation,
 
     /// The class code, used to determine device type.
     pub class: u8,
@@ -609,6 +602,8 @@ pub struct PciDevice {
     pub int_pin: u8,
     pub int_line: u8,
 }
+
+assert_not_impl_any!(PciDevice: DerefMut, Clone);
 
 impl PciDevice {
     /// Returns the base address of the memory region specified by the given `BAR` 
@@ -679,6 +674,33 @@ impl PciDevice {
         mem_size += 1;                                     // Step 4
         self.pci_write_32(bar_reg_def, original_value);    // Step 5
         mem_size
+    }
+
+    /// Sets the PCI device's bit 3 in the command portion, which is apparently needed to activate DMA (??)
+    pub fn pci_set_command_bus_master_bit(&self) {
+        let value = self.pci_read_16(PCI_COMMAND);
+        trace!("pci_set_command_bus_master_bit: PciDevice: {}, read value: {:#x}", self.deref(), value);
+
+        self.pci_write_16(PCI_COMMAND, value | (1 << 2));
+
+        trace!("pci_set_command_bus_master_bit: PciDevice: {}, read value AFTER WRITE CMD: {:#x}", 
+            self.deref(),
+            self.pci_read_16(PCI_COMMAND),
+        );
+    }
+
+    /// Sets the PCI device's command bit 10 to disable legacy interrupts
+    pub fn pci_set_interrupt_disable_bit(&self) {
+        let command = self.pci_read_16(PCI_COMMAND);
+        trace!("pci_set_interrupt_disable_bit: PciDevice: {}, read value: {:#x}", self.deref(), command);
+
+        const INTERRUPT_DISABLE: u16 = 1 << 10;
+        self.pci_write_16(PCI_COMMAND, command | INTERRUPT_DISABLE);
+
+        trace!("pci_set_interrupt_disable_bit: PciDevice: {} read value AFTER WRITE CMD: {:#x}", 
+            self.deref(),
+            self.pci_read_16(PCI_COMMAND),
+        );
     }
 
     /// Enable MSI interrupts for a PCI device.
@@ -837,12 +859,34 @@ impl Deref for PciDevice {
         &self.location
     }
 }
-impl DerefMut for PciDevice {
-    fn deref_mut(&mut self) -> &mut PciLocation {
-        &mut self.location
+
+impl Drop for PciDevice {
+    fn drop(&mut self) {
+        let pci_bus = &mut *PCI_BUSES.get().expect("PCI Bus not initialized").lock();
+        assert!((self.bus as usize) < pci_bus.len());
+
+        let dev = PciDevice{ // this is so ugly, but I can't implement Copy or have a default Device because [0,0,0] could be an actual device
+            location: self.location,
+            class: self.class,
+            subclass: self.subclass,
+            prog_if: self.prog_if,
+            bars: self.bars,
+            vendor_id: self.vendor_id,
+            device_id: self.device_id,
+            command: self.command,
+            status: self.status,
+            revision_id: self.revision_id,
+            cache_line_size: self.cache_line_size,
+            latency_timer: self.latency_timer,
+            header_type: self.header_type,
+            bist: self.bist,
+            int_pin: self.int_pin,
+            int_line: self.int_line,
+        };
+
+        pci_bus[self.bus as usize].devices.push(dev);
     }
 }
-
 
 
 /// Lists the 2 possible PCI configuration space access mechanisms

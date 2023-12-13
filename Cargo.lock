@@ -2648,6 +2648,7 @@ dependencies = [
  "memory",
  "port_io",
  "spin 0.9.4",
+ "static_assertions",
  "volatile 0.2.7",
  "zerocopy",
 ]

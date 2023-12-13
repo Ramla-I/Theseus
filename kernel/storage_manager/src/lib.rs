@@ -54,7 +54,7 @@ pub fn storage_devices() -> impl Iterator<Item = StorageDeviceRef> {
 pub fn init_device(pci_device: &PciDevice) -> Result<Option<StorageControllerRef>, &'static str> {
     // We currently only support IDE controllers for ATA drives (aka PATA).
     let storage_controller = if pci_device.class == 0x01 && pci_device.subclass == 0x01 {
-        info!("IDE controller PCI device found at: {:?}", pci_device.location);
+        info!("IDE controller PCI device found at: {:?}", pci_device);
         let ide_controller = ata::IdeController::new(pci_device)?;
         let storage_controller_ref: StorageControllerRef = Arc::new(Mutex::new(ide_controller));
         STORAGE_CONTROLLERS.lock().push(Arc::clone(&storage_controller_ref));
