@@ -2538,6 +2538,8 @@ dependencies = [
  "kernel_config",
  "log",
  "memory_structs",
+ "prusti_page_chunk",
+ "prusti_representation_creator",
  "spin 0.9.4",
  "static_assertions",
 ]
@@ -2841,6 +2843,7 @@ dependencies = [
  "prusti_external_spec",
  "prusti_representation_creator",
  "range_inclusive",
+ "spin 0.9.4",
 ]
 
 [[package]]

@@ -22,11 +22,11 @@ use prusti_external_spec::{trusted_option::*,trusted_result::*};
 use core::ops::{Deref, DerefMut};
 use kernel_config::memory::{MAX_PAGE_NUMBER, MIN_PAGE_NUMBER};
 
-struct PageChunkCreator(RepresentationCreator<PageRange, PageChunk>);
+pub struct PageChunkCreator(RepresentationCreator<PageRange, PageChunk>);
 
 impl PageChunkCreator {
     #[trusted]
-    fn new() -> Self {
+    pub const fn new() -> Self { // To Do: This function should only be called once
         PageChunkCreator(RepresentationCreator::new(PageChunk::trusted_new, true))
     }
 }
@@ -47,7 +47,7 @@ impl DerefMut for PageChunkCreator {
 
 /// A struct representing an unallocated region in memory.
 /// Its functions are formally verified to prevent range overlaps between chunks.
-// #[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub struct PageChunk {
     pages: PageRange
 }
@@ -76,6 +76,10 @@ impl PageChunk {
     #[pure]
     pub fn is_empty(&self) -> bool {
         self.pages.is_empty()
+    }
+
+    pub const fn range(&self) -> PageRange {
+        self.pages
     }
 
     /// Private function that creates a chunk without any checks.

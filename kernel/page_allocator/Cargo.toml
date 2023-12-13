@@ -18,5 +18,11 @@ path = "../kernel_config"
 [dependencies.memory_structs]
 path = "../memory_structs"
 
+[dependencies.prusti_page_chunk]
+path = "../prusti_page_chunk"
+
+[dependencies.prusti_representation_creator]
+path = "../prusti_representation_creator"
+
 [lib]
 crate-type = ["rlib"]

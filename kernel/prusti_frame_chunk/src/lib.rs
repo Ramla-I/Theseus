@@ -22,6 +22,27 @@ use prusti_external_spec::{trusted_option::*,trusted_result::*};
 use core::ops::{Deref, DerefMut};
 use kernel_config::memory::{MAX_PAGE_NUMBER, MIN_PAGE_NUMBER};
 
+#[cfg(not(prusti))] 
+static INIT: spin::Once<bool> = spin::Once::new();
+
+#[cfg(not(prusti))] // prusti can't reason about fn pointers
+pub fn init_frame_chunk() -> Result<fn(FrameRange) -> FrameChunk, &'static str> {
+    if INIT.is_completed() {
+        Err("Trusted Chunk has already been initialized and callback has been returned")
+    } else {
+        INIT.call_once(|| true);
+        Ok(create_from_unmapped)
+    }
+}
+
+#[requires(frames.start_frame() <= frames.end_frame())]
+#[ensures(result.start_frame() == frames.start_frame())]
+#[ensures(result.end_frame() == frames.end_frame())]
+fn create_from_unmapped(frames: FrameRange) -> FrameChunk {
+    FrameChunk::trusted_new(&frames)
+}
+
+
 struct FrameChunkCreator(RepresentationCreator<FrameRange, FrameChunk>);
 
 impl FrameChunkCreator {

@@ -44,7 +44,7 @@ impl<T: ResourceIdentifier, R> RepresentationCreator<T, R> {
             None => !pre_heap
         }
     )]
-    pub fn new(constructor: fn(&T) -> R, pre_heap: bool) -> Self {
+    pub const fn new(constructor: fn(&T) -> R, pre_heap: bool) -> Self {
         let array = if pre_heap {
             Some(StaticArray::new())
         } else {

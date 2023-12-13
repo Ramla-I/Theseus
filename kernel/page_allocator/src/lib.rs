@@ -28,7 +28,12 @@ extern crate memory_structs;
 extern crate spin;
 #[macro_use] extern crate static_assertions;
 extern crate intrusive_collections;
+extern crate prusti_page_chunk;
+extern crate prusti_representation_creator;
+
 use intrusive_collections::Bound;
+use prusti_page_chunk::{PageChunk, PageChunkCreator};
+use prusti_representation_creator::RepresentationCreationError;
 
 mod static_array_rb_tree;
 // mod static_array_linked_list;
@@ -66,6 +71,7 @@ const MAX_PAGE: Page = Page::containing_address(VirtualAddress::new_canonical(MA
 /// The single, system-wide list of free chunks of virtual memory pages.
 static FREE_PAGE_LIST: Mutex<StaticArrayRBTree<FreePages>> = Mutex::new(StaticArrayRBTree::empty());
 
+static CHUNK_CREATOR: Mutex<PageChunkCreator> = Mutex::new(PageChunkCreator::new());
 
 /// Initialize the page allocator.
 ///
@@ -101,7 +107,7 @@ pub fn init(end_vaddr_of_low_designated_region: VirtualAddress) -> Result<(), &'
 				Page::containing_address(VirtualAddress::zero()),
 				designated_low_end,
 			)
-		)),
+		)?),
 		// The second region contains the massive range from the end of the low designated region
 		// to the beginning of the high designated region, which comprises the majority of the address space.
 		// The beginning of the high designated region starts at the reserved P4 entry used to
@@ -111,7 +117,7 @@ pub fn init(end_vaddr_of_low_designated_region: VirtualAddress) -> Result<(), &'
 				designated_low_end + 1,
 				DESIGNATED_PAGES_HIGH_START - 1,
 			)
-		)),
+		)?),
 		// Here, we skip the addresses covered by the `UPCOMING_PAGE_TABLE_RECURSIVE_P4_INDEX`.
 
 		// The third region contains the range of addresses reserved for the heap,
@@ -122,7 +128,7 @@ pub fn init(end_vaddr_of_low_designated_region: VirtualAddress) -> Result<(), &'
 				// This is the page right below the beginning of the 510th entry of the top-level P4 page table.
 				Page::containing_address(VirtualAddress::new_canonical(RECURSIVE_P4_START - 1)),
 			)
-		)),
+		)?),
 		// Here, we skip the addresses covered by the `RECURSIVE_P4_INDEX`.
 
 		// The fourth region contains all pages in the 511th (last) entry of P4.
@@ -131,7 +137,7 @@ pub fn init(end_vaddr_of_low_designated_region: VirtualAddress) -> Result<(), &'
 				Page::containing_address(VirtualAddress::new_canonical(KERNEL_TEXT_START)),
 				MAX_PAGE,
 			)
-		)),
+		)?),
 		None, None, None, None,
 		None, None, None, None, None, None, None, None,
 		None, None, None, None, None, None, None, None,
@@ -165,7 +171,7 @@ pub fn init(end_vaddr_of_low_designated_region: VirtualAddress) -> Result<(), &'
 #[derive(Eq)]
 pub struct Pages<const S: MemoryState> {
 	/// The Pages covered by this chunk, an inclusive range. 
-	pages: PageRange,
+	pages: PageChunk,
 }
 
 /// A type alias for `Pages` in the `Free` state.
@@ -189,15 +195,27 @@ impl FreePages {
 	/// Creates a new `Pages` object in the `Free` state.
     ///
     /// The page allocator logic is responsible for ensuring that no two `Pages` objects overlap.
-    pub(crate) fn new(pages: PageRange) -> Self {
-        Pages {
-            pages,
-        }
+    pub(crate) fn new(pages: PageRange) -> Result<Self, &'static str> {
+		if pages.is_empty() {
+			return Err("Could not create a chunk for an empty range, use the empty() function");
+		}
+		let verified_chunk = CHUNK_CREATOR.lock().create_unique_representation(pages)
+			.map(|(chunk, _)| chunk)
+			.map_err(|chunk_error|{
+                match chunk_error {
+                    RepresentationCreationError::Overlap(_idx) => "Failed to create a verified chunk due to an overlap",
+                    RepresentationCreationError::NoSpace => "Before the heap is initialized, requested more chunks than there is space for (64)",
+                }
+            })?;
+
+        Ok(Pages {
+            pages: verified_chunk
+        })
     }
 
     /// Consumes this `Pages` in the `Free` state and converts them into the `Allocated` state.
     pub fn into_allocated_pages(mut self) -> AllocatedPages {  
-        let pages = core::mem::replace(&mut self.pages, PageRange::empty());  
+        let pages = core::mem::replace(&mut self.pages, PageChunk::empty());  
         let f = Pages {
             pages
         };
@@ -210,7 +228,7 @@ impl AllocatedPages {
     /// Consumes this `Frames` in the `Allocated` state and converts them into the `Mapped` state.
     /// This should only be called once a `MappedPages` has been created from the `Frames`.
     pub fn into_mapped_pages(mut self) -> PagesMapped {    
-        let pages = core::mem::replace(&mut self.pages, PageRange::empty());  
+        let pages = core::mem::replace(&mut self.pages, PageChunk::empty());  
         let f = Pages {
             pages
         };
@@ -222,7 +240,7 @@ impl AllocatedPages {
 impl UnmappedPages {
     /// Consumes this `Frames` in the `Unmapped` state and converts them into the `Allocated` state.
     pub fn into_allocated_pages(mut self) -> AllocatedPages {    
-        let pages = core::mem::replace(&mut self.pages, PageRange::empty());  
+        let pages = core::mem::replace(&mut self.pages, PageChunk::empty());  
         let f = Pages {
             pages
         };
@@ -234,7 +252,7 @@ impl UnmappedPages {
 impl PagesMapped {
     /// Consumes this `Frames` in the `Unmapped` state and converts them into the `Allocated` state.
     pub fn into_unmapped_pages(mut self) -> UnmappedPages {    
-        let pages = core::mem::replace(&mut self.pages, PageRange::empty());  
+        let pages = core::mem::replace(&mut self.pages, PageChunk::empty());  
         let f = Pages {
             pages
         };
@@ -271,7 +289,7 @@ impl<const S: MemoryState> Borrow<Page> for &'_ Pages<S> {
 }
 impl<const S: MemoryState> fmt::Debug for Pages <S>{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		write!(f, "Pages({:?})", self.pages)
+		write!(f, "Pages({:?})", self.pages.deref())
 	}
 }
 
@@ -287,7 +305,7 @@ impl<const S: MemoryState> Pages<S> {
     /// Can be used as a placeholder, but will not permit any real usage. 
     pub const fn empty() -> Pages<S> {
         Pages {
-			pages: PageRange::empty()
+			pages: PageChunk::empty()
 		}
 	}
 
@@ -330,7 +348,7 @@ impl<const S: MemoryState> Pages<S> {
 	/// If the range covers addresses `0x2000` to `0x4000`,
 	/// then `offset_of_address(0x3500)` would return `Some(0x1500)`.
 	pub const fn offset_of_address(&self, addr: VirtualAddress) -> Option<usize> {
-		self.pages.offset_of_address(addr)
+		self.pages.range().offset_of_address(addr)
 	}
 
 	/// Returns the `VirtualAddress` at the given offset into this range of pages,
@@ -343,7 +361,7 @@ impl<const S: MemoryState> Pages<S> {
 	/// then `address_at_offset(0x1500)` would return `Some(0x3500)`,
 	/// and `address_at_offset(0x2000)` would return `None`.
 	pub const fn address_at_offset(&self, offset: usize) -> Option<VirtualAddress> {
-		self.pages.address_at_offset(offset)
+		self.pages.range().address_at_offset(offset)
 	}
 
 	/// Merges the given `AllocatedPages` object `ap` into this `AllocatedPages` object (`self`).
@@ -353,17 +371,21 @@ impl<const S: MemoryState> Pages<S> {
 	/// that is, `self.end` must equal `ap.start`. 
 	/// If this condition is met, `self` is modified and `Ok(())` is returned,
 	/// otherwise `Err(ap)` is returned.
-	pub fn merge(&mut self, ap: Pages<S>) -> Result<(), Pages<S>> {
-		// make sure the pages are contiguous
-		if *ap.start() != (*self.end() + 1) {
-			return Err(ap);
-		}
+	/// 
+	/// To Do: update comments and since we allow the pages to be contiguous before or after
+	pub fn merge(&mut self, mut ap: Pages<S>) -> Result<(), Pages<S>> {
+		let other_chunk = core::mem::replace(&mut ap.pages, PageChunk::empty());
 
-		let pages = PageRange::new(*self.start(), *ap.end());
-		core::mem::forget(ap); 
-		self.pages = pages;
-		// ensure the now-merged AllocatedPages doesn't run its drop handler and free its pages.
-		Ok(())
+		match self.pages.merge(other_chunk){
+			Ok(_) => {
+				core::mem::forget(ap);
+				Ok(())
+			},
+			Err(chunk) => {
+				ap.pages = chunk;
+				Err(ap)
+			}
+		}
 	}
 
 	/// Splits up the given `Frames` into multiple smaller `Frames`.
@@ -375,34 +397,24 @@ impl<const S: MemoryState> Pages<S> {
     /// 
     /// If `frames_to_extract` is not contained within `self`, then `self` is returned unchanged within an `Err`.
     pub fn split_range(
-        self,
+        mut self,
         pages_to_extract: PageRange
     ) -> Result<SplitPages<S>, Self> {
-        
-        if !self.contains_range(&pages_to_extract) {
-            return Err(self);
-        }
-        
-        let start_page = *pages_to_extract.start();
-        let start_to_end = pages_to_extract;
-        
-        let before_start = if start_page == MIN_PAGE || start_page == *self.start() {
-            None
-        } else {
-            Some(PageRange::new(*self.start(), *start_to_end.start() - 1))
-        };
+        let chunk = core::mem::replace(&mut self.pages, PageChunk::empty());
 
-        let after_end = if *start_to_end.end() == MAX_PAGE || *start_to_end.end() == *self.end() {
-            None
-        } else {
-            Some(PageRange::new(*start_to_end.end() + 1, *self.end()))
+        let (before, new_allocation, after) = match chunk.split_range(pages_to_extract) {
+            Ok(x) => x,
+            Err(orig_chunk) => {
+                self.pages = orig_chunk;
+                return Err(self);
+            }
         };
 
         core::mem::forget(self);
         Ok(SplitPages { 
-			before_start: before_start.map(|pages| Pages { pages }), 
-			start_to_end: Pages { pages: start_to_end }, 
-			after_end: after_end.map(|pages| Pages { pages })
+			before_start: before.map(|pages| Pages { pages }), 
+			start_to_end: Pages { pages: new_allocation }, 
+			after_end: after.map(|pages| Pages { pages })
 		})
     }
 
@@ -419,28 +431,15 @@ impl<const S: MemoryState> Pages<S> {
     /// Returns an `Err` containing this `AllocatedPages` if `at_page` is otherwise out of bounds.
 	/// 
     /// [`core::slice::split_at()`]: https://doc.rust-lang.org/core/primitive.slice.html#method.split_at
-    pub fn split_at(self, at_page: Page) -> Result<(Self, Self), Self> {
-        if self.is_empty() { return Err(self); }
-        
-		let end_of_first = at_page - 1;
+    pub fn split_at(mut self, at_page: Page) -> Result<(Self, Self), Self> {
+        let chunk = core::mem::replace(&mut self.pages, PageChunk::empty());
 
-        let (first, second) = if at_page == *self.start() && at_page <= *self.end() {
-            let first  = PageRange::empty();
-            let second = PageRange::new(at_page, *self.end());
-            (first, second)
-        } 
-        else if at_page == (*self.end() + 1) && end_of_first >= *self.start() {
-            let first  = PageRange::new(*self.start(), *self.end()); 
-            let second = PageRange::empty();
-            (first, second)
-        }
-        else if at_page > *self.start() && end_of_first <= *self.end() {
-            let first  = PageRange::new(*self.start(), end_of_first);
-            let second = PageRange::new(at_page, *self.end());
-            (first, second)
-        }
-        else {
-            return Err(self);
+        let (first, second) = match chunk.split_at(at_page){
+            Ok(x) => x,
+            Err(orig_chunk) => {
+                self.pages = orig_chunk;
+                return Err(self);
+            }
         };
 
         // ensure the original AllocatedPages doesn't run its drop handler and free its pages.
@@ -459,7 +458,7 @@ impl<const S: MemoryState> Drop for Pages<S> {
 				if self.size_in_pages() == 0 { return; }
 				// trace!("page_allocator: deallocating {:?}", self);
 	
-				let pages = core::mem::replace(&mut self.pages, PageRange::empty());  
+				let pages = core::mem::replace(&mut self.pages, PageChunk::empty());  
                 let mut free_pages: FreePages = Pages { pages };
         
 				let mut list = FREE_PAGE_LIST.lock();
@@ -523,19 +522,19 @@ impl<const S: MemoryState> Drop for Pages<S> {
 						return;
 					}
 				}
-				log::error!("BUG: couldn't insert deallocated {:?} into free page list", self.pages);
+				log::error!("BUG: couldn't insert deallocated {:?} into free page list", self.pages.deref());
 			},
             MemoryState::Allocated => { 
                 // trace!("Converting AllocatedPages to FreePages. Drop handler will be called again {:?}", self.pages);
-                let pages = core::mem::replace(&mut self.pages, PageRange::empty());  
+                let pages = core::mem::replace(&mut self.pages, PageChunk::empty());  
 				let _to_drop = FreePages { pages }; 
             }
             MemoryState::Mapped => {
-                let pages = core::mem::replace(&mut self.pages, PageRange::empty());  
+                let pages = core::mem::replace(&mut self.pages, PageChunk::empty());  
 			    let _to_drop = UnmappedPages { pages };
 			}	
             MemoryState::Unmapped => {
-                let pages = core::mem::replace(&mut self.pages, PageRange::empty());  
+                let pages = core::mem::replace(&mut self.pages, PageChunk::empty());  
                 let _to_drop = AllocatedPages { pages };
             }
 
