@@ -1200,9 +1200,26 @@ dependencies = [
  "kernel_config",
  "log",
  "memory_structs",
+ "prusti_frame_chunk",
+ "prusti_representation_creator",
  "range_inclusive",
  "spin 0.9.4",
  "static_assertions",
+]
+
+[[package]]
+name = "frame_range_callbacks"
+version = "0.1.0"
+dependencies = [
+ "core2",
+ "frame_allocator",
+ "log",
+ "memory_structs",
+ "page_table_entry",
+ "prusti_frame_chunk",
+ "range_inclusive",
+ "spin 0.9.4",
+ "x86_64",
 ]
 
 [[package]]
@@ -2005,6 +2022,7 @@ dependencies = [
  "bitflags",
  "boot_info",
  "frame_allocator",
+ "frame_range_callbacks",
  "kernel_config",
  "lazy_static",
  "log",

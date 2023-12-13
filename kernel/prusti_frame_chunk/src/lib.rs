@@ -43,11 +43,11 @@ fn create_from_unmapped(frames: FrameRange) -> FrameChunk {
 }
 
 
-struct FrameChunkCreator(RepresentationCreator<FrameRange, FrameChunk>);
+pub struct FrameChunkCreator(RepresentationCreator<FrameRange, FrameChunk>);
 
 impl FrameChunkCreator {
     #[trusted]
-    fn new() -> Self {
+    pub const fn new() -> Self { // To Do: this should be private and only called once
         FrameChunkCreator(RepresentationCreator::new(FrameChunk::trusted_new, true))
     }
 }
@@ -68,7 +68,7 @@ impl DerefMut for FrameChunkCreator {
 
 /// A struct representing an unallocated region in memory.
 /// Its functions are formally verified to prevent range overlaps between chunks.
-// #[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub struct FrameChunk {
     frames: FrameRange
 }

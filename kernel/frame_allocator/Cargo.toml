@@ -15,3 +15,5 @@ range_inclusive = { path = "../../libs/range_inclusive" }
 
 kernel_config = { path = "../kernel_config" }
 memory_structs = { path = "../memory_structs" }
+prusti_frame_chunk = { path = "../prusti_frame_chunk" }
+prusti_representation_creator = { path = "../prusti_representation_creator" }
