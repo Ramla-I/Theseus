@@ -20,6 +20,7 @@ use zerocopy::FromBytes;
 use cpu::CpuId;
 use interrupts::InterruptNumber;
 use static_assertions::assert_not_impl_any;
+use prusti_representation_creator::{RepresentationCreator, RepresentationCreationError ,resource_identifier::ResourceIdentifier};
 
 #[cfg(target_arch = "x86_64")]
 use port_io::Port;
@@ -175,6 +176,7 @@ pub enum InterruptPin {
     D,
 }
 
+static DEVICE_CREATOR: Mutex<PciDeviceCreator> = Mutex::new(PciDeviceCreator::new());
 
 static PCI_BUSES: Once<Mutex<Vec<PciBus>>> = Once::new();
 
@@ -231,7 +233,7 @@ pub fn get_pci_device_bsf(bus: u8, slot: u8, func: u8) -> Result<Option<PciDevic
 #[derive(Debug)]
 pub struct PciBus {
     /// The number identifier of this PCI bus.
-    pub bus_number: u8,
+    bus_number: u8,
     /// The list of devices attached to this PCI bus.
     pub devices: Vec<PciDevice>,
 }
@@ -251,6 +253,7 @@ fn scan_pci() -> Result<Mutex<Vec<PciBus>>, &'static str> {
         }
     })?;
 
+    let mut device_creator = DEVICE_CREATOR.lock();
     let mut buses: Vec<PciBus> = Vec::new();
 
     for bus in 0..MAX_PCI_BUSES {
@@ -281,31 +284,37 @@ fn scan_pci() -> Result<Mutex<Vec<PciBus>>, &'static str> {
                     continue;
                 }
 
-                let device = PciDevice {
-                    vendor_id,
-                    device_id:        location.pci_read_16(PCI_DEVICE_ID), 
-                    command:          location.pci_read_16(PCI_COMMAND),
-                    status:           location.pci_read_16(PCI_STATUS),
-                    revision_id:      location.pci_read_8( PCI_REVISION_ID),
-                    prog_if:          location.pci_read_8( PCI_PROG_IF),
-                    subclass:         location.pci_read_8( PCI_SUBCLASS),
-                    class:            location.pci_read_8( PCI_CLASS),
-                    cache_line_size:  location.pci_read_8( PCI_CACHE_LINE_SIZE),
-                    latency_timer:    location.pci_read_8( PCI_LATENCY_TIMER),
-                    header_type:      location.pci_read_8( PCI_HEADER_TYPE),
-                    bist:             location.pci_read_8( PCI_BIST),
-                    bars:             [
-                                          location.pci_read_32(PCI_BAR0),
-                                          location.pci_read_32(PCI_BAR1), 
-                                          location.pci_read_32(PCI_BAR2), 
-                                          location.pci_read_32(PCI_BAR3), 
-                                          location.pci_read_32(PCI_BAR4), 
-                                          location.pci_read_32(PCI_BAR5), 
-                                      ],
-                    int_pin:          location.pci_read_8(PCI_INTERRUPT_PIN),
-                    int_line:         location.pci_read_8(PCI_INTERRUPT_LINE),
-                    location,
-                };
+                let mut device = device_creator.create_unique_representation(location)
+                    .map(|(dev, _)| dev)
+                    .map_err(|err|{
+                        match err {
+                            RepresentationCreationError::Overlap(_idx) => "Failed to create a PCI devicw due to an overlap",
+                            RepresentationCreationError::NoSpace => "Before the heap is initialized, requested more pci devices than there is space for (64)",
+                        }
+                    })?;
+                
+                device.vendor_id            = vendor_id;
+                device.device_id            = location.pci_read_16(PCI_DEVICE_ID);
+                device.command              = location.pci_read_16(PCI_COMMAND);
+                device.status               = location.pci_read_16(PCI_STATUS);
+                device.revision_id          = location.pci_read_8( PCI_REVISION_ID);
+                device.prog_if              = location.pci_read_8( PCI_PROG_IF);
+                device.subclass             = location.pci_read_8( PCI_SUBCLASS);
+                device.class                = location.pci_read_8( PCI_CLASS);
+                device.cache_line_size      = location.pci_read_8( PCI_CACHE_LINE_SIZE);
+                device.latency_timer        = location.pci_read_8( PCI_LATENCY_TIMER);
+                device.header_type          = location.pci_read_8( PCI_HEADER_TYPE);
+                device.bist                 = location.pci_read_8( PCI_BIST);
+                device.bars                 = [
+                                                location.pci_read_32(PCI_BAR0),
+                                                location.pci_read_32(PCI_BAR1), 
+                                                location.pci_read_32(PCI_BAR2), 
+                                                location.pci_read_32(PCI_BAR3), 
+                                                location.pci_read_32(PCI_BAR4), 
+                                                location.pci_read_32(PCI_BAR5), 
+                                            ];
+                device.int_pin              = location.pci_read_8(PCI_INTERRUPT_PIN);
+                device.int_line             = location.pci_read_8(PCI_INTERRUPT_LINE);
 
                 device_list.push(device);
             }
@@ -348,6 +357,29 @@ impl RegisterSpan {
     }
 }
 
+pub struct PciDeviceCreator(RepresentationCreator<PciLocation, PciDevice>);
+
+impl PciDeviceCreator {
+    const fn new() -> Self { // To Do: this should be private and only called once
+        PciDeviceCreator(RepresentationCreator::new(PciDevice::trusted_new, false))
+    }
+}
+
+impl Deref for PciDeviceCreator {
+    type Target = RepresentationCreator<PciLocation, PciDevice>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for PciDeviceCreator {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+
 /// The bus, slot, and function number of a given PCI device.
 /// This offers methods for reading and writing the PCI config space. 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
@@ -355,6 +387,12 @@ pub struct PciLocation {
     bus:  u8,
     slot: u8,
     func: u8,
+}
+
+impl ResourceIdentifier for PciLocation {
+    fn overlaps(&self,other: &Self) -> bool {
+        self.bus == other.bus && self.slot == other.slot && self.func == other.func
+    }
 }
 
 impl PciLocation {
@@ -606,6 +644,27 @@ pub struct PciDevice {
 assert_not_impl_any!(PciDevice: DerefMut, Clone);
 
 impl PciDevice {
+    fn trusted_new(location: &PciLocation) -> Self{
+        PciDevice {
+            location: *location,
+            class: 0,
+            subclass: 0,
+            prog_if: 0,
+            bars: [0; 6],
+            vendor_id: 0,
+            device_id: 0, 
+            command: 0,
+            status: 0,
+            revision_id: 0,
+            cache_line_size: 0,
+            latency_timer: 0,
+            header_type: 0,
+            bist: 0,
+            int_pin: 0,
+            int_line: 0,
+        }
+    }
+
     /// Returns the base address of the memory region specified by the given `BAR` 
     /// (Base Address Register) for this PCI device. 
     ///

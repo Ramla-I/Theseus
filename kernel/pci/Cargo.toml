@@ -16,6 +16,7 @@ static_assertions = "1.1.0"
 memory = { path = "../memory" }
 cpu = { path = "../cpu" }
 interrupts = { path = "../interrupts" }
+prusti_representation_creator = { path = "../prusti_representation_creator" }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 port_io = { path = "../../libs/port_io" }

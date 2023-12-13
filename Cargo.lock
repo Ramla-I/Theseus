@@ -2647,6 +2647,7 @@ dependencies = [
  "log",
  "memory",
  "port_io",
+ "prusti_representation_creator",
  "spin 0.9.4",
  "static_assertions",
  "volatile 0.2.7",
