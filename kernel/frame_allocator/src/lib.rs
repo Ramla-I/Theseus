@@ -1335,6 +1335,9 @@ pub fn convert_frame_allocator_to_heap_based() {
     FREE_RESERVED_FRAMES_LIST.lock().convert_to_heap_allocated();
     GENERAL_REGIONS.lock().convert_to_heap_allocated();
     RESERVED_REGIONS.lock().convert_to_heap_allocated();
+
+    CHUNK_CREATOR.lock().switch_to_heap_allocated()
+        .expect("BUG: Failed to switch the chunk allocator to heap allocated. May have been called twice.");
 }
 
 /// A debugging function used to dump the full internal state of the frame allocator. 

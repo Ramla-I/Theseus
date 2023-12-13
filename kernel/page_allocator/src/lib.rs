@@ -1099,6 +1099,9 @@ pub fn allocate_pages_by_bytes_in_range(
 #[doc(hidden)] 
 pub fn convert_page_allocator_to_heap_based() {
 	FREE_PAGE_LIST.lock().convert_to_heap_allocated();
+
+	CHUNK_CREATOR.lock().switch_to_heap_allocated()
+		.expect("BUG: Failed to switch the chunk allocator to heap allocated. May have been called twice.");
 }
 
 /// A debugging function used to dump the full internal state of the page allocator. 
