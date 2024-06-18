@@ -384,9 +384,9 @@ impl DerefMut for PciDeviceCreator {
 /// This offers methods for reading and writing the PCI config space. 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct PciLocation {
-    bus:  u8,
-    slot: u8,
-    func: u8,
+    bus:  u8, // 8 bits
+    slot: u8, // 5 bits (aka device)
+    func: u8, // 3 bits
 }
 
 impl ResourceIdentifier for PciLocation {
@@ -924,24 +924,7 @@ impl Drop for PciDevice {
         let pci_bus = &mut *PCI_BUSES.get().expect("PCI Bus not initialized").lock();
         assert!((self.bus as usize) < pci_bus.len());
 
-        let dev = PciDevice{ // this is so ugly, but I can't implement Copy or have a default Device because [0,0,0] could be an actual device
-            location: self.location,
-            class: self.class,
-            subclass: self.subclass,
-            prog_if: self.prog_if,
-            bars: self.bars,
-            vendor_id: self.vendor_id,
-            device_id: self.device_id,
-            command: self.command,
-            status: self.status,
-            revision_id: self.revision_id,
-            cache_line_size: self.cache_line_size,
-            latency_timer: self.latency_timer,
-            header_type: self.header_type,
-            bist: self.bist,
-            int_pin: self.int_pin,
-            int_line: self.int_line,
-        };
+        let dev = PciDevice{ .. *self };
 
         pci_bus[self.bus as usize].devices.push(dev);
     }

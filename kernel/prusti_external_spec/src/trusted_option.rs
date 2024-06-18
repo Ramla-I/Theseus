@@ -21,6 +21,9 @@ impl<T: PartialEq + Copy> core::option::Option<T> {
     #[ensures(result === old(snap(self)))]
     #[ensures(self.is_none())]
     pub fn take(&mut self) -> Option<T>;
+
+    #[pure]
+    pub const fn as_ref(&self) -> Option<&T>;
 }
 
 #[extern_spec]

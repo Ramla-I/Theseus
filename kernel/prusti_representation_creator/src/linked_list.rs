@@ -187,7 +187,7 @@ impl<T: ResourceIdentifier> List<T> {
     #[ensures(forall(|i: usize, j: usize| (i < self.len() && i < j && j < self.len()) ==> 
         !self.lookup(j).overlaps(&self.lookup(i)))
     )]
-    pub fn push_unique_with_precond(&mut self, elem: T) -> Result<(),usize> {
+    pub fn push_with_unique_precond(&mut self, elem: T) -> Result<(),usize> {
         match self.elem_overlaps_in_list(elem, 0) {
             Some(idx) => Err(idx),
             None => {
