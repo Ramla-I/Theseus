@@ -6,11 +6,29 @@
 
 #![no_std]
 #![allow(dead_code)]
+#![feature(rustc_private)]
 
+extern crate prusti_contracts;
+extern crate prusti_external_spec;
+extern crate cfg_if;
+extern crate prusti_representation_creator;
+
+use prusti_contracts::*;
+use prusti_external_spec::trusted_result::*;
+use core::mem::size_of;
+use prusti_representation_creator::resource_identifier::ResourceIdentifier;
+
+#[cfg(target_arch = "x86_64")]
+use port_io::Port;
+
+#[cfg(prusti)]
+use prusti_external_spec::trusted_mutex::Mutex;
+
+cfg_if::cfg_if! { if #[cfg(not(prusti))] {
 extern crate alloc;
 
 use log::*;
-use core::{fmt, ops::{Deref, DerefMut}, mem::size_of};
+use core::{fmt, ops::{Deref, DerefMut}};
 use alloc::vec::Vec;
 use spin::{Once, Mutex};
 use memory::{PhysicalAddress, BorrowedSliceMappedPages, Mutable, MappedPages, map_frame_range, MMIO_FLAGS};
@@ -20,15 +38,32 @@ use zerocopy::FromBytes;
 use cpu::CpuId;
 use interrupts::InterruptNumber;
 use static_assertions::assert_not_impl_any;
-use prusti_representation_creator::{RepresentationCreator, RepresentationCreationError ,resource_identifier::ResourceIdentifier};
-
-#[cfg(target_arch = "x86_64")]
-use port_io::Port;
+use prusti_representation_creator::{RepresentationCreator, RepresentationCreationError}; 
 
 #[cfg(target_arch = "aarch64")]
 use arm_boards::BOARD_CONFIG;
+}}
 
-#[derive(Debug, Copy, Clone)]
+
+const CONFIG_ADDRESS: u16 = 0xCF8;
+const CONFIG_DATA: u16 = 0xCFC;
+
+/// This port is used to specify the address in the PCI configuration space
+/// for the next read/write of the `PCI_CONFIG_DATA_PORT`.
+#[cfg(target_arch = "x86_64")]
+static PCI_CONFIG_ADDRESS_PORT: Mutex<Port<u32>> = Mutex::new(Port::new(CONFIG_ADDRESS));
+
+/// This port is used to transfer data to or from the PCI configuration space
+/// specified by a previous write to the `PCI_CONFIG_ADDRESS_PORT`.
+#[cfg(target_arch = "x86_64")]
+static PCI_CONFIG_DATA_PORT: Mutex<Port<u32>> = Mutex::new(Port::new(CONFIG_DATA));
+
+#[cfg(target_arch = "x86_64")]
+const BASE_OFFSET: u32 = 0x8000_0000;
+
+
+#[cfg_attr(not(prusti), derive(Debug))] 
+#[derive(Copy, Clone)]
 /// The span of bytes within a 4-byte chunk that a PCI register occupies.
 ///
 /// The PCI configuration space is represented as an array of 4-byte chunks.
@@ -51,8 +86,35 @@ enum RegisterSpan {
 }
 use RegisterSpan::*;
 
+impl RegisterSpan {
+    const fn get_mask_and_bitshift(self) -> (u32, u8) {
+        match self {
+            FullDword => (0xffff_ffff,  0),
+            Word0     => (0x0000_ffff,  0),
+            Word1     => (0xffff_0000, 16),
+            Byte0     => (0x0000_00ff,  0),
+            Byte1     => (0x0000_ff00,  8),
+            Byte2     => (0x00ff_0000, 16),
+            Byte3     => (0xff00_0000, 24),
+        }
+    }
+
+    const fn width_in_bytes(self) -> usize {
+        match self {
+            FullDword => size_of::<u32>(),
+            Word0     => size_of::<u16>(),
+            Word1     => size_of::<u16>(),
+            Byte0     => size_of::<u8>(),
+            Byte1     => size_of::<u8>(),
+            Byte2     => size_of::<u8>(),
+            Byte3     => size_of::<u8>(),
+        }
+    }
+}
+
 /// A definition of a PCI configuration space register.
-#[derive(Clone, Copy, Debug)]
+#[cfg_attr(not(prusti), derive(Debug))] 
+#[derive(Copy, Clone)]
 struct PciRegister {
     /// The location of this register in the PCI configuration space,
     /// given as an index into the space as an array of `u32`s (4-byte chunks).
@@ -60,6 +122,8 @@ struct PciRegister {
     /// The location of this register within the 4-byte chunk.
     span: RegisterSpan,
 }
+
+#[cfg(not(prusti))]
 impl PciRegister {
     const fn from_offset(raw_offset: u8, size_in_bytes: u8) -> Self {
         let index = raw_offset >> 2;
@@ -76,6 +140,16 @@ impl PciRegister {
         }
     }
 }
+
+/// There is a maximum of 256 PCI buses on one system.
+const MAX_PCI_BUSES: u16 = 256;
+/// There is a maximum of 32 slots on one PCI bus.
+const MAX_SLOTS_PER_BUS: u8 = 32;
+/// There is a maximum of 32 functions (devices) on one PCI slot.
+const MAX_FUNCTIONS_PER_SLOT: u8 = 8;
+
+
+cfg_if::cfg_if! { if #[cfg(not(prusti))] {
 
 /// A macro for easily defining PCI registers using offsets from the PCI spec.
 ///
@@ -133,32 +207,9 @@ pub enum PciCapability {
 /// If not, that BAR describes a 32-bit address.
 const BAR_ADDRESS_IS_64_BIT: u32 = 2;
 
-/// There is a maximum of 256 PCI buses on one system.
-const MAX_PCI_BUSES: u16 = 256;
-/// There is a maximum of 32 slots on one PCI bus.
-const MAX_SLOTS_PER_BUS: u8 = 32;
-/// There is a maximum of 32 functions (devices) on one PCI slot.
-const MAX_FUNCTIONS_PER_SLOT: u8 = 8;
-
 /// Addresses/offsets into the PCI configuration space should clear the
 /// least-significant 2 bits in order to be 4-byte aligned.
 const PCI_CONFIG_ADDRESS_OFFSET_MASK: u8 = 0b11111100;
-
-const CONFIG_ADDRESS: u16 = 0xCF8;
-const CONFIG_DATA: u16 = 0xCFC;
-
-/// This port is used to specify the address in the PCI configuration space
-/// for the next read/write of the `PCI_CONFIG_DATA_PORT`.
-#[cfg(target_arch = "x86_64")]
-static PCI_CONFIG_ADDRESS_PORT: Mutex<Port<u32>> = Mutex::new(Port::new(CONFIG_ADDRESS));
-
-/// This port is used to transfer data to or from the PCI configuration space
-/// specified by a previous write to the `PCI_CONFIG_ADDRESS_PORT`.
-#[cfg(target_arch = "x86_64")]
-static PCI_CONFIG_DATA_PORT: Mutex<Port<u32>> = Mutex::new(Port::new(CONFIG_DATA));
-
-#[cfg(target_arch = "x86_64")]
-const BASE_OFFSET: u32 = 0x8000_0000;
 
 #[cfg(target_arch = "aarch64")]
 type PciConfigSpace = BorrowedSliceMappedPages<Volatile<u32>, Mutable>;
@@ -168,6 +219,7 @@ static PCI_CONFIG_SPACE: Mutex<Once<PciConfigSpace>> = Mutex::new(Once::new());
 
 #[cfg(target_arch = "aarch64")]
 const BASE_OFFSET: u32 = 0;
+
 
 pub enum InterruptPin {
     A,
@@ -284,37 +336,14 @@ fn scan_pci() -> Result<Mutex<Vec<PciBus>>, &'static str> {
                     continue;
                 }
 
-                let mut device = device_creator.create_unique_representation(location)
+                let device = device_creator.create_unique_representation(location)
                     .map(|(dev, _)| dev)
                     .map_err(|err|{
                         match err {
-                            RepresentationCreationError::Overlap(_idx) => "Failed to create a PCI devicw due to an overlap",
+                            RepresentationCreationError::Overlap(_idx) => "Failed to create a PCI device due to an overlap",
                             RepresentationCreationError::NoSpace => "Before the heap is initialized, requested more pci devices than there is space for (64)",
                         }
                     })?;
-                
-                device.vendor_id            = vendor_id;
-                device.device_id            = location.pci_read_16(PCI_DEVICE_ID);
-                device.command              = location.pci_read_16(PCI_COMMAND);
-                device.status               = location.pci_read_16(PCI_STATUS);
-                device.revision_id          = location.pci_read_8( PCI_REVISION_ID);
-                device.prog_if              = location.pci_read_8( PCI_PROG_IF);
-                device.subclass             = location.pci_read_8( PCI_SUBCLASS);
-                device.class                = location.pci_read_8( PCI_CLASS);
-                device.cache_line_size      = location.pci_read_8( PCI_CACHE_LINE_SIZE);
-                device.latency_timer        = location.pci_read_8( PCI_LATENCY_TIMER);
-                device.header_type          = location.pci_read_8( PCI_HEADER_TYPE);
-                device.bist                 = location.pci_read_8( PCI_BIST);
-                device.bars                 = [
-                                                location.pci_read_32(PCI_BAR0),
-                                                location.pci_read_32(PCI_BAR1), 
-                                                location.pci_read_32(PCI_BAR2), 
-                                                location.pci_read_32(PCI_BAR3), 
-                                                location.pci_read_32(PCI_BAR4), 
-                                                location.pci_read_32(PCI_BAR5), 
-                                            ];
-                device.int_pin              = location.pci_read_8(PCI_INTERRUPT_PIN);
-                device.int_line             = location.pci_read_8(PCI_INTERRUPT_LINE);
 
                 device_list.push(device);
             }
@@ -331,37 +360,11 @@ fn scan_pci() -> Result<Mutex<Vec<PciBus>>, &'static str> {
     Ok(Mutex::new(buses))   
 }
 
-impl RegisterSpan {
-    const fn get_mask_and_bitshift(self) -> (u32, u8) {
-        match self {
-            FullDword => (0xffff_ffff,  0),
-            Word0     => (0x0000_ffff,  0),
-            Word1     => (0xffff_0000, 16),
-            Byte0     => (0x0000_00ff,  0),
-            Byte1     => (0x0000_ff00,  8),
-            Byte2     => (0x00ff_0000, 16),
-            Byte3     => (0xff00_0000, 24),
-        }
-    }
-
-    const fn width_in_bytes(self) -> usize {
-        match self {
-            FullDword => size_of::<u32>(),
-            Word0     => size_of::<u16>(),
-            Word1     => size_of::<u16>(),
-            Byte0     => size_of::<u8>(),
-            Byte1     => size_of::<u8>(),
-            Byte2     => size_of::<u8>(),
-            Byte3     => size_of::<u8>(),
-        }
-    }
-}
-
 pub struct PciDeviceCreator(RepresentationCreator<PciLocation, PciDevice>);
 
 impl PciDeviceCreator {
     const fn new() -> Self { // To Do: this should be private and only called once
-        PciDeviceCreator(RepresentationCreator::new(PciDevice::trusted_new, false))
+        PciDeviceCreator(RepresentationCreator::new(new_pci_device, false))
     }
 }
 
@@ -378,7 +381,7 @@ impl DerefMut for PciDeviceCreator {
         &mut self.0
     }
 }
-
+}}
 
 /// The bus, slot, and function number of a given PCI device.
 /// This offers methods for reading and writing the PCI config space. 
@@ -390,8 +393,27 @@ pub struct PciLocation {
 }
 
 impl ResourceIdentifier for PciLocation {
+    #[pure]
     fn overlaps(&self,other: &Self) -> bool {
         self.bus == other.bus && self.slot == other.slot && self.func == other.func
+    }
+}
+
+enum PciLocationError {
+    InvalidSlot(u8),
+    InvalidFunction(u8),
+}
+
+impl PciLocation {
+    #[ensures(result.is_ok() ==> peek_result(&result).slot < MAX_SLOTS_PER_BUS && peek_result(&result).func < MAX_FUNCTIONS_PER_SLOT)]
+    fn new(bus: u8, slot: u8, func: u8) -> Result<PciLocation, PciLocationError> {
+        if slot >= MAX_SLOTS_PER_BUS {
+            Err(PciLocationError::InvalidSlot(slot))
+        } else if func >= MAX_FUNCTIONS_PER_SLOT {
+            Err(PciLocationError::InvalidFunction(func))
+        } else {
+            Ok(PciLocation { bus, slot, func})
+        }
     }
 }
 
@@ -401,6 +423,7 @@ impl PciLocation {
     pub fn function(&self) -> u8 { self.func }
 
     /// Read the value of the given `register` in the PCI Configuration Space.
+    #[trusted]
     fn pci_read_raw(&self, register: PciRegister) -> u32 {
         let PciRegister { index, span } = register;
         let (mask, shift) = span.get_mask_and_bitshift();
@@ -435,6 +458,7 @@ impl PciLocation {
     /// Read a 4-bytes register from the PCI Configuration Space.
     ///
     /// Panics if the register isn't a [`FullDword`]
+    #[trusted]
     fn pci_read_32(&self, register: PciRegister) -> u32 {
         let reg_width = register.span.width_in_bytes();
         let output_width = size_of::<u32>();
@@ -446,6 +470,7 @@ impl PciLocation {
     /// Read a 2-bytes register from the PCI Configuration Space.
     ///
     /// Panics if the register isn't a [`Word0`] / [`Word1`]
+    #[trusted]
     fn pci_read_16(&self, register: PciRegister) -> u16 {
         let reg_width = register.span.width_in_bytes();
         let output_width = size_of::<u16>();
@@ -457,6 +482,7 @@ impl PciLocation {
     /// Read a one-byte register from the PCI Configuration Space.
     ///
     /// Panics if the register isn't a [`Byte0`] / [`Byte1`] / [`Byte2`] / [`Byte3`]
+    #[trusted]
     fn pci_read_8(&self, register: PciRegister) -> u8 {
         let reg_width = register.span.width_in_bytes();
         let output_width = size_of::<u8>();
@@ -464,7 +490,10 @@ impl PciLocation {
 
         self.pci_read_raw(register) as _
     }
+}
 
+#[cfg(not(prusti))]
+impl PciLocation {
     /// Writes (part of) the given `value` to the given `register` in the PCI Configuration Space.
     ///
     /// If the width of the given `register` is less than 4 bytes, this function will first
@@ -597,12 +626,14 @@ impl PciLocation {
     }
 }
 
+#[cfg(not(prusti))]
 impl fmt::Display for PciLocation {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "b{}.s{}.f{}", self.bus, self.slot, self.func)
     }
 }
 
+#[cfg(not(prusti))]
 impl fmt::Debug for PciLocation {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "{self}")
@@ -615,11 +646,10 @@ impl fmt::Debug for PciLocation {
 ///
 /// For more, see [this partial table](http://wiki.osdev.org/PCI#Class_Codes)
 /// of `class`, `subclass`, and `prog_if` codes, 
-#[derive(Debug)]
+#[cfg_attr(not(prusti),derive(Debug))]
 pub struct PciDevice {
     /// the bus, slot, and function number that locates this PCI device in the bus tree.
     location: PciLocation,
-
     /// The class code, used to determine device type.
     pub class: u8,
     /// The subclass code, used to determine device type.
@@ -641,30 +671,41 @@ pub struct PciDevice {
     pub int_line: u8,
 }
 
+#[ensures(result.location === location)]
+fn new_pci_device(location: &PciLocation) -> PciDevice {
+    PciDevice {
+        vendor_id:        location.pci_read_16(PciRegister{ index: 0, span: RegisterSpan::Word0 }), // cannot use the const values because of a Prusti unsupported feature
+        device_id:        location.pci_read_16(PciRegister{ index: 0, span: RegisterSpan::Word1 }), 
+        command:          location.pci_read_16(PciRegister{ index: 1, span: RegisterSpan::Word0 }),
+        status:           location.pci_read_16(PciRegister{ index: 1, span: RegisterSpan::Word1 }),
+        revision_id:      location.pci_read_8( PciRegister{ index: 2, span: RegisterSpan::Byte0 }),
+        prog_if:          location.pci_read_8( PciRegister{ index: 2, span: RegisterSpan::Byte1 }),
+        subclass:         location.pci_read_8( PciRegister{ index: 2, span: RegisterSpan::Byte2 }),
+        class:            location.pci_read_8( PciRegister{ index: 2, span: RegisterSpan::Byte3 }),
+        cache_line_size:  location.pci_read_8( PciRegister{ index: 3, span: RegisterSpan::Byte0 }),
+        latency_timer:    location.pci_read_8( PciRegister{ index: 3, span: RegisterSpan::Byte1 }),
+        header_type:      location.pci_read_8( PciRegister{ index: 3, span: RegisterSpan::Byte2 }),
+        bist:             location.pci_read_8( PciRegister{ index: 3, span: RegisterSpan::Byte3 }),
+        bars:             [
+                                location.pci_read_32(PciRegister{ index: 4, span: RegisterSpan::FullDword }),
+                                location.pci_read_32(PciRegister{ index: 5, span: RegisterSpan::FullDword }), 
+                                location.pci_read_32(PciRegister{ index: 6, span: RegisterSpan::FullDword }), 
+                                location.pci_read_32(PciRegister{ index: 7, span: RegisterSpan::FullDword }), 
+                                location.pci_read_32(PciRegister{ index: 8, span: RegisterSpan::FullDword }), 
+                                location.pci_read_32(PciRegister{ index: 9, span: RegisterSpan::FullDword }), 
+                            ],
+        int_line:         location.pci_read_8(PciRegister{ index: 15, span: RegisterSpan::Byte0 }),
+        int_pin:          location.pci_read_8(PciRegister{ index: 15, span: RegisterSpan::Byte1 }),
+        location:         *location,
+        
+    }
+}
+
+cfg_if::cfg_if! { if #[cfg(not(prusti))] {
+
 assert_not_impl_any!(PciDevice: DerefMut, Clone);
 
 impl PciDevice {
-    fn trusted_new(location: &PciLocation) -> Self{
-        PciDevice {
-            location: *location,
-            class: 0,
-            subclass: 0,
-            prog_if: 0,
-            bars: [0; 6],
-            vendor_id: 0,
-            device_id: 0, 
-            command: 0,
-            status: 0,
-            revision_id: 0,
-            cache_line_size: 0,
-            latency_timer: 0,
-            header_type: 0,
-            bist: 0,
-            int_pin: 0,
-            int_line: 0,
-        }
-    }
-
     /// Returns the base address of the memory region specified by the given `BAR` 
     /// (Base Address Register) for this PCI device. 
     ///
@@ -1010,3 +1051,5 @@ const MSIX_DEST_ID_SHIFT:       u32 = 12;
 const MSIX_ADDRESS_BITS:        u32 = 0xFFFF_FFF0;
 /// Clear the vector control field to unmask the interrupt
 const MSIX_UNMASK_INT:          u32 = 0;
+
+}}

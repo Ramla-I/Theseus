@@ -8,3 +8,4 @@ pub mod trusted_option;
 pub mod trusted_result;
 pub mod partial_ord;
 pub mod cmp;
+pub mod trusted_mutex;

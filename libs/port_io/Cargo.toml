@@ -9,3 +9,6 @@ repository = "https://github.com/emk/toyos.rs"
 readme = "README.md"
 keywords = ["no_std", "kernel", "io"]
 license = "MIT"
+
+[dependencies]
+prusti-contracts = "0.2"

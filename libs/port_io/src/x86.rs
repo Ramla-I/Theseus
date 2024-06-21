@@ -1,6 +1,7 @@
 //! Rust wrappers around the x86-family I/O instructions.
 use core::arch::asm;
-
+use prusti_contracts::*;
+#[trusted]
 /// Read a `u8`-sized value from `port`.
 pub unsafe fn inb(port: u16) -> u8 {
     // The registers for the `in` and `out` instructions are always the
@@ -16,6 +17,7 @@ pub unsafe fn inb(port: u16) -> u8 {
     result
 }
 
+#[trusted]
 /// Write a `u8`-sized `value` to `port`.
 pub unsafe fn outb(value: u8, port: u16) {
     asm!(
@@ -26,6 +28,7 @@ pub unsafe fn outb(value: u8, port: u16) {
     );
 }
 
+#[trusted]
 /// Read a `u16`-sized value from `port`.
 pub unsafe fn inw(port: u16) -> u16 {
     let result: u16;
@@ -39,6 +42,7 @@ pub unsafe fn inw(port: u16) -> u16 {
     result
 }
 
+#[trusted]
 /// Write a `u8`-sized `value` to `port`.
 pub unsafe fn outw(value: u16, port: u16) {
     asm!(
@@ -49,6 +53,7 @@ pub unsafe fn outw(value: u16, port: u16) {
     );
 }
 
+#[trusted]
 /// Read a `u32`-sized value from `port`.
 pub unsafe fn inl(port: u16) -> u32 {
     let result: u32;
@@ -62,6 +67,7 @@ pub unsafe fn inl(port: u16) -> u32 {
     result
 }
 
+#[trusted]
 /// Write a `u32`-sized `value` to `port`.
 pub unsafe fn outl(value: u32, port: u16) {
     asm!(
