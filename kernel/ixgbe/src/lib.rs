@@ -263,7 +263,7 @@ impl IxgbeNic {
 
         // Start the initialization procedure
 
-        let bar0 = ixgbe_pci_dev.bars[0];
+        let bar0 = ixgbe_pci_dev.bars()[0];
         // Determine the type from the base address register
         let bar_type = (bar0 as u8) & 0x01;    
 

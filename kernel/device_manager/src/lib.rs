@@ -103,7 +103,7 @@ pub fn init(
 
     for dev in pci::get_pci_buses()?.lock().iter().flat_map(|b| b.devices.iter()) {
         // Currently we skip Bridge devices, since we have no use for them yet. 
-        if dev.class == 0x06 {
+        if dev.class() == 0x06 {
             continue;
         }
 
@@ -124,8 +124,8 @@ pub fn init(
 
         // If this is a network device, initialize it as such.
         // Look for networking controllers, specifically ethernet cards
-        if dev.class == 0x02 && dev.subclass == 0x00 {
-            if dev.vendor_id == e1000::INTEL_VEND && dev.device_id == e1000::E1000_DEV {
+        if dev.class() == 0x02 && dev.subclass() == 0x00 {
+            if dev.vendor_id() == e1000::INTEL_VEND && dev.device_id() == e1000::E1000_DEV {
                 info!("e1000 PCI device found at: {:?}", dev);
                 let nic = e1000::E1000Nic::init(dev)?;
                 let interface = net::register_device(nic);
@@ -133,7 +133,7 @@ pub fn init(
 
                 continue;
             }
-            if dev.vendor_id == ixgbe::INTEL_VEND && dev.device_id == ixgbe::INTEL_82599 {
+            if dev.vendor_id() == ixgbe::INTEL_VEND && dev.device_id() == ixgbe::INTEL_82599 {
                 info!("ixgbe PCI device found at: {:?}", dev);
                 
                 // Initialization parameters of the NIC.

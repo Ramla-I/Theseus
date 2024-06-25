@@ -162,7 +162,7 @@ impl E1000Nic {
         };
         // debug!("e1000 IRQ number: {}", interrupt_num);
 
-        let bar0 = e1000_pci_dev.bars[0];
+        let bar0 = e1000_pci_dev.bars()[0];
         // Determine the access mechanism from the base address register's bit 0
         let bar_type = (bar0 as u8) & 0x1;    
 

@@ -722,28 +722,28 @@ pub struct IdeController {
 impl IdeController {
 	/// Creates a new instance of an IDE controller based on the given PCI device.
 	pub fn new(pci_device: &PciDevice) -> Result<IdeController, &'static str> {
-		let primary_bus_data_port = match pci_device.bars[0] {
+		let primary_bus_data_port = match pci_device.bars()[0] {
 			0x0 | 0x1 => DEFAULT_PRIMARY_CHANNEL_DATA_PORT,
 			other => {
 				warn!("Untested rare condition: ATA drive PCI BAR0 was special address value: {:#X}", other);
 				other as u16
 			}
 		};
-		let primary_bus_control_port = match pci_device.bars[1] {
+		let primary_bus_control_port = match pci_device.bars()[1] {
 			0x0 | 0x1 => DEFAULT_PRIMARY_CHANNEL_CONTROL_PORT,
 			other => {
 				warn!("Untested rare condition: ATA drive PCI BAR1 was special address value: {:#X}", other);
 				other as u16
 			}
 		};
-		let secondary_bus_data_port = match pci_device.bars[2] {
+		let secondary_bus_data_port = match pci_device.bars()[2] {
 			0x0 | 0x1 => DEFAULT_SECONDARY_CHANNEL_DATA_PORT,
 			other => {
 				warn!("Untested rare condition: ATA drive PCI BAR2 was special address value: {:#X}", other);
 				other as u16
 			}
 		};
-		let secondary_bus_control_port = match pci_device.bars[3] {
+		let secondary_bus_control_port = match pci_device.bars()[3] {
 			0x0 | 0x1 => DEFAULT_SECONDARY_CHANNEL_CONTROL_PORT,
 			other => {
 				warn!("Untested rare condition: ATA drive PCI BAR3 was special address value: {:#X}", other);
@@ -752,7 +752,7 @@ impl IdeController {
 		};
 
 		// TODO: use the BAR4 for DMA in the future
-		let _bus_master_base = pci_device.bars[4]; 
+		let _bus_master_base = pci_device.bars()[4]; 
 
 		// Register interrupt handlers for the primary and secondary ATA buses.
 		// They're not yet used for anything but will determine when a DMA transfer has completed.

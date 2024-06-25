@@ -651,24 +651,24 @@ pub struct PciDevice {
     /// the bus, slot, and function number that locates this PCI device in the bus tree.
     location: PciLocation,
     /// The class code, used to determine device type.
-    pub class: u8,
+    class: u8,
     /// The subclass code, used to determine device type.
-    pub subclass: u8,
+    subclass: u8,
     /// The programming interface of this PCI device, also used to determine device type.
-    pub prog_if: u8,
+    prog_if: u8,
     /// The six Base Address Registers (BARs)
-    pub bars: [u32; 6],
-    pub vendor_id: u16,
-    pub device_id: u16, 
-    pub command: u16,
-    pub status: u16,
-    pub revision_id: u8,
-    pub cache_line_size: u8,
-    pub latency_timer: u8,
-    pub header_type: u8,
-    pub bist: u8,
-    pub int_pin: u8,
-    pub int_line: u8,
+    bars: [u32; 6],
+    vendor_id: u16,
+    device_id: u16, 
+    command: u16,
+    status: u16,
+    revision_id: u8,
+    cache_line_size: u8,
+    latency_timer: u8,
+    header_type: u8,
+    bist: u8,
+    int_pin: u8,
+    int_line: u8,
 }
 
 #[ensures(result.location === location)]
@@ -706,6 +706,20 @@ cfg_if::cfg_if! { if #[cfg(not(prusti))] {
 assert_not_impl_any!(PciDevice: DerefMut, Clone);
 
 impl PciDevice {
+    pub fn class(&self) -> u8 { self.class }
+    pub fn subclass(&self)-> u8 { self.subclass }
+    pub fn prog_if(&self) -> u8 { self.prog_if }
+    pub fn bars(&self) -> &[u32; 6] { &self.bars }
+    pub fn vendor_id(&self) -> u16 { self.vendor_id }
+    pub fn device_id(&self) -> u16 { self.device_id }
+    pub fn command(&self) -> u16 { self.command }
+    pub fn status(&self) -> u16 { self.status }
+    pub fn revision_id(&self) -> u8 { self.revision_id }
+    pub fn cache_line_size(&self) -> u8 { self.cache_line_size }
+    pub fn latency_timer(&self) -> u8 { self.latency_timer }
+    pub fn header_type(&self) -> u8 { self.header_type }
+    pub fn bist(&self) -> u8 { self.bist }
+
     /// Returns the base address of the memory region specified by the given `BAR` 
     /// (Base Address Register) for this PCI device. 
     ///
