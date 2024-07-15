@@ -1,0 +1,15 @@
+[package]
+authors = ["Ramla Ijaz <ijazramla@gmail.com>"]
+name = "prusti_mapped_pages"
+description = "Verified functions that help borrow a MappedPages memory as a type instance."
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+prusti-contracts = "0.2"
+
+[dependencies.prusti_external_spec]
+path = "../prusti_external_spec"
+
+[lib]
+crate-type = ["rlib"]

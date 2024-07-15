@@ -9,3 +9,5 @@ pub mod trusted_result;
 pub mod partial_ord;
 pub mod cmp;
 pub mod trusted_mutex;
+pub mod mem;
+pub mod num;

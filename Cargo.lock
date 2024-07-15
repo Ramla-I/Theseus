@@ -1492,7 +1492,7 @@ dependencies = [
  "hash32",
  "rustc_version 0.4.0",
  "spin 0.9.4",
- "stable_deref_trait",
+ "stable_deref_trait 1.2.0",
 ]
 
 [[package]]
@@ -1734,7 +1734,7 @@ name = "kernel_config"
 version = "0.1.0"
 dependencies = [
  "cfg-if 1.0.0",
- "prusti-contracts",
+ "prusti-contracts 0.2.0",
 ]
 
 [[package]]
@@ -2056,6 +2056,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "memory_buffer"
+version = "0.1.0"
+dependencies = [
+ "bit_field 0.7.0",
+ "bitflags",
+ "cfg-if 1.0.0",
+ "kernel_config",
+ "log",
+ "memory",
+ "mpmc",
+ "owning_ref",
+ "prusti-contracts 0.1.10",
+ "prusti_representation_creator",
+ "spin 0.9.4",
+ "static_assertions",
+ "volatile 0.2.7",
+ "zerocopy",
+]
+
+[[package]]
 name = "memory_initialization"
 version = "0.1.0"
 dependencies = [
@@ -2079,7 +2099,7 @@ dependencies = [
  "derive_more",
  "kernel_config",
  "paste",
- "prusti-contracts",
+ "prusti-contracts 0.2.0",
  "prusti_external_spec",
  "prusti_representation_creator",
  "range_inclusive",
@@ -2549,6 +2569,15 @@ name = "owned_borrowed_trait"
 version = "0.1.0"
 
 [[package]]
+name = "owning_ref"
+version = "0.4.1"
+source = "git+https://github.com/theseus-os/owning-ref-rs#0d2dcdcffd75b80157d0e72fb82593a8696a9c49"
+dependencies = [
+ "spin 0.9.4",
+ "stable_deref_trait 1.1.1",
+]
+
+[[package]]
 name = "page_allocator"
 version = "0.1.0"
 dependencies = [
@@ -2648,7 +2677,7 @@ dependencies = [
  "log",
  "memory",
  "port_io",
- "prusti-contracts",
+ "prusti-contracts 0.2.0",
  "prusti_external_spec",
  "prusti_representation_creator",
  "spin 0.9.4",
@@ -2779,7 +2808,7 @@ dependencies = [
 name = "port_io"
 version = "0.2.1"
 dependencies = [
- "prusti-contracts",
+ "prusti-contracts 0.2.0",
 ]
 
 [[package]]
@@ -2839,12 +2868,27 @@ dependencies = [
 
 [[package]]
 name = "prusti-contracts"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "84501b8931e0e15f177bb49f107a0fe54f8d4da05cfff4d95c298af6f3f1487e"
+dependencies = [
+ "prusti-contracts-proc-macros 0.1.10",
+]
+
+[[package]]
+name = "prusti-contracts"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c6e618695ddeec4c85c216d887ef958f2706c6fbafe824ba39ac260466c3043"
 dependencies = [
- "prusti-contracts-proc-macros",
+ "prusti-contracts-proc-macros 0.2.0",
 ]
+
+[[package]]
+name = "prusti-contracts-proc-macros"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0130aef475bc8363bdfc2e5104e2fed091d4ac63b4ea8039fd55453b14d7c8a"
 
 [[package]]
 name = "prusti-contracts-proc-macros"
@@ -2856,7 +2900,7 @@ checksum = "9f4d18a93d2e7feb85b057978063c3abd0848a63c1b8386046f52e66e796a99e"
 name = "prusti_external_spec"
 version = "0.1.0"
 dependencies = [
- "prusti-contracts",
+ "prusti-contracts 0.2.0",
 ]
 
 [[package]]
@@ -2865,11 +2909,19 @@ version = "0.1.0"
 dependencies = [
  "kernel_config",
  "memory_structs",
- "prusti-contracts",
+ "prusti-contracts 0.2.0",
  "prusti_external_spec",
  "prusti_representation_creator",
  "range_inclusive",
  "spin 0.9.4",
+]
+
+[[package]]
+name = "prusti_mapped_pages"
+version = "0.1.0"
+dependencies = [
+ "prusti-contracts 0.2.0",
+ "prusti_external_spec",
 ]
 
 [[package]]
@@ -2878,7 +2930,7 @@ version = "0.1.0"
 dependencies = [
  "kernel_config",
  "memory_structs",
- "prusti-contracts",
+ "prusti-contracts 0.2.0",
  "prusti_external_spec",
  "prusti_representation_creator",
  "range_inclusive",
@@ -2888,7 +2940,7 @@ dependencies = [
 name = "prusti_representation_creator"
 version = "0.1.0"
 dependencies = [
- "prusti-contracts",
+ "prusti-contracts 0.2.0",
  "prusti_external_spec",
 ]
 
@@ -3008,7 +3060,7 @@ name = "range_inclusive"
 version = "0.1.0"
 dependencies = [
  "cfg-if 1.0.0",
- "prusti-contracts",
+ "prusti-contracts 0.2.0",
 ]
 
 [[package]]
@@ -3623,6 +3675,14 @@ dependencies = [
 name = "spin"
 version = "0.9.8"
 source = "git+https://github.com/theseus-os/spin-rs#5c4470db034ad11f6cc7a8a5c400607c024e9392"
+
+[[package]]
+name = "stable_deref_trait"
+version = "1.1.1"
+source = "git+https://github.com/theseus-os/stable_deref_trait.git?branch=spin#e006c79280042e27c4f16c7d29633eb2273752ee"
+dependencies = [
+ "spin 0.9.4",
+]
 
 [[package]]
 name = "stable_deref_trait"
