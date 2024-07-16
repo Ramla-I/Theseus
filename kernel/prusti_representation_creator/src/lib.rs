@@ -196,11 +196,12 @@ impl<T: ResourceIdentifier, R> RepresentationCreator<T, R> {
         Ok(())
     }
 
+    #[pure]
     pub fn list_len(&self) -> usize {
         self.list.len()
     }
 
-    #[requires(index < self.list_len())]
+    #[requires(idx < self.list_len())]
     pub fn list_lookup(&self, idx: usize) -> &T {
         self.list.lookup(idx)
     }
