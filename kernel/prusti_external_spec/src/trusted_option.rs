@@ -1,6 +1,7 @@
 //! The specification for the `Option` type and helper functions to peek the inner value.
 
 use prusti_contracts::*;
+use crate::trusted_result::*;
 
 #[extern_spec]
 impl<T: PartialEq + Copy> core::option::Option<T> {

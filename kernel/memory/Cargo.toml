@@ -27,6 +27,7 @@ no_drop = { path = "../no_drop" }
 owned_borrowed_trait = { path = "../../libs/owned_borrowed_trait" }
 sync_irq = { path = "../../libs/sync_irq" }
 frame_range_callbacks = { path = "../frame_range_callbacks" }
+prusti_mapped_pages = { path = "../prusti_mapped_pages" }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = "0.14.8"

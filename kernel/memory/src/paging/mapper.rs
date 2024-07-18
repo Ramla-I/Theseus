@@ -693,37 +693,20 @@ impl MappedPages {
     /// This ensures safety by guaranteeing that the returned struct reference 
     /// cannot be used after this `MappedPages` object is dropped and unmapped.
     pub fn as_type<T: FromBytes>(&self, byte_offset: usize) -> Result<&T, &'static str> {
-        let size = mem::size_of::<T>();
+        let start_vaddr = prusti_mapped_pages::cast_mp_as_type::<T>(
+            self.start_address().value(), self.size_in_bytes(), byte_offset
+        ).map_err(|e| e.into_str())?;
+        
         if false {
             debug!("MappedPages::as_type(): requested type {} with size {} at byte_offset {}, MappedPages size {}!",
                 core::any::type_name::<T>(),
-                size, byte_offset, self.size_in_bytes()
+                core::mem::size_of::<T>(), byte_offset, self.size_in_bytes()
             );
-        }
-
-        if byte_offset % mem::align_of::<T>() != 0 {
-            error!("MappedPages::as_type(): requested type {} with size {}, but the byte_offset {} is unaligned with type alignment {}!",
-                core::any::type_name::<T>(),
-                size, byte_offset, mem::align_of::<T>()
-            );
-        }
-
-        let start_vaddr = self.start_address().value().checked_add(byte_offset)
-            .ok_or("MappedPages::as_type(): overflow: start_address + byte_offset")?;
-        // check that size of type T fits within the size of the mapping
-        let end_bound = byte_offset.checked_add(size)
-            .ok_or("MappedPages::as_type(): overflow: byte_offset + size_of::<T>())")?;
-        if end_bound > self.size_in_bytes() {
-            error!("MappedPages::as_type(): requested type {} with size {} at byte_offset {}, which is too large for MappedPages of size {}!",
-                core::any::type_name::<T>(),
-                size, byte_offset, self.size_in_bytes()
-            );
-            return Err("MappedPages::as_type(): requested type and byte_offset would not fit within the MappedPages bounds");
         }
 
         // SAFE: we guarantee the size and lifetime are within that of this MappedPages object
         let t: &T = unsafe {
-            &*(start_vaddr as *const T)
+            &*(*start_vaddr as *const T)
         };
 
         Ok(t)
@@ -734,18 +717,14 @@ impl MappedPages {
     /// 
     /// Thus, it also checks that the underlying mapping is writable.
     pub fn as_type_mut<T: FromBytes>(&mut self, byte_offset: usize) -> Result<&mut T, &'static str> {
-        let size = mem::size_of::<T>();
+        let start_vaddr = prusti_mapped_pages::cast_mp_as_type::<T>(
+            self.start_address().value(), self.size_in_bytes(), byte_offset
+        ).map_err(|e| e.into_str())?;
+
         if false {
             debug!("MappedPages::as_type_mut(): requested type {} with size {} at byte_offset {}, MappedPages size {}!",
                 core::any::type_name::<T>(),
-                size, byte_offset, self.size_in_bytes()
-            );
-        }
-
-        if byte_offset % mem::align_of::<T>() != 0 {
-            error!("MappedPages::as_type_mut(): requested type {} with size {}, but the byte_offset {} is unaligned with type alignment {}!",
-                core::any::type_name::<T>(),
-                size, byte_offset, mem::align_of::<T>()
+                core::mem::size_of::<T>(), byte_offset, self.size_in_bytes()
             );
         }
 
@@ -753,27 +732,14 @@ impl MappedPages {
         if !self.flags.is_writable() {
             error!("MappedPages::as_type_mut(): requested type {} with size {} at byte_offset {}, but MappedPages weren't writable (flags: {:?})",
                 core::any::type_name::<T>(),
-                size, byte_offset, self.flags
+                core::mem::size_of::<T>(), byte_offset, self.flags
             );
             return Err("MappedPages::as_type_mut(): MappedPages were not writable");
         }
         
-        let start_vaddr = self.start_address().value().checked_add(byte_offset)
-            .ok_or("MappedPages::as_type_mut(): overflow: start_address + byte_offset")?;
-        // check that size of type T fits within the size of the mapping
-        let end_bound = byte_offset.checked_add(size)
-            .ok_or("MappedPages::as_type_mut(): overflow: byte_offset + size_of::<T>())")?;
-        if end_bound > self.size_in_bytes() {
-            error!("MappedPages::as_type_mut(): requested type {} with size {} at byte_offset {}, which is too large for MappedPages of size {}!",
-                core::any::type_name::<T>(),
-                size, byte_offset, self.size_in_bytes()
-            );
-            return Err("MappedPages::as_type_mut(): requested type and byte_offset would not fit within the MappedPages bounds");
-        }
-
         // SAFE: we guarantee the size and lifetime are within that of this MappedPages object
         let t: &mut T = unsafe {
-            &mut *(start_vaddr as *mut T)
+            &mut *(*start_vaddr as *mut T)
         };
 
         Ok(t)
@@ -798,37 +764,15 @@ impl MappedPages {
     /// This ensures safety by guaranteeing that the returned slice 
     /// cannot be used after this `MappedPages` object is dropped and unmapped.
     pub fn as_slice<T: FromBytes>(&self, byte_offset: usize, length: usize) -> Result<&[T], &'static str> {
-        let size_in_bytes = length.checked_mul(mem::size_of::<T>())
-            .ok_or("MappedPages::as_slice(): overflow: length * size_of::<T>()")?;
+        let start_vaddr = prusti_mapped_pages::cast_mp_as_slice::<T>(
+            self.start_address().value(), self.size_in_bytes(), byte_offset, length
+        ).map_err(|e| e.into_str())?;
+
         if false {
             debug!("MappedPages::as_slice(): requested slice of type {} with length {} (total size {}) at byte_offset {}, MappedPages size {}!",
                 core::any::type_name::<T>(),
-                length, size_in_bytes, byte_offset, self.size_in_bytes()
+                length, length * core::mem::size_of::<T>(), byte_offset, self.size_in_bytes()
             );
-        }
-
-        if size_in_bytes > isize::MAX as usize {
-            return Err("MappedPages::as_slice(): length * size_of::<T>() must be no larger than isize::MAX");
-        }
-
-        if byte_offset % mem::align_of::<T>() != 0 {
-            error!("MappedPages::as_slice(): requested slice of type {} with length {} (total size {}), but the byte_offset {} is unaligned with type alignment {}!",
-                core::any::type_name::<T>(),
-                length, size_in_bytes, byte_offset, mem::align_of::<T>()
-            );
-        }
-        
-        let start_vaddr = self.start_address().value().checked_add(byte_offset)
-            .ok_or("MappedPages::as_slice(): overflow: start_address + byte_offset")?;
-        // check that size of slice fits within the size of the mapping
-        let end_bound = byte_offset.checked_add(size_in_bytes)
-            .ok_or("MappedPages::as_slice_mut(): overflow: byte_offset + (length * size_of::<T>())")?;
-        if end_bound > self.size_in_bytes() {
-            error!("MappedPages::as_slice(): requested slice of type {} with length {} (total size {}) at byte_offset {}, which is too large for MappedPages of size {}!",
-                core::any::type_name::<T>(),
-                length, size_in_bytes, byte_offset, self.size_in_bytes()
-            );
-            return Err("MappedPages::as_slice(): requested slice length and byte_offset would not fit within the MappedPages bounds");
         }
 
         // SAFETY:
@@ -839,7 +783,7 @@ impl MappedPages {
         // ✅ The total size of the slice does not exceed isize::MAX (checked above).
         // ✅ The lifetime of the returned slice reference is tied to the lifetime of this `MappedPages`.
         let slc: &[T] = unsafe {
-            slice::from_raw_parts(start_vaddr as *const T, length)
+            slice::from_raw_parts(*start_vaddr as *const T, length)
         };
 
         Ok(slc)
@@ -850,24 +794,14 @@ impl MappedPages {
     /// 
     /// Thus, it checks that the underlying mapping is writable.
     pub fn as_slice_mut<T: FromBytes>(&mut self, byte_offset: usize, length: usize) -> Result<&mut [T], &'static str> {
-        let size_in_bytes = length.checked_mul(mem::size_of::<T>())
-            .ok_or("MappedPages::as_slice_mut(): overflow: length * size_of::<T>()")?;
+        let start_vaddr = prusti_mapped_pages::cast_mp_as_slice::<T>(
+            self.start_address().value(), self.size_in_bytes(), byte_offset, length
+        ).map_err(|e| e.into_str() )?;
 
         if false {
             debug!("MappedPages::as_slice_mut(): requested slice of type {} with length {} (total size {}) at byte_offset {}, MappedPages size {}!",
                 core::any::type_name::<T>(), 
-                length, size_in_bytes, byte_offset, self.size_in_bytes()
-            );
-        }
-
-        if size_in_bytes > isize::MAX as usize {
-            return Err("MappedPages::as_slice_mut(): length * size_of::<T>() must be no larger than isize::MAX");
-        }
-
-        if byte_offset % mem::align_of::<T>() != 0 {
-            error!("MappedPages::as_slice_mut(): requested slice of type {} with length {} (total size {}), but the byte_offset {} is unaligned with type alignment {}!",
-                core::any::type_name::<T>(),
-                length, size_in_bytes, byte_offset, mem::align_of::<T>()
+                length, length * core::mem::size_of::<T>(), byte_offset, self.size_in_bytes()
             );
         }
 
@@ -875,22 +809,9 @@ impl MappedPages {
         if !self.flags.is_writable() {
             error!("MappedPages::as_slice_mut(): requested mutable slice of type {} with length {} (total size {}) at byte_offset {}, but MappedPages weren't writable (flags: {:?})",
                 core::any::type_name::<T>(),
-                length, size_in_bytes, byte_offset, self.flags
+                length, length * core::mem::size_of::<T>(), byte_offset, self.flags
             );
             return Err("MappedPages::as_slice_mut(): MappedPages were not writable");
-        }
-
-        let start_vaddr = self.start_address().value().checked_add(byte_offset)
-            .ok_or("MappedPages::as_slice_mut(): overflow: start_address + byte_offset")?;
-        // check that size of slice fits within the size of the mapping
-        let end_bound = byte_offset.checked_add(size_in_bytes)
-            .ok_or("MappedPages::as_slice_mut(): overflow: byte_offset + (length * size_of::<T>())")?;
-        if end_bound > self.size_in_bytes() {
-            error!("MappedPages::as_slice_mut(): requested mutable slice of type {} with length {} (total size {}) at byte_offset {}, which is too large for MappedPages of size {}!",
-                core::any::type_name::<T>(),
-                length, size_in_bytes, byte_offset, self.size_in_bytes()
-            );
-            return Err("MappedPages::as_slice_mut(): requested slice length and byte_offset would not fit within the MappedPages bounds");
         }
 
         // SAFETY:
@@ -898,7 +819,7 @@ impl MappedPages {
         // ✅ The underlying memory is not accessible through any other pointer, as we require a `&mut self` above.
         // ✅ The underlying memory can be mutated because it is mapped as writable (checked above).
         let slc: &mut [T] = unsafe {
-            slice::from_raw_parts_mut(start_vaddr as *mut T, length)
+            slice::from_raw_parts_mut(*start_vaddr as *mut T, length)
         };
 
         Ok(slc)

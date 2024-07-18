@@ -2059,6 +2059,7 @@ dependencies = [
  "owned_borrowed_trait",
  "page_allocator",
  "page_table_entry",
+ "prusti_mapped_pages",
  "pte_flags",
  "spin 0.9.4",
  "static_assertions",
