@@ -11,7 +11,7 @@ use core::ptr::Unique;
 use core::{cmp::{max, min}, ops::{DerefMut, Deref}};
 use alloc::vec::Vec;
 
-struct Buffer<T>(Unique<T>);
+pub struct Buffer<T>(Unique<T>);
 
 #[derive(PartialEq, Copy, Clone)]
 struct BufferInfo {
@@ -45,7 +45,7 @@ impl ResourceIdentifier for BufferInfo {
 
 /// Will ensure single ownership but not lifetime guarantee
 /// The backing MP should never be freed until the buffers are also freed
-struct BufferCreator<R> {
+pub struct BufferCreator<R> {
     rep_creator: RepresentationCreator<BufferInfo, Buffer<R>>,
     backing_mp: MappedPages,
     pub buffers: Vec<Buffer<R>>

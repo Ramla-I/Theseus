@@ -69,7 +69,6 @@ exclude = [
 	## "kernel/libtest",
 	"kernel/test_thread_local",
 	"kernel/unified_channel",
-	"kernel/ixgbe_restricted",
 
 
 	## Exclude benchmark-related crates in all builds; they must be explicitly included via features.

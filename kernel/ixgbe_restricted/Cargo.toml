@@ -1,8 +1,9 @@
 [package]
 name = "ixgbe_restricted"
 version = "0.1.0"
-description = "Intralingual driver for the 10 GbE Intel 82599 NIC"
+description = "Restricted driver for the 10 GbE Intel 82599 NIC. A restricted driver cannot store a packet buffer. It must transmit a packet as soon as it receives it. Ideal for a certain set of network functions."
 authors = ["Ramla <ijazramla@gmail.com>"]
+edition = "2021"
 
 [dependencies]
 spin = "0.9.0"
@@ -43,11 +44,8 @@ features = [ "alloc", "small_rng" ]
 [dependencies.hpet]
 path = "../acpi/hpet"
 
-[dependencies.mapped_pages_fragments]
-path = "../mapped_pages_fragments"
-
-[dependencies.packet_buffers]
-path = "../packet_buffers"
+[dependencies.memory_buffer]
+path = "../memory_buffer"
 
 [dependencies.num_enum]
 version = "0.5.2"

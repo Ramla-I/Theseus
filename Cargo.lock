@@ -1724,6 +1724,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "ixgbe_restricted"
+version = "0.1.0"
+dependencies = [
+ "bit_field 0.7.0",
+ "bitflags",
+ "cfg-if 1.0.0",
+ "hpet",
+ "irq_safety",
+ "kernel_config",
+ "log",
+ "memory",
+ "memory_buffer",
+ "mpmc",
+ "num_enum",
+ "owning_ref",
+ "pci",
+ "pit_clock",
+ "prusti-contracts 0.1.10",
+ "rand",
+ "spin 0.9.4",
+ "static_assertions",
+ "volatile 0.2.7",
+ "zerocopy",
+]
+
+[[package]]
 name = "keccak"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

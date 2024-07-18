@@ -22,9 +22,8 @@ use volatile::{Volatile, ReadOnly, WriteOnly};
 use zerocopy::FromBytes;
 use bit_field::BitField;
 use num_enum::TryFromPrimitive;
-use crate::hal::{
-    *
-};
+use crate::hal::*;
+use core::ops::Deref;
 
 /// The layout in memory of the first set of general registers of the 82599 device.
 #[derive(FromBytes)]
@@ -374,7 +373,7 @@ impl IntelIxgbeRegisters2 {
     // }
 
     pub fn dmatxctl_enable_tx(&mut self) {
-        self.dmatxctl.write(self.dmatxctl.read() | TE); 
+        self.dmatxctl.write(self.dmatxctl.read() | TRANSMIT_ENABLE); 
     }
 
     // pub fn rxcsum_enable_rss_writeback(&mut self) {
@@ -408,7 +407,7 @@ pub(crate) struct IntelIxgbeTxRegisters {
 
 const_assert_eq!(core::mem::size_of::<IntelIxgbeTxRegisters>(), 2 * 4096);
 
-/// The layout in memory of the set of registers containing the MAC address of the 82599 device.
+/// The layout in memory of a region of registers including those storing the MAC address of the 82599 device.
 #[derive(FromBytes)]
 #[repr(C)]
 pub struct IntelIxgbeMacRegisters {
@@ -571,93 +570,18 @@ const_assert_eq!(core::mem::size_of::<IntelIxgbeRegisters1>() + core::mem::size_
     core::mem::size_of::<IntelIxgbeMacRegisters>() + core::mem::size_of::<IntelIxgbeRxRegisters2>() +
     core::mem::size_of::<IntelIxgbeRegisters3>(), 0x20000);
 
-
-
-// CTRL commands
 pub const CTRL_LRST:                    u32 = 1<<3; 
 pub const CTRL_RST:                     u32 = 1<<26;
-
-// EEPROM Commands
-/// Bit which indicates that auto-read by hardware from EEPROM is done
 pub const EEC_AUTO_RD:                  u32 = 9;
-
-// Link Commands
 pub const LINKS_SPEED_MASK:             u32 = 0x3 << 28;
-
-/// DCB Arbiters Disable
 pub const RTTDCS_ARBDIS:                u32 = 1 << 6;
-
-/// For DCB and VT disabled, set TXPBSIZE.SIZE to 160KB
-// pub const TXPBSIZE_160KB:                u32 = 0xA0 << 10;
-// /// For DCB and VT disabled, set RXPBSIZE.SIZE to 512KB
-// pub const RXPBSIZE_512KB:                u32 = 512; //0x200;
-// pub const RXPBSIZE_128KB:                u32 = 128;// 0x00020000; // from ixy.rs
-
-// RCTL commands
-// pub const BSIZEPACKET_8K:               u32 = 8;
-// pub const BSIZEHEADER_256B:             u32 = 4;
-// pub const BSIZEHEADER_0B:               u32 = 0;
-// pub const DESCTYPE_LEG:                 u32 = 0;
-// pub const DESCTYPE_ADV_1BUFFER:         u32 = 1;
-// pub const DESCTYPE_ADV_HS:              u32 = 2;
 pub const RX_Q_ENABLE:                  u32 = 1 << 25;
-// pub const STORE_BAD_PACKETS:            u32 = 1 << 1;
-// pub const MULTICAST_PROMISCUOUS_ENABLE: u32 = 1 << 8;
-// pub const UNICAST_PROMISCUOUS_ENABLE:   u32 = 1 << 9;
-// pub const BROADCAST_ACCEPT_MODE:        u32 = 1 << 10;
 pub const RECEIVE_ENABLE:               u32 = 1;
-
 pub const DCA_RXCTRL_CLEAR_BIT_12:      u32 = 1 << 12;
 pub const CTRL_EXT_NO_SNOOP_DIS:        u32 = 1 << 16;
-
-// RSS commands
-// pub const RXCSUM_PCSD:                  u32 = 1 << 13; 
-
-// // DCA commands
-// pub const RX_DESC_DCA_ENABLE:           u32 = 1 << 5;
-// pub const RX_HEADER_DCA_ENABLE:         u32 = 1 << 6;
-// pub const RX_PAYLOAD_DCA_ENABLE:        u32 = 1 << 7;
-// pub const RX_DESC_R_RELAX_ORDER_EN:     u32 = 1 << 9;
-// pub const RX_DATA_W_RELAX_ORDER_EN:     u32 = 1 << 13;
-// pub const RX_SP_HEAD_RELAX_ORDER_EN:    u32 = 1 << 15;
-// pub const DCA_CPUID_SHIFT:              u32 = 24;
-// pub const DCA_CTRL_ENABLE:              u32 = 0;
-// pub const DCA_MODE_1:                   u32 = 0 << 1;  
-// pub const DCA_MODE_2:                   u32 = 1 << 1;
-
-// // 5-tuple Queue Filter commands
-// pub const SPDQF_SOURCE_SHIFT:           u32 = 0;
-// pub const SPDQF_DEST_SHIFT:             u32 = 16;
-// pub const FTQF_PROTOCOL:                u32 = 3;
-// pub const FTQF_PROTOCOL_TCP:            u32 = 0;
-// pub const FTQF_PROTOCOL_UDP:            u32 = 1;
-// pub const FTQF_PROTOCOL_SCTP:           u32 = 2;
-// pub const FTQF_PRIORITY:                u32 = 7;
-// pub const FTQF_PRIORITY_SHIFT:          u32 = 2;
-// pub const FTQF_SOURCE_ADDRESS_MASK:     u32 = 1 << 25;
-// pub const FTQF_DEST_ADDRESS_MASK:       u32 = 1 << 26;
-// pub const FTQF_SOURCE_PORT_MASK:        u32 = 1 << 27;
-// pub const FTQF_DEST_PORT_MASK:          u32 = 1 << 28;
-// pub const FTQF_PROTOCOL_MASK:           u32 = 1 << 29;
-// pub const FTQF_POOL_MASK:               u32 = 1 << 30;
-// pub const L34TIMIR_LLI_ENABLE:          u32 = 1 << 20;
-
-/// Enable a transmit queue
 pub const TX_Q_ENABLE:                  u32 = 1 << 25;
-/// Transmit Enable
-pub const TE:                           u32  = 1;           
-
-// /// Tx descriptor pre-fetch threshold (value taken from DPDK)
-// pub const TXDCTL_PTHRESH:               u32 = 36; 
-// /// Tx descriptor host threshold (value taken from DPDK)
-// pub const TXDCTL_HTHRESH:               u32 = 8 << 8; 
-// /// Tx descriptor write-back threshold (value taken from DPDK)
-// pub const TXDCTL_WTHRESH:               u32 = 4 << 16; 
-
-// Interrupt Register Commands 
+pub const TRANSMIT_ENABLE:              u32 = 1;          
 pub const DISABLE_INTERRUPTS:           u32 = 0x7FFFFFFF; 
-
-const_assert_eq!(core::mem::size_of::<RegistersTx>(), 64);
 
 pub struct TDHSet(bool);
 pub struct TDLENSet(bool);
@@ -674,13 +598,70 @@ impl ReportStatusBit {
     fn zero() -> ReportStatusBit {
         ReportStatusBit(0 << 3)
     }
+}
 
-    pub fn value(&self) -> u8 {
-        self.0
+impl Deref for ReportStatusBit {
+    type Target = u8;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
 
+
+
+
+
+/// Set of registers associated with one transmit descriptor queue.
+#[derive(FromBytes)]
+#[repr(C)]
+pub(crate) struct RegistersTx {
+    /// Transmit Descriptor Base Address Low
+    pub tdbal:                          Volatile<u32>,        // 0x6000
+    
+    /// Transmit Descriptor Base Address High
+    pub tdbah:                          Volatile<u32>,        // 0x6004
+    
+    /// Transmit Descriptor Length    
+    tdlen:                              Volatile<u32>,        // 0x6008
+    
+    /// Tx DCA Control Register
+    dca_txctrl:                         Volatile<u32>,          // 0x600C
+    
+    /// Transmit Descriptor Head
+    tdh:                                Volatile<u32>,          // 0x6010
+    _padding0:                          [u8; 4],                // 0x6014 - 0x6017
+    
+    /// Transmit Descriptor Tail
+    tdt:                            Volatile<u32>,          // 0x6018
+    _padding1:                          [u8; 12],               // 0x601C - 0x6027
+    
+    /// Transmit Descriptor Control
+    txdctl:                             Volatile<u32>,          // 0x6028
+    _padding2:                          [u8; 12],               // 0x602C - 0x6037
+    
+    /// Transmit Descriptor Completion Write Back Address Low
+    tdwbal:                             Volatile<u32>,          // 0x6038
+    
+    /// Transmit Descriptor Completion Write Back Address High
+    tdwbah:                             Volatile<u32>,          // 0x603C
+} // 64B
+const_assert_eq!(core::mem::size_of::<RegistersTx>(), 64);
+
+impl RegistersTx {
+    // gate access so that the upper 16 bits are always set to 0
+    #[inline(always)]
+    pub fn tdt_write(&mut self, val: u16) {
+        self.tdt.write(val as u32);
+    }
+    
+    // #[inline(always)]
+    // pub fn tdt_read(&mut self) -> u32 {
+    //     self.tdt.read()
+    // }
+}
+    
 impl RegistersTx {
 
     pub fn txdctl_read(&self) -> u32 {
@@ -740,8 +721,50 @@ impl RegistersTx {
         self.dca_txctrl.write(val & !TX_DESC_WBRO_EN_BIT);
     }
 }
+/// Set of registers associated with one receive descriptor queue.
+#[derive(FromBytes)]
+#[repr(C)]
+pub struct RegistersRx {
+    /// Receive Descriptor Base Address Low
+    pub rdbal:                          Volatile<u32>,        // 0x1000
 
+    /// Recive Descriptor Base Address High
+    pub rdbah:                          Volatile<u32>,        // 0x1004
+
+    /// Recive Descriptor Length
+    rdlen:                              Volatile<u32>,        // 0x1008
+
+    /// Rx DCA Control Register
+    dca_rxctrl:                         Volatile<u32>,          // 0x100C
+
+    /// Recive Descriptor Head
+    rdh:                                Volatile<u32>,          // 0x1010
+
+    /// Split Receive Control Registers
+    srrctl:                             Volatile<u32>,          // 0x1014 //specify descriptor type
+
+    /// Receive Descriptor Tail
+    rdt:                                Volatile<u32>,          // 0x1018
+    _padding1:                          [u8;12],                // 0x101C - 0x1027
+
+    /// Receive Descriptor Control
+    rxdctl:                             Volatile<u32>,          // 0x1028
+    _padding2:                          [u8;20],                // 0x102C - 0x103F                                            
+} // 64B
 const_assert_eq!(core::mem::size_of::<RegistersRx>(), 64);
+
+impl RegistersRx {
+    // gate access so that the upper 16 bits are always set to 0
+    #[inline(always)]
+    pub fn rdt_write(&mut self, val: u16) {
+        self.rdt.write(val as u32);
+    }
+
+    // #[inline(always)]
+    // pub fn rdt_read(&mut self) -> u32 {
+    //     self.rdt.read()
+    // }
+}
 
 impl RegistersRx {
     /// Assume we used the advanced rx descriptors, otherwise create an enum for descriptor types
@@ -778,97 +801,4 @@ impl RegistersRx {
         let val = self.rxdctl.read();
         self.rxdctl.write(val | RX_Q_ENABLE); 
     }
-}
-
-
-/// Set of registers associated with one transmit descriptor queue.
-#[derive(FromBytes)]
-#[repr(C)]
-pub(crate) struct RegistersTx {
-    /// Transmit Descriptor Base Address Low
-    pub tdbal:                          Volatile<u32>,        // 0x6000
-
-    /// Transmit Descriptor Base Address High
-    pub tdbah:                          Volatile<u32>,        // 0x6004
-    
-    /// Transmit Descriptor Length    
-    tdlen:                              Volatile<u32>,        // 0x6008
-
-    /// Tx DCA Control Register
-    dca_txctrl:                         Volatile<u32>,          // 0x600C
-
-    /// Transmit Descriptor Head
-    tdh:                                Volatile<u32>,          // 0x6010
-    _padding0:                          [u8; 4],                // 0x6014 - 0x6017
-
-    /// Transmit Descriptor Tail
-    tdt:                            Volatile<u32>,          // 0x6018
-    _padding1:                          [u8; 12],               // 0x601C - 0x6027
-
-    /// Transmit Descriptor Control
-    txdctl:                             Volatile<u32>,          // 0x6028
-    _padding2:                          [u8; 12],               // 0x602C - 0x6037
-
-    /// Transmit Descriptor Completion Write Back Address Low
-    tdwbal:                             Volatile<u32>,          // 0x6038
-
-    /// Transmit Descriptor Completion Write Back Address High
-    tdwbah:                             Volatile<u32>,          // 0x603C
-} // 64B
-
-impl RegistersTx {
-    // gate access so that the upper 16 bits are always set to 0
-    #[inline(always)]
-    pub fn tdt_write(&mut self, val: u16) {
-        self.tdt.write(val as u32);
-    }
-
-    // #[inline(always)]
-    // pub fn tdt_read(&mut self) -> u32 {
-    //     self.tdt.read()
-    // }
-}
-
-/// Set of registers associated with one receive descriptor queue.
-#[derive(FromBytes)]
-#[repr(C)]
-pub struct RegistersRx {
-    /// Receive Descriptor Base Address Low
-    pub rdbal:                          Volatile<u32>,        // 0x1000
-
-    /// Recive Descriptor Base Address High
-    pub rdbah:                          Volatile<u32>,        // 0x1004
-
-    /// Recive Descriptor Length
-    rdlen:                              Volatile<u32>,        // 0x1008
-
-    /// Rx DCA Control Register
-    dca_rxctrl:                         Volatile<u32>,          // 0x100C
-
-    /// Recive Descriptor Head
-    rdh:                                Volatile<u32>,          // 0x1010
-
-    /// Split Receive Control Registers
-    srrctl:                             Volatile<u32>,          // 0x1014 //specify descriptor type
-
-    /// Receive Descriptor Tail
-    rdt:                                Volatile<u32>,          // 0x1018
-    _padding1:                          [u8;12],                // 0x101C - 0x1027
-
-    /// Receive Descriptor Control
-    rxdctl:                             Volatile<u32>,          // 0x1028
-    _padding2:                          [u8;20],                // 0x102C - 0x103F                                            
-} // 64B
-
-impl RegistersRx {
-    // gate access so that the upper 16 bits are always set to 0
-    #[inline(always)]
-    pub fn rdt_write(&mut self, val: u16) {
-        self.rdt.write(val as u32);
-    }
-
-    // #[inline(always)]
-    // pub fn rdt_read(&mut self) -> u32 {
-    //     self.rdt.read()
-    // }
 }

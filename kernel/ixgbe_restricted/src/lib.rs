@@ -1,61 +1,29 @@
-//! An ixgbe driver for a 82599 10GbE Network Interface Card.
-//! 
-//! Currently we support basic send and receive, Receive Side Scaling (RSS), 5-tuple filters, and MSI interrupts. 
-//! We also support language-level virtualization of the NIC so that applications can directly access their assigned transmit and receive queues.
-//! When using virtualization, we disable RSS since we use 5-tuple filters to ensure packets are routed to the correct queues.
-//! We also disable interrupts when using virtualization, since we do not yet have support for allowing applications to register their own interrupt handlers.
+//! A restricted driver for a 82599 10GbE Network Interface Card.
 
 #![no_std]
 // #![allow(dead_code)] //  to suppress warnings for unused functions/methods
 #![allow(unaligned_references)] // temporary, just to suppress unsafe packed borrows 
 #![allow(incomplete_features)] // to allow adt_const_params without a warning
 #![feature(adt_const_params)]
-#![feature(array_zip)]
 #![feature(rustc_private)]
 #![feature(ptr_internals)]
 
 extern crate alloc;
 pub mod hal;
-mod queue_registers;
-pub mod agent;
+
+// pub mod agent;
 pub use hal::*;
-
-#[macro_use] extern crate log;
-#[macro_use] extern crate static_assertions;
-extern crate spin;
-extern crate irq_safety;
-extern crate kernel_config;
-extern crate memory;
-extern crate pci; 
-extern crate pit_clock;
-extern crate bit_field;
-extern crate volatile;
-extern crate mpmc;
-extern crate owning_ref;
-extern crate rand;
-extern crate hpet;
-extern crate zerocopy;
-extern crate mapped_pages_fragments;
-extern crate packet_buffers;
-extern crate num_enum;
-#[macro_use] extern crate bitflags;
-
-pub mod allocator;
-
 use hal::regs::*;
-use queue_registers::*;
-use mapped_pages_fragments::MappedPagesFragments;
-use allocator::*;
 
 use spin::Once;
-use alloc::{
-    vec::Vec,
-};
+use alloc::vec::Vec;
 use irq_safety::MutexIrqSafe;
-use memory::{BorrowedMappedPages, Mutable};
-use pci::{PciDevice, PciConfigSpaceAccessMechanism, PciLocation, BAR, PciBaseAddr, PciMemSize};
+use memory::{BorrowedMappedPages, BorrowedSliceMappedPages, Mutable, MMIO_FLAGS, MappedPages};
+use pci::{PciDevice, PciConfigSpaceAccessMechanism, PciLocation};
 use core::ops::{Deref};
 use core::convert::{TryFrom};
+use memory_buffer::{Buffer, BufferCreator};
+use log::{debug, info, error};
 
 /// Vendor ID for Intel
 pub const INTEL_VEND:                   u16 = 0x8086;  
@@ -75,13 +43,13 @@ pub const INTEL_X520_DA2:                  u16 = 0x154D;
 /// The number of receive queues that are enabled. 
 /// Do NOT set this greater than 64 since the queues 65-128 don't seem to work, 
 /// most likely because they need additional configuration.
-pub const IXGBE_NUM_RX_QUEUES_ENABLED: u8      = 1;
+pub const IXGBE_NUM_RX_QUEUES_ENABLED:      u8 = 1;
 /// The number of transmit queues that are enabled. 
 /// Do NOT set this greater than 64 since the queues 65-128 don't seem to work, 
 /// most likely because they need additional configuration.
-pub const IXGBE_NUM_TX_QUEUES_ENABLED: u8      = 1;
+pub const IXGBE_NUM_TX_QUEUES_ENABLED:      u8 = 1;
 /// All buffers are created with 2KiB so that the max ethernet frame can fit in one packet buffer
-pub const DEFAULT_RX_BUFFER_SIZE_2KB: RxBufferSizeKiB   = RxBufferSizeKiB::Buffer2KiB;
+pub const DEFAULT_RX_BUFFER_SIZE_2KB:       RxBufferSizeKiB = RxBufferSizeKiB::Buffer2KiB;
 
 
 /*** Functions to get access to the IXGBE NICs once they've been initialized ***/
@@ -94,7 +62,7 @@ pub static IXGBE_NICS: Once<Vec<MutexIrqSafe<IxgbeNic>>> = Once::new();
 pub fn get_ixgbe_nic(id: PciLocation) -> Result<&'static MutexIrqSafe<IxgbeNic>, &'static str> {
     let nics = IXGBE_NICS.get().ok_or("Ixgbe NICs weren't initialized")?;
     nics.iter()
-        .find( |nic| { nic.lock().dev_id == id } )
+        .find( |nic| { *nic.lock().pci_dev.deref() == id } )
         .ok_or("Ixgbe NIC with this ID does not exist")
 }
 
@@ -107,31 +75,17 @@ pub fn get_ixgbe_nics_list() -> Option<&'static Vec<MutexIrqSafe<IxgbeNic>>> {
 
 /// A struct representing an ixgbe network interface card.
 pub struct IxgbeNic {
-    /// Device ID of the NIC assigned by the device manager.
-    dev_id: PciLocation,
-    /// Type of Base Address Register 0,
-    /// if it's memory mapped or I/O.
-    bar_type: PciConfigSpaceAccessMechanism,
-    /// MMIO Base Address     
-    mem_base: PciBaseAddr,
+    /// Representation of the PCI device of the NIC assigned by the device manager.
+    pci_dev: PciDevice,
     /// The actual MAC address burnt into the hardware  
     mac_hardware: [u8;6],       
-    /// Memory-mapped control registers
     regs1: BorrowedMappedPages<IntelIxgbeRegisters1, Mutable>,
-    /// Memory-mapped control registers
     regs2: BorrowedMappedPages<IntelIxgbeRegisters2, Mutable>,
-    /// Memory-mapped control registers
     regs3: BorrowedMappedPages<IntelIxgbeRegisters3, Mutable>,
-    /// Memory-mapped control registers
     regs_mac: BorrowedMappedPages<IntelIxgbeMacRegisters, Mutable>,
-    /// Registers for the first rx queue. It's wrapped in an option because they can be taken and stored in an agent when the descriptors are initialized.
-    rxq_registers: Option<RxQueueRegisters>,
-    /// Registers for the first tx queue. It's wrapped in an option because they can be taken and stored in an agent when the descriptors are initialized.
-    txq_registers: Option<TxQueueRegisters>,
-    /// Registers for the disabled queues
-    rx_registers_unusable: Vec<RxQueueRegisters>,
-    /// Registers for the disabled queues
-    tx_registers_unusable: Vec<TxQueueRegisters>,
+    regs_rx1: BorrowedSliceMappedPages<RegistersRx, Mutable>,
+    regs_rx2: BorrowedSliceMappedPages<RegistersRx, Mutable>,
+    regs_tx: BorrowedSliceMappedPages<RegistersTx, Mutable>,
 }
 
 // Functions that setup the NIC struct and handle the sending and receiving of packets.
@@ -140,49 +94,24 @@ impl IxgbeNic {
     /// 
     /// # Arguments
     /// * `ixgbe_pci_dev`: Contains the pci device information for this NIC.
-    /// * `dev_id`: Device id as assigned by the device manager.
-    ///     Currently this is just the pci location.
-    /// * `link_speed`: The link speed of the ethernet connection which depends on the SFI module attached to the cable.
-    ///     We do not access the PHY module for link information yet and currently only support 1 Gbps and 10 Gbps links.
-    /// * `enable_virtualization`: True if language-level virtualization is enabled.
-    ///     If this is true then interrupts and RSS need to be disabled. When the virtual NIC is created, these features 
-    ///     should be enabled on a per-queue basis. We do not support that as of yet.
-    /// * `interrupts`: A vector of packet reception interrupt handlers where the length of the vector is the number of
-    ///     receive queues for which interrupts are enabled. We have currently tested for 16 receive queues.
-    ///     The interrupt handler at index `i` is for receive queue `i`.
-    ///     The number of handlers must be less than or equal to `IXGBE_NUM_RX_QUEUES_ENABLED`.
-    ///     If interrupts are disabled, this should be set to None.
-    /// * `enable_rss`: true if receive side scaling is enabled.
-    /// * `rx_buffer_size_kbytes`: The size of receive buffers. 
-    /// * `num_rx_descriptors`: The number of descriptors in each receive queue.
-    /// * `num_tx_descriptors`: The number of descriptors in each transmit queue.
     pub fn init(
-        ixgbe_pci_dev: &PciDevice,
+        ixgbe_pci_dev: PciDevice,
     ) -> Result<MutexIrqSafe<IxgbeNic>, &'static str> {
-        let bar_type = ixgbe_pci_dev.determine_pci_space();
-
-        // If the base address is not memory mapped then exit
-        if bar_type == PciConfigSpaceAccessMechanism::IoPort {
-            error!("ixgbe::init(): BAR0 is of I/O type");
-            return Err("ixgbe::init(): BAR0 is of I/O type")
-        }
-
-        // 16-byte aligned memory mapped base address
-        let mem_base =  ixgbe_pci_dev.determine_pci_base_addr(BAR::BAR0)?;
-        let mem_size = ixgbe_pci_dev.determine_pci_mem_size(BAR::BAR0);
+        let mmio_mapped_pages = ixgbe_pci_dev.pci_map_bar_mem(0)?;
 
         // set the bus mastering bit for this PciDevice, which allows it to use DMA
         ixgbe_pci_dev.pci_set_command_bus_master_bit();
-        ixgbe_pci_dev.pci_set_command_memory_space_bit();
+        // ixgbe_pci_dev.pci_set_command_memory_space_bit(); // Do we need this???
 
         // map the IntelIxgbeRegisters structs to the address found from the pci space
         let (mut mapped_registers1, 
             mut mapped_registers2, 
             mut mapped_registers3, 
             mut mapped_registers_mac, 
-            mut rx_mapped_registers, 
+            mut rx_mapped_registers1, 
+            mut rx_mapped_registers2, 
             mut tx_mapped_registers
-        ) = Self::mapped_reg(&mem_base, &mem_size)?;
+        ) = Self::cast_mp_into_regs(mmio_mapped_pages).map_err(|(_,err)| err)?;
 
         // link initialization
         Self::start_link(&mut mapped_registers1, &mut mapped_registers2, &mut mapped_registers3, &mut mapped_registers_mac)?;
@@ -192,10 +121,6 @@ impl IxgbeNic {
 
         // store the mac address of this device
         let mac_addr_hardware = Self::read_mac_address_from_nic(&mut mapped_registers_mac);
-
-        // separate off the queues registers for queue0, so that the remaining 127 can just be stored but not used
-        let rx_registers_unusable = rx_mapped_registers.split_off(IXGBE_NUM_RX_QUEUES_ENABLED as usize);
-        let tx_registers_unusable = tx_mapped_registers.split_off(IXGBE_NUM_TX_QUEUES_ENABLED as usize);
         
         // do the basic tx and rx init for the device (not the per queue initialization)
         Self::rx_init_pre(&mut mapped_registers2)?;
@@ -206,18 +131,15 @@ impl IxgbeNic {
         Self::wait_for_link(&mapped_registers2, 10_000_000);
 
         let ixgbe_nic = IxgbeNic {
-            dev_id: ixgbe_pci_dev.location,
-            bar_type: bar_type,
-            mem_base: mem_base,
+            pci_dev: ixgbe_pci_dev,
             mac_hardware: mac_addr_hardware,
             regs1: mapped_registers1,
             regs2: mapped_registers2,
             regs3: mapped_registers3,
             regs_mac: mapped_registers_mac,
-            rxq_registers: rx_mapped_registers.pop(),
-            txq_registers: tx_mapped_registers.pop(),
-            rx_registers_unusable,
-            tx_registers_unusable
+            regs_rx1: rx_mapped_registers1,
+            regs_rx2: rx_mapped_registers2,
+            regs_tx: tx_mapped_registers,
         };
 
         info!("Link is up with speed: {} Mb/s", ixgbe_nic.link_speed() as u32);
@@ -225,26 +147,15 @@ impl IxgbeNic {
         Ok(MutexIrqSafe::new(ixgbe_nic))
     }
 
-    // /// Returns the device id of the PCI device.
-    // pub fn device_id(&self) -> PciLocation {
-    //     self.dev_id
-    // }
-
-    /// Returns the memory-mapped control registers of the nic and the rx/tx queue registers.
-    fn mapped_reg(
-        mem_base: &PciBaseAddr,
-        mem_size_in_bytes: &PciMemSize
-    ) -> Result<(
+    fn cast_mp_into_regs(mapped_pages: MappedPages) -> Result<(
         BorrowedMappedPages<IntelIxgbeRegisters1, Mutable>, 
         BorrowedMappedPages<IntelIxgbeRegisters2, Mutable>, 
         BorrowedMappedPages<IntelIxgbeRegisters3, Mutable>, 
         BorrowedMappedPages<IntelIxgbeMacRegisters, Mutable>, 
-        Vec<RxQueueRegisters>, 
-        Vec<TxQueueRegisters>
-    ), &'static str> {
-
-        let mapped_pages = allocator::allocate_device_register_memory(mem_base, mem_size_in_bytes, NIC_MAPPING_FLAGS_NO_CACHE)?;
-
+        BorrowedSliceMappedPages<RegistersRx, Mutable>,
+        BorrowedSliceMappedPages<RegistersRx, Mutable>, 
+        BorrowedSliceMappedPages<RegistersTx, Mutable>
+    ), (MappedPages, &'static str)> {
         // We've divided the memory-mapped registers into multiple regions.
         // The size of each region is found from the data sheet, but it always lies on a page boundary.
         const GENERAL_REGISTERS_1_SIZE:   usize = 4096 / 4096;
@@ -256,128 +167,52 @@ impl IxgbeNic {
 
         // Allocate memory for the registers, making sure each successive memory region begins where the previous region ended.
         let mut offset_page = *mapped_pages.deref().start() + GENERAL_REGISTERS_1_SIZE;
-        let (nic_regs1_mapped_page, mapped_pages) = mapped_pages.split(offset_page).unwrap();
+        let (nic_regs1_mapped_page, mapped_pages) = mapped_pages.split(offset_page)
+            .map_err(|mp| (mp, "Failed to split mapped pages"))?;
 
         offset_page = *mapped_pages.deref().start() + RX_REGISTERS_SIZE;
-        let (nic_rx_regs1_mapped_page, mapped_pages) = mapped_pages.split(offset_page).unwrap();
+        let (nic_rx_regs1_mapped_page, mapped_pages) = mapped_pages.split(offset_page)
+            .map_err(|mp| (mp, "Failed to split mapped pages"))?;
 
         offset_page = *mapped_pages.deref().start() + GENERAL_REGISTERS_2_SIZE;
-        let (nic_regs2_mapped_page, mapped_pages) = mapped_pages.split(offset_page).unwrap();
+        let (nic_regs2_mapped_page, mapped_pages) = mapped_pages.split(offset_page)
+            .map_err(|mp| (mp, "Failed to split mapped pages"))?;
+
 
         offset_page = *mapped_pages.deref().start() + TX_REGISTERS_SIZE;
-        let (nic_tx_regs_mapped_page, mapped_pages) = mapped_pages.split(offset_page).unwrap();
+        let (nic_tx_regs_mapped_page, mapped_pages) = mapped_pages.split(offset_page)
+            .map_err(|mp| (mp, "Failed to split mapped pages"))?;
+
 
         offset_page = *mapped_pages.deref().start() + MAC_REGISTERS_SIZE;
-        let (nic_mac_regs_mapped_page, mapped_pages) = mapped_pages.split(offset_page).unwrap();
+        let (nic_mac_regs_mapped_page, mapped_pages) = mapped_pages.split(offset_page)
+            .map_err(|mp| (mp, "Failed to split mapped pages"))?;
+
 
         offset_page = *mapped_pages.deref().start() + RX_REGISTERS_SIZE;
-        let (nic_rx_regs2_mapped_page, nic_regs3_mapped_page) = mapped_pages.split(offset_page).unwrap();  
+        let (nic_rx_regs2_mapped_page, nic_regs3_mapped_page) = mapped_pages.split(offset_page)
+            .map_err(|mp| (mp, "Failed to split mapped pages"))?;
+
 
         // Map the memory as the register struct and tie the lifetime of the struct with its backing mapped pages
-        let regs1 = nic_regs1_mapped_page.into_borrowed_mut(0).map_err(|(_mp, err)| err)?;
-        let regs2 = nic_regs2_mapped_page.into_borrowed_mut(0).map_err(|(_mp, err)| err)?;
-        let regs3 = nic_regs3_mapped_page.into_borrowed_mut(0).map_err(|(_mp, err)| err)?;
-        let mac_regs = nic_mac_regs_mapped_page.into_borrowed_mut(0).map_err(|(_mp, err)| err)?;
+        let regs1 = nic_regs1_mapped_page.into_borrowed_mut(0)?;
+        let regs2 = nic_regs2_mapped_page.into_borrowed_mut(0)?;
+        let regs3 = nic_regs3_mapped_page.into_borrowed_mut(0)?;
+        let mac_regs = nic_mac_regs_mapped_page.into_borrowed_mut(0)?;
         
         // Divide the pages of the Rx queue registers into multiple 64B regions
-        let mut regs_rx = Self::mapped_regs_from_rx_memory(MappedPagesFragments::new(nic_rx_regs1_mapped_page))?;
-        regs_rx.append(&mut Self::mapped_regs_from_rx_memory(MappedPagesFragments::new(nic_rx_regs2_mapped_page))?);
-        
+        let length = nic_rx_regs1_mapped_page.size_in_bytes() / core::mem::size_of::<RegistersRx>();
+        let regs_rx1 = nic_rx_regs1_mapped_page.into_borrowed_slice_mut(0, length)?;
+        let length = nic_rx_regs2_mapped_page.size_in_bytes() / core::mem::size_of::<RegistersRx>();
+        let regs_rx2 = nic_rx_regs2_mapped_page.into_borrowed_slice_mut(0, length)?;
+
         // Divide the pages of the Tx queue registers into multiple 64B regions
-        let regs_tx = Self::mapped_regs_from_tx_memory(MappedPagesFragments::new(nic_tx_regs_mapped_page))?;
+        let length = nic_tx_regs_mapped_page.size_in_bytes() / core::mem::size_of::<RegistersTx>();
+        let regs_tx = nic_tx_regs_mapped_page.into_borrowed_slice_mut(0, length)?;
             
-        Ok((regs1, regs2, regs3, mac_regs, regs_rx, regs_tx))
+        Ok((regs1, regs2, regs3, mac_regs, regs_rx1, regs_rx2, regs_tx))
     }
 
-    // /// Returns the memory-mapped control registers of the nic and the rx/tx queue registers.
-    // fn mapped_reg(
-    //     mem_base: &PciBaseAddr
-    // ) -> Result<(
-    //     BorrowedMappedPages<IntelIxgbeRegisters1, Mutable>, 
-    //     BorrowedMappedPages<IntelIxgbeRegisters2, Mutable>, 
-    //     BorrowedMappedPages<IntelIxgbeRegisters3, Mutable>, 
-    //     BorrowedMappedPages<IntelIxgbeMacRegisters, Mutable>, 
-    //     Vec<RxQueueRegisters>, 
-    //     Vec<TxQueueRegisters>
-    // ), &'static str> {
-    //     // We've divided the memory-mapped registers into multiple regions.
-    //     // The size of each region is found from the data sheet, but it always lies on a page boundary.
-    //     const GENERAL_REGISTERS_1_SIZE_BYTES:   usize = 4096;
-    //     const RX_REGISTERS_SIZE_BYTES:          usize = 4096;
-    //     const GENERAL_REGISTERS_2_SIZE_BYTES:   usize = 4 * 4096;
-    //     const TX_REGISTERS_SIZE_BYTES:          usize = 2 * 4096;
-    //     const MAC_REGISTERS_SIZE_BYTES:         usize = 5 * 4096;
-    //     const GENERAL_REGISTERS_3_SIZE_BYTES:   usize = 18 * 4096;
-
-    //     // Allocate memory for the registers, making sure each successive memory region begins where the previous region ended.
-    //     let mut offset = *mem_base.deref();
-    //     let nic_regs1_mapped_page = allocate_memory(offset, GENERAL_REGISTERS_1_SIZE_BYTES, NIC_MAPPING_FLAGS_NO_CACHE)?;
-
-    //     offset += GENERAL_REGISTERS_1_SIZE_BYTES;
-    //     let nic_rx_regs1_mapped_page = allocate_memory(offset, RX_REGISTERS_SIZE_BYTES, NIC_MAPPING_FLAGS_NO_CACHE)?;
-
-    //     offset += RX_REGISTERS_SIZE_BYTES;
-    //     let nic_regs2_mapped_page = allocate_memory(offset, GENERAL_REGISTERS_2_SIZE_BYTES, NIC_MAPPING_FLAGS_NO_CACHE)?;  
-
-    //     offset += GENERAL_REGISTERS_2_SIZE_BYTES;
-    //     let nic_tx_regs_mapped_page = allocate_memory(offset, TX_REGISTERS_SIZE_BYTES, NIC_MAPPING_FLAGS_NO_CACHE)?;
-
-    //     offset += TX_REGISTERS_SIZE_BYTES;
-    //     let nic_mac_regs_mapped_page = allocate_memory(offset, MAC_REGISTERS_SIZE_BYTES, NIC_MAPPING_FLAGS_NO_CACHE)?;
-
-    //     offset += MAC_REGISTERS_SIZE_BYTES;
-    //     let nic_rx_regs2_mapped_page = allocate_memory(offset, RX_REGISTERS_SIZE_BYTES, NIC_MAPPING_FLAGS_NO_CACHE)?;   
-
-    //     offset += RX_REGISTERS_SIZE_BYTES;
-    //     let nic_regs3_mapped_page = allocate_memory(offset, GENERAL_REGISTERS_3_SIZE_BYTES, NIC_MAPPING_FLAGS_NO_CACHE)?;
-
-    //     // Map the memory as the register struct and tie the lifetime of the struct with its backing mapped pages
-    //     let regs1 = nic_regs1_mapped_page.into_borrowed_mut(0).map_err(|(_mp, err)| err)?;
-    //     let regs2 = nic_regs2_mapped_page.into_borrowed_mut(0).map_err(|(_mp, err)| err)?;
-    //     let regs3 = nic_regs3_mapped_page.into_borrowed_mut(0).map_err(|(_mp, err)| err)?;
-    //     let mac_regs = nic_mac_regs_mapped_page.into_borrowed_mut(0).map_err(|(_mp, err)| err)?;
-        
-    //     // Divide the pages of the Rx queue registers into multiple 64B regions
-    //     let mut regs_rx = Self::mapped_regs_from_rx_memory(MappedPagesFragments::new(nic_rx_regs1_mapped_page))?;
-    //     regs_rx.append(&mut Self::mapped_regs_from_rx_memory(MappedPagesFragments::new(nic_rx_regs2_mapped_page))?);
-        
-    //     // Divide the pages of the Tx queue registers into multiple 64B regions
-    //     let regs_tx = Self::mapped_regs_from_tx_memory(MappedPagesFragments::new(nic_tx_regs_mapped_page))?;
-            
-    //     Ok((regs1, regs2, regs3, mac_regs, regs_rx, regs_tx))
-    // }
-
-    /// Split the pages where rx queue registers are mapped into multiple smaller memory regions.
-    /// One region contains all the registers for a single queue.
-    fn mapped_regs_from_rx_memory(mut mp: MappedPagesFragments) -> Result<Vec<RxQueueRegisters>, &'static str> {
-        const QUEUES_IN_MP: usize = 64;
-
-        // We share the backing mapped pages among all the queue registers
-        let mut pointers_to_queues = Vec::with_capacity(QUEUES_IN_MP);
-
-        for i in 0..QUEUES_IN_MP {
-            pointers_to_queues.push(
-                RxQueueRegisters::new(i, &mut mp)?
-            );
-        }
-        Ok(pointers_to_queues)
-    }
-
-    /// Split the pages where tx queue registers are mapped into multiple smaller memory regions.
-    /// One region contains all the registers for a single queue.
-    fn mapped_regs_from_tx_memory(mut mp: MappedPagesFragments) -> Result<Vec<TxQueueRegisters>, &'static str> {
-        const QUEUES_IN_MP: usize = 128;
-
-        // We share the backing mapped pages among all the queue registers
-        let mut pointers_to_queues = Vec::with_capacity(QUEUES_IN_MP);
-
-        for i in 0..QUEUES_IN_MP {
-            pointers_to_queues.push(
-                TxQueueRegisters::new(i, &mut mp)?
-            );
-        }
-        Ok(pointers_to_queues)
-    }
 
     /// Reads the actual MAC address burned into the NIC hardware.
     fn read_mac_address_from_nic(regs: &IntelIxgbeMacRegisters) -> [u8; 6] {

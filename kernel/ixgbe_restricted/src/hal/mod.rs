@@ -2,6 +2,8 @@ pub(crate) mod regs;
 pub(crate) mod descriptor;
 
 use num_enum::TryFromPrimitive;
+use bitflags::bitflags;
+use static_assertions::*;
 
 /*** Hardware Device Parameters of the Intel 82599 NIC (taken from the datasheet) ***/
 
@@ -115,7 +117,6 @@ bitflags! {
 // Ensure that we never expose bit 7 as part of the `U7` interface.
 const_assert_eq!(HThresh::all().bits() & 0x80, 0);
 
-// Since all our code is for Advanced Descriptors, we don't let any other value be used
 pub enum DescType {
     Legacy = 0,
     AdvDesc1Buf = 1,
