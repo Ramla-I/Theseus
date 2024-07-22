@@ -27,6 +27,7 @@ use prusti_external_spec::{trusted_option::*,trusted_result::*};
 
 
 #[derive(Clone, Copy)]
+#[cfg_attr(not(prusti), derive(Debug))] 
 pub enum RepresentationCreationError {
     Overlap(usize),
     NoSpace
