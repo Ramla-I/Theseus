@@ -4,7 +4,7 @@ extern crate alloc;
 
 use core::str::FromStr;
 use alloc::{vec::Vec, string::String};
-use ixgbe_restricted::{get_ixgbe_nics_list, IxgbeStats};
+use ixgbe_restricted::{get_ixgbe_nics_list, IxgbeStats, agent::IxgbeAgent};
 use getopts::{Matches, Options};
 use hpet::get_hpet;
 use pmu_x86::{stat::{PMUResults, PerformanceCounters}, EventType};
@@ -98,8 +98,8 @@ fn packet_forwarder(args: PacketForwarderArgs) {
         error!("Fewer than 2 ixgbe devices available. Can't run packet forwarder."); 
         return;
     }
-    let dev0 = ixgbe_devs[0].lock(); // To Do: Make this variable
-    let dev1 = ixgbe_devs[2].lock();
+    let mut dev0 = ixgbe_devs[0].lock(); // To Do: Make this variable
+    let mut dev1 = ixgbe_devs[2].lock();
     info!("Link speed: {} Mbps", dev0.link_speed() as usize);
     info!("Link speed: {} Mbps", dev1.link_speed() as usize);
 
@@ -121,8 +121,8 @@ fn packet_forwarder(args: PacketForwarderArgs) {
     }
 
     // Initialize the ixgbe agents
-    // let mut agent0 = IxgbeAgent::new(&mut args.dev0, &mut args.dev1).expect("failed to init agent 0");
-    // let mut agent1 = IxgbeAgent::new(&mut args.dev1, &mut args.dev0).expect("failed to init agent 1");
+    let mut agent0 = IxgbeAgent::new(&mut dev0, &mut dev1).expect("failed to init agent 0");
+    let mut agent1 = IxgbeAgent::new(&mut dev1, &mut dev0).expect("failed to init agent 1");
 
     // start the PMU if enabled
     let mut counters = None;
@@ -173,8 +173,8 @@ fn packet_forwarder(args: PacketForwarderArgs) {
     //     // rx_packets_dev0 += agent0.run(print);
     //     // rx_packets_dev1 += agent1.run(print);
 
-    //     agent0.run();
-    //     agent1.run();
+        agent0.run();
+        agent1.run();
         
         if args.collect_stats {
             iterations += 1;

@@ -1,6 +1,7 @@
 use volatile::Volatile;
 use zerocopy::FromBytes;
 use core::ops::Deref;
+use memory::PhysicalAddress;
 
 /// The TinyNF driver uses a combined receive and transmit descriptor ring, 
 /// so interpretation of the bits depends on if we are accessing on receive or transmit.
@@ -26,6 +27,10 @@ impl LegacyDescriptor {
         const CMD_IFCS: u64 = 1 << 25;
         const CMD_RS:   u64 = 1 << 27;
         self.metadata.write(*packet_length as u64 | rs_bit | CMD_IFCS | CMD_EOP);
+    }
+
+    pub(crate) fn set_buffer_addr(&mut self, addr: PhysicalAddress) {
+        self.phys_addr.write(addr.value() as u64);
     }
 }
 

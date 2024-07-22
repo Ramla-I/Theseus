@@ -1,12 +1,11 @@
-use memory::{BorrowedSliceMappedPages, BorrowedMappedPages, Mutable, PhysicalAddress, create_contiguous_mapping};
-use crate::queue_registers::{RxQueueRegisters, TxQueueRegisters};
-use crate::{NumDesc, IxgbeNic, DescType, RxBufferSizeKiB, U7, HThresh};
-use crate::allocator::*;
+use memory::{create_contiguous_mapping, BorrowedMappedPages, BorrowedSliceMappedPages, Mutable, PhysicalAddress, DMA_FLAGS};
+use crate::{DescType, HThresh, IxgbeNic, NumDesc, RegistersRx, RegistersTx, RxBufferSizeKiB, U7};
 use crate::regs::{IntelIxgbeRegisters1, IntelIxgbeRegisters2};
+use crate::ethernet_frame::EthernetFrame;
 use crate::descriptor::*;
-use packet_buffers::EthernetFrame;
 use volatile::Volatile;
 use zerocopy::FromBytes;
+use memory_buffer::Buffer;
 
 const IXGBE_AGENT_RECYCLE_PERIOD: u64 = 32;
 const IXGBE_AGENT_FLUSH_PERIOD: u64 = 8;
@@ -19,8 +18,8 @@ pub struct TransmitHead {
 }
 
 pub struct IxgbeAgent {
-    pub(crate) rx_regs: RxQueueRegisters,
-    pub(crate) tx_regs: TxQueueRegisters,
+    pub(crate) rx_regs: Buffer<RegistersRx>,
+    pub(crate) tx_regs: Buffer<RegistersTx>,
     pub desc_ring: BorrowedSliceMappedPages<LegacyDescriptor, Mutable>,
     pub buffer: BorrowedSliceMappedPages<EthernetFrame, Mutable>,
     pub head_wb: BorrowedMappedPages<TransmitHead, Mutable>,
@@ -37,20 +36,20 @@ impl IxgbeAgent {
     pub fn new(device_rx: &mut IxgbeNic, device_tx: &mut IxgbeNic) -> Result<IxgbeAgent, &'static str> {
         let num_desc = NumDesc::Descs1k;
         assert!(num_desc as u16 == IXGBE_RING_SIZE);
-        let (buffers_mp, buffers_paddr) = create_contiguous_mapping(num_desc as usize * core::mem::size_of::<EthernetFrame>(), NIC_MAPPING_FLAGS_CACHED)?;
-        let (descs_mp, descs_paddr) = create_contiguous_mapping(num_desc as usize * core::mem::size_of::<LegacyDescriptor>(), NIC_MAPPING_FLAGS_CACHED)?;
-        let (head_wb_mp, head_wb_paddr) = create_contiguous_mapping(core::mem::size_of::<TransmitHead>(), NIC_MAPPING_FLAGS_CACHED)?;
+        let (buffers_mp, buffers_paddr) = create_contiguous_mapping(num_desc as usize * core::mem::size_of::<EthernetFrame>(), DMA_FLAGS)?;
+        let (descs_mp, descs_paddr) = create_contiguous_mapping(num_desc as usize * core::mem::size_of::<LegacyDescriptor>(), DMA_FLAGS)?;
+        let (head_wb_mp, head_wb_paddr) = create_contiguous_mapping(core::mem::size_of::<TransmitHead>(), DMA_FLAGS)?;
 
         let mut desc_ring = descs_mp.into_borrowed_slice_mut(0, num_desc as usize).map_err(|(_mp, err)| err)?;
 
         // should be impossible for the queues to be enabled at this point in our current design
         // later on we should check if the rxq registers are alreadyin use
-        Self::rx_init(num_desc, descs_paddr, device_rx.rxq_registers.as_mut().unwrap(), &mut device_rx.regs1);
-        Self::tx_init(num_desc, buffers_paddr, descs_paddr, head_wb_paddr, &mut desc_ring, device_tx.txq_registers.as_mut().unwrap(), &mut device_tx.regs2);
+        Self::rx_init(num_desc, descs_paddr, &mut device_rx.regs_rx1.buffers[0], &mut device_rx.regs1);
+        Self::tx_init(num_desc, buffers_paddr, descs_paddr, head_wb_paddr, &mut desc_ring, &mut device_tx.regs_tx.buffers[0], &mut device_tx.regs2);
 
         Ok(IxgbeAgent {
-            rx_regs: device_rx.rxq_registers.take().unwrap(),
-            tx_regs: device_tx.txq_registers.take().unwrap(),
+            rx_regs: device_rx.regs_rx1.buffers.pop_front().unwrap(),
+            tx_regs: device_tx.regs_tx.buffers.pop_front().unwrap(),
             desc_ring,
             buffer: buffers_mp.into_borrowed_slice_mut(0, num_desc as usize).map_err(|(_mp, err)| err)?,
             head_wb: head_wb_mp.into_borrowed_mut(0).map_err(|(_mp, err)| err)?,
@@ -64,7 +63,7 @@ impl IxgbeAgent {
         })
     }
 
-    fn rx_init(num_desc: NumDesc, descs_paddr: PhysicalAddress, rxq_regs: &mut RxQueueRegisters, regs1: &mut IntelIxgbeRegisters1) {
+    fn rx_init(num_desc: NumDesc, descs_paddr: PhysicalAddress, rxq_regs: &mut RegistersRx, regs1: &mut IntelIxgbeRegisters1) {
         // write the physical address of the rx descs ring
         rxq_regs.rdbal.write(descs_paddr.value() as u32);
         rxq_regs.rdbah.write((descs_paddr.value() >> 32) as u32);
@@ -96,11 +95,11 @@ impl IxgbeAgent {
         rxq_regs.dca_rxctrl_clear_bit_12();
     }
 
-    fn tx_init(num_desc: NumDesc, buffers_paddr: PhysicalAddress, descs_paddr: PhysicalAddress, head_wb_paddr: PhysicalAddress, desc_ring: &mut [LegacyDescriptor], txq_regs: &mut TxQueueRegisters, regs2: &mut IntelIxgbeRegisters2) {
+    fn tx_init(num_desc: NumDesc, buffers_paddr: PhysicalAddress, descs_paddr: PhysicalAddress, head_wb_paddr: PhysicalAddress, desc_ring: &mut [LegacyDescriptor], txq_regs: &mut RegistersTx, regs2: &mut IntelIxgbeRegisters2) {
         // set buffer addresses
         for i in 0..num_desc as usize {
             let packet_paddr = buffers_paddr + (i * core::mem::size_of::<EthernetFrame>());
-            desc_ring[i].phys_addr.write(packet_paddr.value() as u64);
+            desc_ring[i].set_buffer_addr(packet_paddr);
         }
         // write the physical address of the tx descs ring
         txq_regs.tdbal.write(descs_paddr.value() as u32); 
@@ -132,7 +131,7 @@ impl IxgbeAgent {
         let (dd, length) = self.desc_ring[self.processed_delimiter as usize].rx_metadata();
         // let rx_metadata = unsafe{ self.desc_ring.get_unchecked(self.processed_delimiter as usize).other.read()};
 
-        if !dd {
+        if !*dd {
             // no packet
             if self.flush_counter != 0 {
                 self.tx_regs.tdt_write(self.processed_delimiter);

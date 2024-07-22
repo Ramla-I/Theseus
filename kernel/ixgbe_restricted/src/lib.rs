@@ -9,9 +9,10 @@
 #![feature(ptr_internals)]
 
 extern crate alloc;
-pub mod hal;
 
-// pub mod agent;
+pub mod hal;
+pub mod agent;
+pub mod ethernet_frame;
 pub use hal::*;
 use hal::regs::*;
 
@@ -20,10 +21,9 @@ use alloc::vec::Vec;
 use irq_safety::MutexIrqSafe;
 use memory::{BorrowedMappedPages, BorrowedSliceMappedPages, Mutable, MMIO_FLAGS, MappedPages};
 use pci::{PciDevice, PciConfigSpaceAccessMechanism, PciLocation};
-use core::ops::{Deref};
-use core::convert::{TryFrom};
 use memory_buffer::{Buffer, BufferCreator};
 use log::{debug, info, error};
+use core::ops::Deref;
 
 /// Vendor ID for Intel
 pub const INTEL_VEND:                   u16 = 0x8086;  
@@ -83,9 +83,12 @@ pub struct IxgbeNic {
     regs2: BorrowedMappedPages<IntelIxgbeRegisters2, Mutable>,
     regs3: BorrowedMappedPages<IntelIxgbeRegisters3, Mutable>,
     regs_mac: BorrowedMappedPages<IntelIxgbeMacRegisters, Mutable>,
-    regs_rx1: BorrowedSliceMappedPages<RegistersRx, Mutable>,
-    regs_rx2: BorrowedSliceMappedPages<RegistersRx, Mutable>,
-    regs_tx: BorrowedSliceMappedPages<RegistersTx, Mutable>,
+    regs_rx1: BufferCreator<RegistersRx>,
+    regs_rx2:  BufferCreator<RegistersRx>,
+    regs_tx: BufferCreator<RegistersTx>
+    // regs_rx1: BorrowedSliceMappedPages<RegistersRx, Mutable>,
+    // regs_rx2: BorrowedSliceMappedPages<RegistersRx, Mutable>,
+    // regs_tx: BorrowedSliceMappedPages<RegistersTx, Mutable>,
 }
 
 // Functions that setup the NIC struct and handle the sending and receiving of packets.
@@ -152,9 +155,12 @@ impl IxgbeNic {
         BorrowedMappedPages<IntelIxgbeRegisters2, Mutable>, 
         BorrowedMappedPages<IntelIxgbeRegisters3, Mutable>, 
         BorrowedMappedPages<IntelIxgbeMacRegisters, Mutable>, 
-        BorrowedSliceMappedPages<RegistersRx, Mutable>,
-        BorrowedSliceMappedPages<RegistersRx, Mutable>, 
-        BorrowedSliceMappedPages<RegistersTx, Mutable>
+        BufferCreator<RegistersRx>,
+        BufferCreator<RegistersRx>,
+        BufferCreator<RegistersTx>
+        // BorrowedSliceMappedPages<RegistersRx, Mutable>,
+        // BorrowedSliceMappedPages<RegistersRx, Mutable>, 
+        // BorrowedSliceMappedPages<RegistersTx, Mutable>
     ), (MappedPages, &'static str)> {
         // We've divided the memory-mapped registers into multiple regions.
         // The size of each region is found from the data sheet, but it always lies on a page boundary.
@@ -202,13 +208,17 @@ impl IxgbeNic {
         
         // Divide the pages of the Rx queue registers into multiple 64B regions
         let length = nic_rx_regs1_mapped_page.size_in_bytes() / core::mem::size_of::<RegistersRx>();
-        let regs_rx1 = nic_rx_regs1_mapped_page.into_borrowed_slice_mut(0, length)?;
+        let regs_rx1 = BufferCreator::create_buffers_from_mp(nic_rx_regs1_mapped_page, length, core::mem::size_of::<RegistersRx>())?;
+        // let regs_rx1 = nic_rx_regs1_mapped_page.into_borrowed_slice_mut(0, length)?;
+        
         let length = nic_rx_regs2_mapped_page.size_in_bytes() / core::mem::size_of::<RegistersRx>();
-        let regs_rx2 = nic_rx_regs2_mapped_page.into_borrowed_slice_mut(0, length)?;
+        let regs_rx2 = BufferCreator::create_buffers_from_mp(nic_rx_regs2_mapped_page, length, core::mem::size_of::<RegistersRx>())?;
+        // let regs_rx2 = nic_rx_regs2_mapped_page.into_borrowed_slice_mut(0, length)?;
 
         // Divide the pages of the Tx queue registers into multiple 64B regions
         let length = nic_tx_regs_mapped_page.size_in_bytes() / core::mem::size_of::<RegistersTx>();
-        let regs_tx = nic_tx_regs_mapped_page.into_borrowed_slice_mut(0, length)?;
+        let regs_tx = BufferCreator::create_buffers_from_mp(nic_tx_regs_mapped_page, length, core::mem::size_of::<RegistersTx>())?;
+        // let regs_tx = nic_tx_regs_mapped_page.into_borrowed_slice_mut(0, length)?;
             
         Ok((regs1, regs2, regs3, mac_regs, regs_rx1, regs_rx2, regs_tx))
     }
