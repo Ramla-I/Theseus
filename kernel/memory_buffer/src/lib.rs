@@ -3,15 +3,27 @@
 
 extern crate alloc;
 
+use alloc::collections::VecDeque;
 use log::warn;
 use memory::{MappedPages, VirtualAddress};
 use prusti_representation_creator::*;
 use resource_identifier::ResourceIdentifier;
 use core::ptr::Unique;
 use core::{cmp::{max, min}, ops::{DerefMut, Deref}};
-use alloc::vec::Vec;
 
 pub struct Buffer<T>(Unique<T>);
+impl<T> Deref for Buffer<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        unsafe{ self.0.as_ref() }
+    }
+}
+
+impl<T> DerefMut for Buffer<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe{ self.0.as_mut() }
+    }
+}
 
 #[derive(PartialEq, Copy, Clone)]
 struct BufferInfo {
@@ -48,7 +60,7 @@ impl ResourceIdentifier for BufferInfo {
 pub struct BufferCreator<R> {
     rep_creator: RepresentationCreator<BufferInfo, Buffer<R>>,
     backing_mp: MappedPages,
-    pub buffers: Vec<Buffer<R>>
+    pub buffers: VecDeque<Buffer<R>>
 }
 
 impl<R> BufferCreator<R> {
@@ -66,18 +78,24 @@ impl<R> BufferCreator<R> {
     //     }
     // }
 
-    pub fn create_buffers_from_mp(backing_mp: MappedPages, num_buffers: usize, buffer_size: usize) -> Result<BufferCreator<R>, &'static str> {
+    pub fn create_buffers_from_mp(backing_mp: MappedPages, num_buffers: usize, buffer_size: usize) -> Result<BufferCreator<R>, (MappedPages, &'static str)> {
         let mut rep_creator = RepresentationCreator::new(Self::create_buffer, false);
 
         let mut start_addr = backing_mp.start_address();
-        let mut buffers = Vec::with_capacity(num_buffers);
+        let mut buffers = VecDeque::with_capacity(num_buffers);
 
         for _ in 0..num_buffers {
-            let buffer_info = BufferInfo::new(start_addr, start_addr + buffer_size - 1, &backing_mp)
-                .ok_or("Failed to create buffer info for buffer")?;
-            buffers.push(rep_creator.create_unique_representation(buffer_info)
-                .map(|(buffer, _)| buffer)
-                .map_err(|_| "Failed to create buffer")?);
+            let buffer_info = BufferInfo::new(start_addr, start_addr + buffer_size - 1, &backing_mp);
+            if buffer_info.is_none() { 
+                return Err((backing_mp, "Buffer would be out of bounds of the backing memory"));
+            }
+
+            let buffer = rep_creator.create_unique_representation(buffer_info.unwrap()).map(|(buffer, _)| buffer);
+            if buffer.is_err() {
+                return Err((backing_mp, "Failed to create buffer"));
+            }
+
+            buffers.push_back(buffer.unwrap());
             start_addr += buffer_size;
         }
 
