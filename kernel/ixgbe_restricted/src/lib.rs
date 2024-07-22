@@ -321,32 +321,32 @@ impl IxgbeNic {
         }
     }
 
-    // /// Clear the statistic registers by reading from them.
-    // fn clear_stats_internal(regs: &IntelIxgbeRegisters2) {
-    //     regs.gprc.read();
-    //     regs.gptc.read();
-    //     regs.gorcl.read();
-    //     regs.gorch.read();
-    //     regs.gotcl.read();
-    //     regs.gotch.read();
-    // }
+    /// Clear the statistic registers by reading from them.
+    fn clear_stats_internal(regs: &IntelIxgbeRegisters2) {
+        regs.gprc.read();
+        regs.gptc.read();
+        regs.gorcl.read();
+        regs.gorch.read();
+        regs.gotcl.read();
+        regs.gotch.read();
+    }
 
-    // /// Clear the statistic registers by reading from them.
-    // pub fn clear_stats(&self) {
-    //     Self::clear_stats_internal(&self.regs2);
-    // }
+    /// Clear the statistic registers by reading from them.
+    pub fn clear_stats(&self) {
+        Self::clear_stats_internal(&self.regs2);
+    }
 
-    // /// Returns the Rx and Tx statistics for good packets.
-    // /// A good packet is one that is >= 64 bytes including ethernet header and CRC
-    // pub fn get_stats(&self, stats: &mut IxgbeStats) {
-    //     let rx_bytes =  ((self.regs2.gorch.read() as u64 & 0xF) << 32) | self.regs2.gorcl.read() as u64;
-    //     let tx_bytes =  ((self.regs2.gotch.read() as u64 & 0xF) << 32) | self.regs2.gotcl.read() as u64;
+    /// Returns the Rx and Tx statistics for good packets.
+    /// A good packet is one that is >= 64 bytes including ethernet header and CRC
+    pub fn get_stats(&self, stats: &mut IxgbeStats) {
+        let rx_bytes =  ((self.regs2.gorch.read() as u64 & 0xF) << 32) | self.regs2.gorcl.read() as u64;
+        let tx_bytes =  ((self.regs2.gotch.read() as u64 & 0xF) << 32) | self.regs2.gotcl.read() as u64;
 
-    //     stats.rx_bytes = rx_bytes;
-    //     stats.tx_bytes = tx_bytes;
-    //     stats.rx_packets = self.regs2.gprc.read();
-    //     stats.tx_packets = self.regs2.gptc.read();
-    // }
+        stats.rx_bytes = rx_bytes;
+        stats.tx_bytes = tx_bytes;
+        stats.rx_packets = self.regs2.gprc.read();
+        stats.tx_packets = self.regs2.gptc.read();
+    }
 
     fn rx_init_pre(regs2: &mut IntelIxgbeRegisters2) -> Result<(), &'static str> {
         //CRC offloading
@@ -410,10 +410,10 @@ impl IxgbeNic {
 }
 
 
-// #[derive(Default, Debug)]
-// pub struct IxgbeStats{
-//     pub rx_bytes: u64,
-//     pub tx_bytes: u64,
-//     pub rx_packets: u32,
-//     pub tx_packets: u32,
-// }
+#[derive(Default, Debug)]
+pub struct IxgbeStats{
+    pub rx_bytes: u64,
+    pub tx_bytes: u64,
+    pub rx_packets: u32,
+    pub tx_packets: u32,
+}

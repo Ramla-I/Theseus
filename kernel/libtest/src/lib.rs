@@ -52,22 +52,21 @@ pub fn nr_tasks_in_rq(cpu: CpuId) -> Option<usize> {
 	}
 }
 
+/// a free core will only have 1 task, the idle task, running on it.
+const NUM_TASKS_ON_FREE_CORE: usize = 0;
 
-/// True if only two tasks are running in the current runqueue.
-/// Used to verify if there are any other tasks than the current task and idle task in the runqueue
+/// True if only one task is running in the current runqueue.
+/// Used to verify if there are any other tasks than the current task in the runqueue
 pub fn check_myrq() -> bool {
+	let  required_num_tasks = NUM_TASKS_ON_FREE_CORE + 1;
 	match nr_tasks_in_rq(CPU_ID!()) {
-		Some(1) => { true }
+		Some(required_num_tasks)=> { true }
 		_ => { false }
 	}
 }
 
-
 /// Helper function to pick a free child core if possible
 pub fn pick_free_core() -> Result<CpuId, &'static str> {
-	// a free core will only have 1 task, the idle task, running on it.
-	const NUM_TASKS_ON_FREE_CORE: usize = 1;
-
 	for lapic in get_lapics().iter() {
 		let cpu: CpuId = (*lapic.0).into();
 		if nr_tasks_in_rq(cpu) == Some(NUM_TASKS_ON_FREE_CORE) {
@@ -77,6 +76,20 @@ pub fn pick_free_core() -> Result<CpuId, &'static str> {
 
 	warn!("Cannot pick a free core because cores are busy");
 	Err("Cannot pick a free core because cores are busy")
+}
+
+/// Helper function to pick a free child core if the given CPUID.
+/// Useful when you want to make sure the core you select is on a certain NUMA node.
+pub fn pick_free_core_with_cpu_id(cpu_id: u32) -> Result<CpuId, &'static str> {
+	for lapic in get_lapics().iter() {
+		let cpu: CpuId = (*lapic.0).into();
+		if nr_tasks_in_rq(cpu) == Some(NUM_TASKS_ON_FREE_CORE) && cpu.value() == cpu_id {
+			return Ok(cpu);
+		}
+	}
+
+	warn!("Cannot pick a free core with the given id because it is busy");
+	Err("Cannot pick a free core with the given id because it is busy")
 }
 
 

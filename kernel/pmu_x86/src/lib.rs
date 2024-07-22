@@ -126,7 +126,7 @@ const WORDS_IN_BITMAP: usize = 4;
 /// The number of cores the current PMU implementation supports
 const CORES_SUPPORTED_BY_PMU: usize = 256;
 /// The number of general purpose PMCs the current PMU implementation supports
-const PMCS_SUPPORTED_BY_PMU: u8 = 8;
+pub(crate) const PMCS_SUPPORTED_BY_PMU: u8 = 8;
 /// The initial value for the bitmaps in PMCS_AVAILABLE 
 const INIT_VAL_PMCS_AVAILABLE: u8 = core::u8::MAX;
 
@@ -154,6 +154,11 @@ static SAMPLING_INFO: IrqSafeMutex<BTreeMap<u8, SampledEvents>> =  IrqSafeMutex:
 
 /// Used to select the event type to count. Event types are described in the Intel SDM 18.2.1 for PMU Version 1.
 /// The discriminant value for each event type is the value written to the event select register for a general purpose PMC.
+/// All Performance Monitoring Events given in  Chp 19
+/// (0x03 << 16) enables performance monitoring for both priviledge levels
+/// (x << 8) is the unit mask (UMask)
+/// (x) is the event select
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum EventType{
     /// This event counts the number of instructions at retirement. For instructions that consist of multiple micro-ops,
     /// this event counts the retirement of the last micro-op of the instruction.
@@ -180,7 +185,45 @@ pub enum EventType{
     /// This event counts mispredicted branch instructions at retirement. It counts the retirement of the last micro-op
     /// of a branch instruction in the architectural path of execution and experienced misprediction in the branch
     /// prediction hardware.
-    BranchMissesRetired = (0x03 << 16) | 0xC5,
+    BranchMissesRetired = (0x03 << 16) | (0x00 << 8) | 0xC5,
+
+    //*** Note: For all the events below, we've only checked that it is supported on Xeon scalable family of processors ***//
+
+    /// Counts demand data loads that cause a page walk of any size. This implies it missed in all TLB levels, but the walk need not have completed.
+    DTLBLoadMissesMissCausesAWalk = (0x03 << 16) | (0x1 << 8) | 0x08,
+    /// Counts demand data loads that caused a completed page walk of any size. This implies it missed in all TLB levels.The page walk can end with or without a fault.
+    DTLBLoadMissesWalkCompleted = (0x03 << 16) | (0xE << 8) | 0x08,
+    /// Counts demand data stores that cause a page walk of any size. This implies it missed in all TLB levels, but the walk need not have completed.
+    DTLBStoreMissesMissCausesAWalk = (0x03 << 16) | (0x1 << 8) | 0x49,
+    /// Counts demand data stores that caused a completed page walk of any size. This implies it missed in all TLB levels.The page walk can end with or without a fault.
+    DTLBStoreMissesWalkCompleted = (0x03 << 16) | (0xE << 8) | 0x49,
+
+    /// All requests that miss L2 cache.
+    L2RqstsMiss = (0x03 << 16) | (0x3F << 8) | 0x24,
+    /// All L2 requests.
+    L2RqstsReferences = (0x03 << 16) | (0xFF << 8) | 0x24,
+
+    /// Retired load instructions that miss the STLB
+    MemInstRetiredSTLBMissLoads = (0x03 << 16) | (0x11 << 8) | 0xD0,
+    /// Retired store instructions that miss the STLB
+    MemInstRetiredSTLBMissStores = (0x03 << 16) | (0x12 << 8) | 0xD0,
+    /// All retired load instructions
+    MemInstRetiredAllLoads = (0x03 << 16) | (0x81 << 8) | 0xD0,
+    /// All retired store instructions
+    MemInstRetiredAllStores = (0x03 << 16) | (0x82 << 8) | 0xD0,
+    /// Counts retired load instructions with at least one uop that hit in the L1 data cache. 
+    /// This event includes all SW prefetches and lock instructions regardless of the data source.
+    MemLoadRetiredL1Hit = (0x03 << 16) | (0x01 << 8) | 0xD1,
+    /// Retired load instructions with L2 cache hits as data sources.
+    MemLoadRetiredL2Hit = (0x03 << 16) | (0x02 << 8) | 0xD1,
+    /// Counts retired load instructions with at least one uop that hit in the L3 cache.
+    MemLoadRetiredL3Hit = (0x03 << 16) | (0x04 << 8) | 0xD1,
+    /// Counts retired load instructions with at least one uop that missed in the L1 cache.
+    MemLoadRetiredL1Miss = (0x03 << 16) | (0x08 << 8) | 0xD1,
+    /// Retired load instructions missed L2 cache as data sources.
+    MemLoadRetiredL2Miss = (0x03 << 16) | (0x10 << 8) | 0xD1,
+    /// Counts retired load instructions with at least one uop that missed in the L3 cache.
+    MemLoadRetiredL3Miss = (0x03 << 16) | (0x20 << 8) | 0xD1,
 }
 
 fn num_general_purpose_counters() -> u8 {
@@ -294,6 +337,10 @@ fn init_registers() {
         Msr::new(IA32_PMC1).write(0);
         Msr::new(IA32_PMC2).write(0);
         Msr::new(IA32_PMC3).write(0);
+        Msr::new(IA32_PMC4).write(0);
+        Msr::new(IA32_PMC5).write(0);
+        Msr::new(IA32_PMC6).write(0);
+        Msr::new(IA32_PMC7).write(0);
         // clear the fixed event counters
         Msr::new(IA32_FIXED_CTR0).write(0);
         Msr::new(IA32_FIXED_CTR1).write(0);
@@ -307,6 +354,8 @@ fn init_registers() {
 
 /// A logical counter object to correspond to a physical PMC
 pub struct Counter {
+    /// Event type that this counter is counting
+    pub(crate) event_type: EventType,
     /// Initial value stored in the counter before counting starts
     start_count: u64,
     /// value passed to rdpmc instruction to read counter value
@@ -325,10 +374,8 @@ impl Counter {
         check_pmu_availability()?;
         
         match event {
-            EventType::InstructionsRetired => create_fixed_counter(FIXED_FUNC_0_RDPMC),
-            EventType::UnhaltedCoreCycles => create_fixed_counter(FIXED_FUNC_1_RDPMC),
-            EventType::UnhaltedReferenceCycles => create_fixed_counter(FIXED_FUNC_2_RDPMC),
-            _ => create_general_counter(event as u64)	
+            EventType::InstructionsRetired | EventType::UnhaltedCoreCycles | EventType::UnhaltedReferenceCycles => create_fixed_counter(event),
+            _ => create_general_counter(event)	
         }
     }
     
@@ -568,12 +615,12 @@ fn sampling_results_are_ready(core_id: u8) -> bool {
 }
 
 /// Creates a counter object for a general purpose PMC given the event type.
-fn create_general_counter(event_mask: u64) -> Result<Counter, &'static str> {
-    programmable_start(event_mask)
+fn create_general_counter(event: EventType) -> Result<Counter, &'static str> {
+    programmable_start(event)
 }
 
 /// Does the work of iterating through programmable counters and using whichever one is free. Returns Err if none free
-fn programmable_start(event_mask: u64) -> Result<Counter, &'static str> {
+fn programmable_start(event: EventType) -> Result<Counter, &'static str> {
     let my_core = cpu::current_cpu().into_u8();
     let num_pmc = num_general_purpose_counters();
 
@@ -587,9 +634,10 @@ fn programmable_start(event_mask: u64) -> Result<Counter, &'static str> {
 
         unsafe{
             Msr::new(IA32_PMC0 + (pmc as u32)).write(0);
-            Msr::new(IA32_PERFEVTSEL0 + (pmc as u32)).write(event_mask);
+            Msr::new(IA32_PERFEVTSEL0 + (pmc as u32)).write(event as u64);
         }
         return Ok(Counter {
+            event_type: event,
             start_count: 0, 
             msr_mask: pmc as u32, 
             pmc: pmc as i32, 
@@ -600,15 +648,20 @@ fn programmable_start(event_mask: u64) -> Result<Counter, &'static str> {
 }
 
 /// Creates a counter object for a fixed hardware counter
-fn create_fixed_counter(msr_mask: u32) -> Result<Counter, &'static str> {
-    let my_core = cpu::current_cpu().into_u8();
-    let count = rdpmc(msr_mask);
+fn create_fixed_counter(event_type: EventType) -> Result<Counter, &'static str> {
+    let msr_mask = match event_type {
+        EventType::InstructionsRetired => FIXED_FUNC_0_RDPMC,
+        EventType::UnhaltedCoreCycles => FIXED_FUNC_1_RDPMC,
+        EventType::UnhaltedReferenceCycles => FIXED_FUNC_2_RDPMC,
+        _ => return Err("Event type not supported for a fixed function counter.")
+    };
     
     Ok(Counter {
-        start_count: count, 
+        event_type,
+        start_count: rdpmc(msr_mask), 
         msr_mask, 
         pmc: -1, 
-        core: my_core
+        core: cpu::current_cpu().into_u8()
     })
 }
 

@@ -2605,6 +2605,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "packet_forwarder_restricted"
+version = "0.1.0"
+dependencies = [
+ "app_io",
+ "getopts",
+ "hpet",
+ "irq_safety",
+ "ixgbe_restricted",
+ "libtest",
+ "log",
+ "pmu_x86",
+ "spawn",
+]
+
+[[package]]
 name = "page_allocator"
 version = "0.1.0"
 dependencies = [
