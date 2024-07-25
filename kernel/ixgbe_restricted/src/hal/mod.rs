@@ -118,8 +118,8 @@ bitflags! {
 const_assert_eq!(HThresh::all().bits() & 0x80, 0);
 
 pub enum DescType {
-    Legacy = 0,
-    AdvDesc1Buf = 1,
-    AdvDescHeadSplit = 2,
-    AdvDescHeadSplitAlways = 5,
+    Legacy,
+    AdvDesc1Buf,
+    // AdvDescHeadSplit,
+    // AdvDescHeadSplitAlways,
 }

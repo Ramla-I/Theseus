@@ -80,7 +80,7 @@ impl IxgbeAgent {
         // Write the tail index.
         // Note that the 82599 datasheet (section 8.2.3.8.5) states that we should set the RDT (tail index) to the index *beyond* the last receive descriptor, 
         // but we set it to the last receive descriptor for the same reason as the e1000 driver
-        rxq_regs.rdt_write(num_desc as u16 - 1);
+        rxq_regs.set_rdt(num_desc);
         
         {
             // *** Here we do the operations that should only be done once, not per receive queue 
@@ -146,7 +146,7 @@ impl IxgbeAgent {
     #[inline(always)]
     fn transmit(&mut self, packet_length: PacketLength) {
         let rs_bit = if (self.processed_delimiter as u64 & (IXGBE_AGENT_RECYCLE_PERIOD - 1)) == (IXGBE_AGENT_RECYCLE_PERIOD - 1) { 1 << (24 + 3) } else { 0 };
-        self.desc_ring[self.processed_delimiter as usize].send(packet_length, rs_bit);
+        self.desc_ring[self.processed_delimiter as usize].send(packet_length, rs_bit, DescType::Legacy);
         // unsafe{ self.desc_ring.get_unchecked_mut(self.processed_delimiter as usize).other.write(packet_length as u64 | rs_bit | (1 << (24 + 1)) | (1 << 24)); }
         self.processed_delimiter = (self.processed_delimiter + 1) & (IXGBE_RING_SIZE - 1);
 

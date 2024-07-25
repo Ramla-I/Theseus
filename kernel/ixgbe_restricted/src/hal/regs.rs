@@ -23,7 +23,7 @@ use zerocopy::FromBytes;
 use bit_field::BitField;
 use num_enum::TryFromPrimitive;
 use crate::hal::*;
-use core::ops::Deref;
+use core::{num, ops::Deref};
 
 /// The layout in memory of the first set of general registers of the 82599 device.
 #[derive(FromBytes)]
@@ -263,6 +263,8 @@ const_assert_eq!(FilterCtrlFlags::all().bits() & 0xFFFF_F8FD, 0);
 
 pub struct FCTRLSet(bool);
 pub struct RXCTRLDisabled(bool);
+pub struct ARBDISSet(bool);
+
 
 /// Enable CRC strip by HW
 pub const HLREG0_CRC_STRIP:             u32 = 1 << 1;
@@ -360,8 +362,9 @@ impl IntelIxgbeRegisters2 {
         FCTRLSet(true)
     }
 
-    pub fn rttdcs_set_arbdis(&mut self) {
+    pub fn rttdcs_set_arbdis(&mut self) -> ARBDISSet {
         self.rttdcs.write(self.rttdcs.read() | RTTDCS_ARBDIS);
+        ARBDISSet(true)
     }
 
     pub fn rttdcs_clear_arbdis(&mut self) {
@@ -376,9 +379,10 @@ impl IntelIxgbeRegisters2 {
         self.dmatxctl.write(self.dmatxctl.read() | TRANSMIT_ENABLE); 
     }
 
-    // pub fn rxcsum_enable_rss_writeback(&mut self) {
-    //     self.rxcsum.write(RXCSUM_PCSD);
-    // }
+    pub fn rxcsum_enable_rss_writeback(&mut self, _rx_disabled: RXCTRLDisabled) {
+        const RXCSUM_PCSD: u32 = 1 << 13;
+        self.rxcsum.write(RXCSUM_PCSD);
+    }
 
     pub fn mflcn_enable_receive_flow_control(&mut self) {
         self.mflcn.write(self.mflcn.read() | (1 << 3));
@@ -414,18 +418,21 @@ pub struct IntelIxgbeMacRegisters {
     _padding1:                          [u8; 256],              // 0x8000 - 0x80FF
     /// DMA Tx TCP Max Allow Size Requests
     dtxmxszrq:                          Volatile<u32>,          // 0X8100
-    _padding2:                          [u8; 8444],             // 0x8104 - 0xA1FF
+    _padding2:                          [u8; 28],               // 0x8104 - 0x811F
+
+    mtqc:                               Volatile<u32>,          // 0x8120
+    _padding3:                          [u8; 8412],             // 0x8124 - 0xA1FF
     
     /// Receive Address Low
     pub ral:                            ReadOnly<u32>,          // 0xA200;
     
     /// Receive Address High
     rah:                                ReadOnly<u32>,          // 0xA204;
-    _padding3:                          [u8; 10744],            // 0xA208 - 0xCBFF
+    _padding4:                          [u8; 10744],            // 0xA208 - 0xCBFF
 
     /// Transmit Packet Buffer Size
     txpbsize:                           [Volatile<u32>;8],      // 0xCC00
-    _padding4:                          [u8; 992],              // 0xCC20 - 0xCFFF
+    _padding5:                          [u8; 992],              // 0xCC20 - 0xCFFF
 } // 5 4KiB page
 
 const_assert_eq!(core::mem::size_of::<IntelIxgbeMacRegisters>(), 5 * 4096);
@@ -461,6 +468,10 @@ impl IntelIxgbeMacRegisters {
 
     pub fn txpbsize_write(&mut self, reg_idx: TxPBReg, val: TxPBSize) {
         self.txpbsize[reg_idx as usize].write((val as u32) << 10);
+    }
+
+    pub fn mtqc_write(&mut self, val: u8, _arbdis_set: ARBDISSet) { // could extend this by returning type that is consumed by arbdis clear
+        self.mtqc.write((val as u32) & 0xF);
     }
 }
 
@@ -755,6 +766,11 @@ const_assert_eq!(core::mem::size_of::<RegistersRx>(), 64);
 
 impl RegistersRx {
     // gate access so that the upper 16 bits are always set to 0
+    #[inline(always)]
+    pub fn set_rdt(&mut self, num_desc: NumDesc) {
+        self.rdt.write(num_desc as u32 - 1);
+    }
+
     #[inline(always)]
     pub fn rdt_write(&mut self, val: u16) {
         self.rdt.write(val as u32);

@@ -3,6 +3,8 @@ use zerocopy::FromBytes;
 use core::ops::Deref;
 use memory::PhysicalAddress;
 
+use crate::DescType;
+
 /// The TinyNF driver uses a combined receive and transmit descriptor ring, 
 /// so interpretation of the bits depends on if we are accessing on receive or transmit.
 #[derive(FromBytes)]
@@ -22,15 +24,20 @@ impl LegacyDescriptor {
     }
 
     #[inline(always)]
-    pub fn send(&mut self, packet_length: PacketLength, rs_bit: u64) {
+    pub fn send(&mut self, packet_length: PacketLength, rs_bit: u64, desc_type: DescType) {
+        let (desc_type, length) = match desc_type {
+            DescType::Legacy => (0, *packet_length as u64),
+            DescType::AdvDesc1Buf =>  (1 << 29 | 0x3 << 20, *packet_length as u64 | (*packet_length as u64) << 46),
+        };
         const CMD_EOP:  u64 = 1 << 24;
         const CMD_IFCS: u64 = 1 << 25;
         const CMD_RS:   u64 = 1 << 27;
-        self.metadata.write(*packet_length as u64 | rs_bit | CMD_IFCS | CMD_EOP);
+        self.metadata.write(length | rs_bit | CMD_IFCS | CMD_EOP | desc_type);
     }
 
     pub(crate) fn set_buffer_addr(&mut self, addr: PhysicalAddress) {
         self.phys_addr.write(addr.value() as u64);
+        self.metadata.write(0); // cannot set the buffer address without setting the header address to 0 (TinyNF)
     }
 }
 
