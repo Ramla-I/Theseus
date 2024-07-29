@@ -37,7 +37,7 @@ pub struct RangeInclusive<Idx: Clone + PartialOrd> {
     pub(crate) end: Idx
 }
 
-#[cfg(not(prusti))]
+// #[cfg(not(prusti))]
 impl<Idx: Clone + PartialOrd + fmt::Debug> fmt::Debug for RangeInclusive<Idx> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}..={:?}", self.start, self.end)
@@ -94,7 +94,7 @@ impl<Idx: Clone + PartialOrd> RangeInclusive<Idx> {
     }
 }
 
-#[cfg(not(prusti))]
+#[cfg(not(prusti))] // for some reason this gives a prusti error even with the skip_unsupported_features flag
 impl<T: Clone + PartialOrd> RangeBounds<T> for RangeInclusive<T> {
     fn start_bound(&self) -> Bound<&T> {
         Included(&self.start)
@@ -104,7 +104,7 @@ impl<T: Clone + PartialOrd> RangeBounds<T> for RangeInclusive<T> {
     }
 }
 
-#[cfg(not(prusti))]
+// #[cfg(not(prusti))]
 impl<'a, Idx: Clone + PartialOrd + Step> IntoIterator for &'a RangeInclusive<Idx> {
     type Item = Idx;
     type IntoIter = RangeInclusiveIterator<Idx>;
@@ -124,7 +124,7 @@ pub struct RangeInclusiveIterator<Idx> {
     end: Idx
 }
 
-#[cfg(not(prusti))]
+// #[cfg(not(prusti))]
 impl<A: Step> Iterator for RangeInclusiveIterator<A> {
     type Item = A;
 
@@ -138,14 +138,14 @@ impl<A: Step> Iterator for RangeInclusiveIterator<A> {
     }
 }
 
-#[cfg(not(prusti))]
+// #[cfg(not(prusti))]
 impl<A: Step> ExactSizeIterator for RangeInclusiveIterator<A> {
     fn len(&self) -> usize {
         Step::steps_between(&self.current, &self.end).map(|x| x+1).unwrap_or(0)
     }
 }
 
-#[cfg(not(prusti))]
+// #[cfg(not(prusti))]
 impl<A: Step> DoubleEndedIterator for RangeInclusiveIterator<A>  {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.current > self.end {
