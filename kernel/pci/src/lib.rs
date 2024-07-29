@@ -8,10 +8,7 @@
 #![allow(dead_code)]
 #![feature(rustc_private)]
 
-extern crate prusti_contracts;
-extern crate prusti_external_spec;
-extern crate cfg_if;
-extern crate prusti_representation_creator;
+extern crate alloc;
 
 use prusti_contracts::*;
 use core::mem::size_of;
@@ -20,24 +17,20 @@ use prusti_representation_creator::resource_identifier::ResourceIdentifier;
 #[cfg(target_arch = "x86_64")]
 use port_io::Port;
 
-#[cfg(prusti)]
-use prusti_external_spec::trusted_mutex::Mutex;
-
-cfg_if::cfg_if! { if #[cfg(not(prusti))] {
-extern crate alloc;
-
+use spin::{Once, Mutex};
 use log::*;
 use core::{fmt, ops::{Deref, DerefMut}};
-use alloc::vec::Vec;
-use spin::{Once, Mutex};
-use memory::{PhysicalAddress, BorrowedSliceMappedPages, Mutable, MappedPages, map_frame_range, MMIO_FLAGS};
-use bit_field::BitField;
-use volatile::Volatile;
-use zerocopy::FromBytes;
-use cpu::CpuId;
-use interrupts::InterruptNumber;
-use static_assertions::assert_not_impl_any;
 use prusti_representation_creator::{RepresentationCreator, RepresentationCreationError}; 
+use alloc::vec::Vec;
+use bit_field::BitField;
+use static_assertions::assert_not_impl_any;
+use zerocopy::FromBytes;
+use volatile::Volatile;
+
+cfg_if::cfg_if! { if #[cfg(not(prusti))] { // to remove these out of the cfg will need to look at all these dependencies as well. Unneccesary right now because they're not involved in verification
+use memory::{PhysicalAddress, BorrowedSliceMappedPages, Mutable, MappedPages, map_frame_range, MMIO_FLAGS};
+use interrupts::InterruptNumber;
+use cpu::CpuId;
 
 #[cfg(target_arch = "aarch64")]
 use arm_boards::BOARD_CONFIG;
@@ -122,7 +115,6 @@ struct PciRegister {
     span: RegisterSpan,
 }
 
-#[cfg(not(prusti))]
 impl PciRegister {
     const fn from_offset(raw_offset: u8, size_in_bytes: u8) -> Self {
         let index = raw_offset >> 2;
@@ -147,8 +139,6 @@ const MAX_SLOTS_PER_BUS: u8 = 32;
 /// There is a maximum of 32 functions (devices) on one PCI slot.
 const MAX_FUNCTIONS_PER_SLOT: u8 = 8;
 
-
-cfg_if::cfg_if! { if #[cfg(not(prusti))] {
 
 /// A macro for easily defining PCI registers using offsets from the PCI spec.
 ///
@@ -231,6 +221,7 @@ static DEVICE_CREATOR: Mutex<PciDeviceCreator> = Mutex::new(PciDeviceCreator::ne
 
 static PCI_BUSES: Once<Mutex<Vec<PciBus>>> = Once::new();
 
+#[cfg(not(prusti))]
 /// Returns a list of all PCI buses in this system.
 /// If the PCI bus hasn't been initialized, this initializes the PCI bus & scans it to enumerates devices.
 pub fn get_pci_buses() -> Result<&'static Mutex<Vec<PciBus>>, &'static str> {
@@ -254,6 +245,7 @@ pub fn get_pci_buses() -> Result<&'static Mutex<Vec<PciBus>>, &'static str> {
 //     Ok(None)
 // }
 
+#[cfg(not(prusti))]
 /// Returns a reference to the `PciDevice` with the given bus, slot, func identifier.
 /// If the PCI bus hasn't been initialized, this initializes the PCI bus & scans it to enumerates devices.
 pub fn get_pci_device_bsf(bus: u8, slot: u8, func: u8) -> Result<Option<PciDevice>, &'static str> {
@@ -281,7 +273,8 @@ pub fn get_pci_device_bsf(bus: u8, slot: u8, func: u8) -> Result<Option<PciDevic
 
 
 /// A PCI bus, which contains a list of PCI devices on that bus.
-#[derive(Debug)]
+#[cfg_attr(not(prusti), derive(Debug))] 
+
 pub struct PciBus {
     /// The number identifier of this PCI bus.
     bus_number: u8,
@@ -290,6 +283,7 @@ pub struct PciBus {
 }
 
 
+#[cfg(not(prusti))]
 /// Scans all PCI Buses (brute force iteration) to enumerate PCI Devices on each bus.
 /// Initializes structures containing this information. 
 fn scan_pci() -> Result<Mutex<Vec<PciBus>>, &'static str> {
@@ -380,7 +374,7 @@ impl DerefMut for PciDeviceCreator {
         &mut self.0
     }
 }
-}}
+// }}
 
 /// The bus, slot, and function number of a given PCI device.
 /// This offers methods for reading and writing the PCI config space. 
@@ -491,7 +485,6 @@ impl PciLocation {
     }
 }
 
-#[cfg(not(prusti))]
 impl PciLocation {
     /// Writes (part of) the given `value` to the given `register` in the PCI Configuration Space.
     ///
@@ -625,14 +618,12 @@ impl PciLocation {
     }
 }
 
-#[cfg(not(prusti))]
 impl fmt::Display for PciLocation {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "b{}.s{}.f{}", self.bus, self.slot, self.func)
     }
 }
 
-#[cfg(not(prusti))]
 impl fmt::Debug for PciLocation {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "{self}")
@@ -700,7 +691,6 @@ fn new_pci_device(location: &PciLocation) -> PciDevice {
     }
 }
 
-cfg_if::cfg_if! { if #[cfg(not(prusti))] {
 
 assert_not_impl_any!(PciDevice: DerefMut, Clone);
 
@@ -719,6 +709,7 @@ impl PciDevice {
     pub fn header_type(&self) -> u8 { self.header_type }
     pub fn bist(&self) -> u8 { self.bist }
 
+    #[cfg(not(prusti))]
     /// Returns the base address of the memory region specified by the given `BAR` 
     /// (Base Address Register) for this PCI device. 
     ///
@@ -900,6 +891,7 @@ impl PciDevice {
         Ok(())  
     }
 
+    #[cfg(not(prusti))]
     /// Returns the memory mapped msix vector table
     ///
     /// - returns `Err("Device not MSI-X capable")` if the device doesn't have the MSI-X capability
@@ -938,6 +930,7 @@ impl PciDevice {
     ///
     /// # Arguments 
     /// * `bar_index`: index of the Base Address Register to use
+    #[cfg(not(prusti))]
     pub fn pci_map_bar_mem(&self, bar_index: usize) -> Result<MappedPages, &'static str> {
         let mem_base = self.determine_mem_base(bar_index)?;
         let mem_size = self.determine_mem_size(bar_index);
@@ -992,6 +985,7 @@ pub enum PciConfigSpaceAccessMechanism {
     IoPort = 1,
 }
 
+cfg_if::cfg_if! { if #[cfg(not(prusti))] {
 /// A memory-mapped array of [`MsixVectorEntry`]
 pub struct MsixVectorTable {
     entries: BorrowedSliceMappedPages<MsixVectorEntry, Mutable>,
