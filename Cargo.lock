@@ -1759,7 +1759,6 @@ checksum = "67c21572b4949434e4fc1e1978b99c5f77064153c59d998bf13ecd96fb5ecba7"
 name = "kernel_config"
 version = "0.1.0"
 dependencies = [
- "cfg-if 1.0.0",
  "prusti-contracts 0.2.0",
 ]
 

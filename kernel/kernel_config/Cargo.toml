@@ -6,7 +6,6 @@ version = "0.1.0"
 
 [dependencies]
 prusti-contracts = "0.2"
-cfg-if = "1.0.0"
 
 [lib]
 crate-type = ["rlib"]
