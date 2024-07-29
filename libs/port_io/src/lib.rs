@@ -64,7 +64,7 @@ impl PortIn for u32 {
 /// A readable and writable I/O port over an arbitrary type supporting the `InOut` interface,
 /// which is only `u8`, `u16`, or `u32`.
 // /// which only includes types that losslessly convert into a `u8`, `u16`, and `u32`.
-#[cfg_attr(not(prusti), derive(Debug))]
+#[derive(Debug)]
 pub struct Port<T: PortIn + PortOut> {
     /// Port address (in the I/O space), which is always 16 bits.
     port: u16,
@@ -96,7 +96,7 @@ impl<T: PortIn + PortOut> Port<T> {
 
 /// A read-only I/O port over an arbitrary type supporting the `InOut` interface,
 /// which is only `u8`, `u16`, and `u32`.
-#[cfg_attr(not(prusti), derive(Debug))]
+#[derive(Debug)]
 pub struct PortReadOnly<T: PortIn> {
     /// Port address (in the I/O space), which is always 16 bits.
     port: u16,
@@ -122,7 +122,7 @@ impl<T: PortIn> PortReadOnly<T> {
 
 /// A write-only I/O port over an arbitrary type supporting the `InOut` interface,
 /// which is only `u8`, `u16`, and `u32`.
-#[cfg_attr(not(prusti), derive(Debug))]
+#[derive(Debug)]
 pub struct PortWriteOnly<T: PortOut> {
     /// Port address (in the I/O space), which is always 16 bits.
     port: u16,
