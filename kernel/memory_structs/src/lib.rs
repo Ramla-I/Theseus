@@ -43,7 +43,7 @@ pub enum MemoryState {
     Unmapped
 }
 
-cfg_if!{ if #[cfg(not(prusti))] {
+// cfg_if!{ if #[cfg(not(prusti))] {
 
 /// A macro for defining `VirtualAddress` and `PhysicalAddress` structs
 /// and implementing their common traits, which are generally identical.
@@ -263,7 +263,22 @@ implement_address!(
     canonicalize_physical_address,
     frame
 );
-}}
+// }}
+
+#[extern_spec]
+impl PartialOrd for PhysicalAddress {
+    #[pure]
+    #[ensures(result == self.0.partial_cmp(&other.0))]
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering>;
+}
+
+#[extern_spec]
+impl PartialOrd for VirtualAddress {
+    #[pure]
+    #[ensures(result == self.0.partial_cmp(&other.0))]
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering>;
+}
+
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Frame {
@@ -381,7 +396,7 @@ impl Page {
     }
 }
 
-cfg_if!{ if #[cfg(not(prusti))] {
+// cfg_if!{ if #[cfg(not(prusti))] {
 
 /// A macro for defining `Page` and `Frame` structs
 /// and implementing their common traits, which are generally identical.
@@ -506,7 +521,7 @@ impl Page {
         self.number & 0x1FF
     }
 }
-}}
+// }}
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub struct FrameRange(RangeInclusive<Frame>);
