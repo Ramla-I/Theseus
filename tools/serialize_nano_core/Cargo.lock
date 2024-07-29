@@ -71,7 +71,6 @@ dependencies = [
 name = "kernel_config"
 version = "0.1.0"
 dependencies = [
- "cfg-if",
  "prusti-contracts",
 ]
 
