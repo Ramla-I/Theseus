@@ -1,0 +1,13 @@
+## List of crates that use prusti
+kernel_config
+memory_structs
+pci
+prusti_external_spec
+prusti_frame_chunk
+prusti_page_chunk
+prusti_mapped_pages
+prusti_representation_creator
+port_io
+range_inclusive
+
+## List of crates that need to be verified by running cargo-prusti in them

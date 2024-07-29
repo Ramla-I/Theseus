@@ -14,7 +14,6 @@ extern crate cfg_if;
 extern crate prusti_representation_creator;
 
 use prusti_contracts::*;
-use prusti_external_spec::trusted_result::*;
 use core::mem::size_of;
 use prusti_representation_creator::resource_identifier::ResourceIdentifier;
 
@@ -386,6 +385,7 @@ impl DerefMut for PciDeviceCreator {
 /// The bus, slot, and function number of a given PCI device.
 /// This offers methods for reading and writing the PCI config space. 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[invariant(self.slot < MAX_SLOTS_PER_BUS && self.func < MAX_FUNCTIONS_PER_SLOT)]
 pub struct PciLocation {
     bus:  u8, // 8 bits
     slot: u8, // 5 bits (aka device)
@@ -405,7 +405,6 @@ enum PciLocationError {
 }
 
 impl PciLocation {
-    #[ensures(result.is_ok() ==> peek_result(&result).slot < MAX_SLOTS_PER_BUS && peek_result(&result).func < MAX_FUNCTIONS_PER_SLOT)]
     fn new(bus: u8, slot: u8, func: u8) -> Result<PciLocation, PciLocationError> {
         if slot >= MAX_SLOTS_PER_BUS {
             Err(PciLocationError::InvalidSlot(slot))

@@ -1,2 +1,4 @@
 check_overflows = false
 use_new_encoder = false
+enable_type_invariants = true
+opt_in_verification = true
