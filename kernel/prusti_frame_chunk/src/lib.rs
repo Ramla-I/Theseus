@@ -2,30 +2,17 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-extern crate prusti_contracts;
-extern crate memory_structs;
-extern crate prusti_external_spec;
-extern crate prusti_representation_creator;
-
-use prusti_contracts::*;
-
-#[cfg(prusti)]
-mod frame_range;
-
-#[cfg(prusti)]
-use crate::frame_range::*;
-#[cfg(not(prusti))]
 use memory_structs::{Frame, FrameRange};
 
 use prusti_representation_creator::RepresentationCreator;
 use prusti_external_spec::{trusted_option::*,trusted_result::*};
 use core::ops::{Deref, DerefMut};
 use kernel_config::memory::{MAX_PAGE_NUMBER, MIN_PAGE_NUMBER};
+use range_inclusive::*;
+use prusti_contracts::*;
 
-#[cfg(not(prusti))] 
 static INIT: spin::Once<bool> = spin::Once::new();
 
-#[cfg(not(prusti))] // prusti can't reason about fn pointers
 pub fn init_frame_chunk() -> Result<fn(FrameRange) -> FrameChunk, &'static str> {
     if INIT.is_completed() {
         Err("Trusted Chunk has already been initialized and callback has been returned")
@@ -41,7 +28,6 @@ pub fn init_frame_chunk() -> Result<fn(FrameRange) -> FrameChunk, &'static str> 
 fn create_from_unmapped(frames: FrameRange) -> FrameChunk {
     FrameChunk::trusted_new(&frames)
 }
-
 
 pub struct FrameChunkCreator(RepresentationCreator<FrameRange, FrameChunk>);
 
@@ -132,9 +118,9 @@ impl FrameChunk {
     #[ensures(result.is_ok() ==> {
         let split_range = peek_result_ref(&result);
         ((split_range.0).is_some() ==> peek_option_ref(&split_range.0).start_frame() == self.start_frame())
-        && ((split_range.0).is_none() ==> (split_range.1.start_frame() == self.start_frame() || (split_range.1.start_frame().number() == MIN_FRAME_NUMBER)))
+        && ((split_range.0).is_none() ==> (split_range.1.start_frame() == self.start_frame() || (split_range.1.start_frame().number() == MIN_PAGE_NUMBER)))
         && ((split_range.2).is_some() ==> peek_option_ref(&split_range.2).end_frame() == self.end_frame())
-        && ((split_range.2).is_none() ==> ((split_range.1.end_frame() == self.end_frame()) || (split_range.1.end_frame().number() == MAX_FRAME_NUMBER)))
+        && ((split_range.2).is_none() ==> ((split_range.1.end_frame() == self.end_frame()) || (split_range.1.end_frame().number() == MAX_PAGE_NUMBER)))
     })]
     #[ensures(result.is_err() ==> {
         let orig_range = peek_err_ref(&result);
