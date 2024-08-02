@@ -2,30 +2,17 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-extern crate prusti_contracts;
-extern crate memory_structs;
-extern crate prusti_external_spec;
-extern crate prusti_representation_creator;
-
 use prusti_contracts::*;
-
-#[cfg(prusti)]
-mod page_range;
-
-#[cfg(prusti)]
-use crate::page_range::*;
-#[cfg(not(prusti))]
 use memory_structs::{Page, PageRange};
-
 use prusti_representation_creator::RepresentationCreator;
 use prusti_external_spec::{trusted_option::*,trusted_result::*};
 use core::ops::{Deref, DerefMut};
 use kernel_config::memory::{MAX_PAGE_NUMBER, MIN_PAGE_NUMBER};
+use range_inclusive::*;
 
 pub struct PageChunkCreator(RepresentationCreator<PageRange, PageChunk>);
 
 impl PageChunkCreator {
-    #[trusted]
     pub const fn new() -> Self { // To Do: This function should only be called once
         PageChunkCreator(RepresentationCreator::new(PageChunk::trusted_new, true))
     }
@@ -115,9 +102,9 @@ impl PageChunk {
     #[ensures(result.is_ok() ==> {
         let split_range = peek_result_ref(&result);
         ((split_range.0).is_some() ==> peek_option_ref(&split_range.0).start_page() == self.start_page())
-        && ((split_range.0).is_none() ==> (split_range.1.start_page() == self.start_page() || (split_range.1.start_page().number() == MIN_FRAME_NUMBER)))
+        && ((split_range.0).is_none() ==> (split_range.1.start_page() == self.start_page() || (split_range.1.start_page().number() == MIN_PAGE_NUMBER)))
         && ((split_range.2).is_some() ==> peek_option_ref(&split_range.2).end_page() == self.end_page())
-        && ((split_range.2).is_none() ==> ((split_range.1.end_page() == self.end_page()) || (split_range.1.end_page().number() == MAX_FRAME_NUMBER)))
+        && ((split_range.2).is_none() ==> ((split_range.1.end_page() == self.end_page()) || (split_range.1.end_page().number() == MAX_PAGE_NUMBER)))
     })]
     #[ensures(result.is_err() ==> {
         let orig_range = peek_err_ref(&result);
