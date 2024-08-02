@@ -84,7 +84,6 @@ impl<Idx: Clone + PartialOrd> RangeInclusive<Idx> {
     }
 
     /// Returns `true` if `item` is contained in the range.
-    #[cfg(not(prusti))]
     pub fn contains<U>(&self, item: &U) -> bool
     where
         Idx: PartialOrd<U>,
@@ -94,11 +93,12 @@ impl<Idx: Clone + PartialOrd> RangeInclusive<Idx> {
     }
 }
 
-#[cfg(not(prusti))] // for some reason this gives a prusti error even with the skip_unsupported_features flag
 impl<T: Clone + PartialOrd> RangeBounds<T> for RangeInclusive<T> {
+    #[trusted] // for some reason this gives a prusti internal error even with the skip_unsupported_features flag
     fn start_bound(&self) -> Bound<&T> {
         Included(&self.start)
     }
+    #[trusted] // for some reason this gives a prusti internal error even with the skip_unsupported_features flag
     fn end_bound(&self) -> Bound<&T> {
         Included(&self.end)
     }
