@@ -1,5 +1,9 @@
+# many of the page and frame range functions are giving prusti chaining pure function errors, so that's why theyre labelled as trusted function.
+# If we replace all start() and end() calls with start_frame() and end_frame(), prusti has a timeout.
+# If we set assert timeout to 0, it just doesnt finish verification in a timely manner... so some bug in prusti
 check_overflows = false
 use_new_encoder = false
-skip_unsupported_features = true # removing all cfg and enabling this flag is giving the "chaining pure functions is not fully supported" prusti error, so will keep some cfg gates for now
+skip_unsupported_features = true 
 # opt_in_verification = true # this flag is causing strange behavior with the Partial Ord external spec so will stick with cfg for now.
 # allow_unreachable_unsupported_code = true
+assert_timeout = 0

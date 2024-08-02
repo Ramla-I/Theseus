@@ -794,9 +794,12 @@ impl PageRange {
         PageRange::new(Page{ number: 1 }, Page { number: 0 })
     }
 
+
     #[pure]
     #[trusted]
     #[ensures(result == *self.0.start())]
+    /// We have these functions to avoid the chaining pure functions Prusti error.
+    /// We should be able to rempve them and replace with *self.start()
     pub fn start_page(&self) -> Page {
         *self.0.start()
     }
@@ -804,6 +807,8 @@ impl PageRange {
     #[pure]
     #[trusted]
     #[ensures(result == *self.0.end())]
+    /// We have these functions to avoid the chaining pure functions Prusti error.
+    /// We should be able to rempve them and replace with *self.end()
     pub fn end_page(&self) -> Page {
         *self.0.end()
     }
@@ -1002,7 +1007,7 @@ impl PageRange {
     }
 }
 
-cfg_if!{ if #[cfg(not(prusti))] {
+// cfg_if!{ if #[cfg(not(prusti))] {
 
 /// A macro for defining `PageRange` and `FrameRange` structs
 /// and implementing their common traits, which are generally identical.
@@ -1027,6 +1032,7 @@ macro_rules! implement_page_frame_range {
 
                 #[doc = "A convenience method for creating a new `" $TypeName "` that spans \
                     all [`" $chunk "`]s from the given [`" $address "`] to an end bound based on the given size."]
+                #[trusted]
                 pub const fn [<from_ $short _addr>](starting_addr: $address, size_in_bytes: usize) -> $TypeName {
                     if size_in_bytes == 0 {
                         $TypeName::empty()
@@ -1041,6 +1047,7 @@ macro_rules! implement_page_frame_range {
                 }
 
                 #[doc = "Returns the [`" $address "`] of the starting [`" $chunk "`] in this `" $TypeName "`."]
+                #[trusted]
                 pub const fn start_address(&self) -> $address {
                     self.0.start().start_address()
                 }
@@ -1048,17 +1055,20 @@ macro_rules! implement_page_frame_range {
                 #[doc = "Returns the number of [`" $chunk "`]s covered by this iterator.\n\n \
                     Use this instead of [`Iterator::count()`] method. \
                     This is instant, because it doesn't need to iterate over each entry, unlike normal iterators."]
+                #[trusted]
                 pub const fn [<size_in_ $chunk:lower s>](&self) -> usize {
                     // add 1 because it's an inclusive range
                     (self.0.end().number + 1).saturating_sub(self.0.start().number)
                 }
 
                 /// Returns the size of this range in number of bytes.
+                #[trusted]
                 pub const fn size_in_bytes(&self) -> usize {
                     self.[<size_in_ $chunk:lower s>]() * PAGE_SIZE
                 }
 
                 #[doc = "Returns `true` if this `" $TypeName "` contains the given [`" $address "`]."]
+                #[trusted]
                 pub const fn contains_address(&self, addr: $address) -> bool {
                     let c = $chunk::containing_address(addr);
                     self.0.start().number <= c.number
@@ -1070,6 +1080,7 @@ macro_rules! implement_page_frame_range {
                     If the given `addr` is not covered by this range of [`" $chunk "`]s, this returns `None`.\n\n \
                     # Examples\n \
                     If the range covers addresses `0x2000` to `0x4000`, then `offset_of_address(0x3500)` would return `Some(0x1500)`."]
+                #[trusted]
                 pub const fn offset_of_address(&self, addr: $address) -> Option<usize> {
                     if self.contains_address(addr) {
                         Some(addr.value() - self.start_address().value())
@@ -1084,6 +1095,7 @@ macro_rules! implement_page_frame_range {
                     # Examples\n \
                     If the range covers addresses `0x2000` through `0x3FFF`, then `address_at_offset(0x1500)` would return `Some(0x3500)`, \
                     and `address_at_offset(0x2000)` would return `None`."]
+                #[trusted]
                 pub const fn address_at_offset(&self, offset: usize) -> Option<$address> {
                     if offset < self.size_in_bytes() {
                         Some($address::new_canonical(self.start_address().value() + offset))
@@ -1094,6 +1106,7 @@ macro_rules! implement_page_frame_range {
                 }
 
                 #[doc = "Returns a new separate `" $TypeName "` that is extended to include the given [`" $chunk "`]."]
+                #[trusted]
                 pub fn to_extended(&self, to_include: $chunk) -> $TypeName {
                     // if the current range was empty, return a new range containing only the given page/frame
                     if self.is_empty() {
@@ -1107,6 +1120,7 @@ macro_rules! implement_page_frame_range {
                 #[doc = "Returns an inclusive `" $TypeName "` representing the [`" $chunk "`]s that overlap \
                     across this `" $TypeName "` and the given other `" $TypeName "`.\n\n \
                     If there is no overlap between the two ranges, `None` is returned."]
+                #[trusted]
                 pub fn overlap(&self, other: &$TypeName) -> Option<$TypeName> {
                     let starts = max(*self.start(), *other.start());
                     let ends   = min(*self.end(),   *other.end());
@@ -1149,26 +1163,26 @@ macro_rules! implement_page_frame_range {
             }
 
             
-            #[doc = "A `" $TypeName "` that implements `Copy`"]
-            #[derive(Clone, Copy)]
-            pub struct [<Copyable $TypeName>] {
-                start: $chunk,
-                end: $chunk,
-            }
-            impl From<$TypeName> for [<Copyable $TypeName>] {
-                fn from(r: $TypeName) -> Self {
-                    Self { start: *r.start(), end: *r.end() }
-                }
-            }
-            impl From<[<Copyable $TypeName>]> for $TypeName {
-                fn from(cr: [<Copyable $TypeName>]) -> Self {
-                    Self::new(cr.start, cr.end)
-                }
-            }
+            // #[doc = "A `" $TypeName "` that implements `Copy`"]
+            // #[derive(Clone, Copy)]
+            // pub struct [<Copyable $TypeName>] {
+            //     start: $chunk,
+            //     end: $chunk,
+            // }
+            // impl From<$TypeName> for [<Copyable $TypeName>] {
+            //     fn from(r: $TypeName) -> Self {
+            //         Self { start: *r.start(), end: *r.end() }
+            //     }
+            // }
+            // impl From<[<Copyable $TypeName>]> for $TypeName {
+            //     fn from(cr: [<Copyable $TypeName>]) -> Self {
+            //         Self::new(cr.start, cr.end)
+            //     }
+            // }
         }
     };
 }
 
 implement_page_frame_range!(PageRange, "virtual", virt, Page, VirtualAddress);
 implement_page_frame_range!(FrameRange, "physical", phys, Frame, PhysicalAddress);
-}}
+// }}
