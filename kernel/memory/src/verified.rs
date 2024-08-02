@@ -1,15 +1,3 @@
-//! To verify this crate, in the directory with the Cargo.toml file, run the cargo-prusti executable:
-//! "../../../prusti-release-2023-08-22/cargo-prusti"
-//! The Prusti.toml file in this directory contains the configuration for the verification.
-
-#![no_std]
-#![allow(dead_code)]
-#![allow(unused_imports)]
-
-// extern crate prusti_contracts;
-// extern crate prusti_external_spec;
-// extern crate alloc;
-
 use prusti_contracts::*;
 use prusti_external_spec::{trusted_option::*,trusted_result::*, mem::*, num::*};
 
@@ -42,12 +30,13 @@ impl core::ops::Deref for MPCastStartVaddr {
     }
 }
 
+#[verified]
 #[requires(mp_addr % core::mem::align_of::<T>() == 0)]
 #[ensures(result.is_ok() ==> {
     let start_vaddr = peek_result_ref(&result).0;
     (start_vaddr >= mp_addr) && (start_vaddr + length * core::mem::size_of::<T>() <= mp_addr + mp_size_in_bytes)
 })]
-pub fn cast_mp_as_slice<T>(mp_addr: usize, mp_size_in_bytes: usize, byte_offset: usize, length: usize) -> Result<MPCastStartVaddr, MPCastError>  {
+pub(crate) fn cast_mp_as_slice<T>(mp_addr: usize, mp_size_in_bytes: usize, byte_offset: usize, length: usize) -> Result<MPCastStartVaddr, MPCastError>  {
     let size_in_bytes = length.checked_mul(core::mem::size_of::<T>());
     if size_in_bytes.is_none() {return Err(MPCastError::SizeOverflow);}
     
@@ -57,24 +46,46 @@ pub fn cast_mp_as_slice<T>(mp_addr: usize, mp_size_in_bytes: usize, byte_offset:
     cast_mp_as::<T>(mp_addr, mp_size_in_bytes, byte_offset, size_in_bytes)
 }
 
-
+#[verified]
 #[requires(mp_addr % core::mem::align_of::<T>() == 0)]
 #[ensures(result.is_ok() ==> {
     let start_vaddr = peek_result_ref(&result).0;
     (start_vaddr >= mp_addr) && (start_vaddr + core::mem::size_of::<T>() <= mp_addr + mp_size_in_bytes)
 })]
-pub fn cast_mp_as_type<T>(mp_addr: usize, mp_size_in_bytes: usize, byte_offset: usize) -> Result<MPCastStartVaddr, MPCastError>  {
+pub(crate) fn cast_mp_as_type<T>(mp_addr: usize, mp_size_in_bytes: usize, byte_offset: usize) -> Result<MPCastStartVaddr, MPCastError>  {
     let size_in_bytes = core::mem::size_of::<T>();
     cast_mp_as::<T>(mp_addr, mp_size_in_bytes, byte_offset, size_in_bytes)
 }
 
 
+#[verified]
 #[requires(mp_addr % core::mem::align_of::<T>() == 0)]
 #[ensures(result.is_ok() ==> {
     let start_vaddr = peek_result_ref(&result).0;
     (start_vaddr >= mp_addr) && (start_vaddr + size_in_bytes <= mp_addr + mp_size_in_bytes)
 })]
 fn cast_mp_as<T>(mp_addr: usize, mp_size_in_bytes: usize, byte_offset: usize, size_in_bytes: usize) -> Result<MPCastStartVaddr, MPCastError>  {
+    if byte_offset % core::mem::align_of::<T>() != 0 { return Err(MPCastError::AlignmentError); }
+
+    let start_vaddr = mp_addr.checked_add(byte_offset);
+    if start_vaddr.is_none() { return Err(MPCastError::StartVaddrOverflow); }
+
+    // check that size of slice fits within the size of the mapping
+    let end_bound = byte_offset.checked_add(size_in_bytes);
+    if end_bound.is_none() { return Err(MPCastError::EndBoundOverflow); }
+
+    if end_bound.unwrap() > mp_size_in_bytes { return Err(MPCastError::MappingSizeOverflow) }
+
+    Ok(MPCastStartVaddr(start_vaddr.unwrap()))
+}
+
+#[verified]
+#[requires(mp_addr % core::mem::align_of::<T>() == 0)]
+#[ensures(result.is_ok() ==> {
+    let start_vaddr = peek_result_ref(&result).0;
+    (start_vaddr >= mp_addr) && (start_vaddr + size_in_bytes <= mp_addr + mp_size_in_bytes)
+})]
+fn cast_mp_as2<T>(mp: crate::MappedPages, mp_addr: usize, mp_size_in_bytes: usize, byte_offset: usize, size_in_bytes: usize) -> Result<MPCastStartVaddr, MPCastError>  {
     if byte_offset % core::mem::align_of::<T>() != 0 { return Err(MPCastError::AlignmentError); }
 
     let start_vaddr = mp_addr.checked_add(byte_offset);

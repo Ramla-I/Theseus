@@ -14,13 +14,14 @@
 #![feature(ptr_internals)]
 
 extern crate alloc;
-
 mod paging;
 pub use self::paging::{
     PageTable, Mapper, Mutability, Mutable, Immutable,
     MappedPages, BorrowedMappedPages, BorrowedSliceMappedPages,
     translate,
 };
+mod verified;
+use verified::*;
 
 pub use memory_structs::*;
 pub use page_allocator::{
@@ -385,3 +386,4 @@ pub fn init_post_heap(
 
     kernel_mmi_ref.clone()
 }
+// }}

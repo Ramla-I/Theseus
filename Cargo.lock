@@ -2042,10 +2042,10 @@ dependencies = [
 name = "memory"
 version = "0.1.0"
 dependencies = [
- "atomic_linked_list",
  "bit_field 0.7.0",
  "bitflags",
  "boot_info",
+ "cfg-if 1.0.0",
  "frame_allocator",
  "frame_range_callbacks",
  "kernel_config",
@@ -2058,7 +2058,8 @@ dependencies = [
  "owned_borrowed_trait",
  "page_allocator",
  "page_table_entry",
- "prusti_mapped_pages",
+ "prusti-contracts 0.2.0",
+ "prusti_external_spec",
  "pte_flags",
  "spin 0.9.4",
  "static_assertions",
@@ -2955,14 +2956,6 @@ dependencies = [
  "prusti_representation_creator",
  "range_inclusive",
  "spin 0.9.4",
-]
-
-[[package]]
-name = "prusti_mapped_pages"
-version = "0.1.0"
-dependencies = [
- "prusti-contracts 0.2.0",
- "prusti_external_spec",
 ]
 
 [[package]]

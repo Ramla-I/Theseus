@@ -18,7 +18,7 @@ use core::{
     slice,
 };
 use log::{error, warn, debug, trace};
-use crate::{BROADCAST_TLB_SHOOTDOWN_FUNC, VirtualAddress, PhysicalAddress, Page, Frame, FrameRange, AllocatedPages, AllocatedFrames, UnmappedFrames}; 
+use crate::{verified, AllocatedFrames, AllocatedPages, Frame, FrameRange, Page, PhysicalAddress, UnmappedFrames, VirtualAddress, BROADCAST_TLB_SHOOTDOWN_FUNC}; 
 use crate::paging::{
     get_current_p4,
     table::{P4, UPCOMING_P4, Table, Level4},
@@ -30,6 +30,7 @@ use super::tlb_flush_virt_addr;
 use zerocopy::FromBytes;
 use page_table_entry::UnmapResult;
 use owned_borrowed_trait::{OwnedOrBorrowed, Owned, Borrowed};
+use prusti_contracts::*;
 
 #[cfg(target_arch = "x86_64")]
 use kernel_config::memory::ENTRIES_PER_PAGE_TABLE;
@@ -693,7 +694,7 @@ impl MappedPages {
     /// This ensures safety by guaranteeing that the returned struct reference 
     /// cannot be used after this `MappedPages` object is dropped and unmapped.
     pub fn as_type<T: FromBytes>(&self, byte_offset: usize) -> Result<&T, &'static str> {
-        let start_vaddr = prusti_mapped_pages::cast_mp_as_type::<T>(
+        let start_vaddr = verified::cast_mp_as_type::<T>(
             self.start_address().value(), self.size_in_bytes(), byte_offset
         ).map_err(|e| e.into_str())?;
         
@@ -717,7 +718,7 @@ impl MappedPages {
     /// 
     /// Thus, it also checks that the underlying mapping is writable.
     pub fn as_type_mut<T: FromBytes>(&mut self, byte_offset: usize) -> Result<&mut T, &'static str> {
-        let start_vaddr = prusti_mapped_pages::cast_mp_as_type::<T>(
+        let start_vaddr = verified::cast_mp_as_type::<T>(
             self.start_address().value(), self.size_in_bytes(), byte_offset
         ).map_err(|e| e.into_str())?;
 
@@ -764,7 +765,7 @@ impl MappedPages {
     /// This ensures safety by guaranteeing that the returned slice 
     /// cannot be used after this `MappedPages` object is dropped and unmapped.
     pub fn as_slice<T: FromBytes>(&self, byte_offset: usize, length: usize) -> Result<&[T], &'static str> {
-        let start_vaddr = prusti_mapped_pages::cast_mp_as_slice::<T>(
+        let start_vaddr = verified::cast_mp_as_slice::<T>(
             self.start_address().value(), self.size_in_bytes(), byte_offset, length
         ).map_err(|e| e.into_str())?;
 
@@ -794,7 +795,7 @@ impl MappedPages {
     /// 
     /// Thus, it checks that the underlying mapping is writable.
     pub fn as_slice_mut<T: FromBytes>(&mut self, byte_offset: usize, length: usize) -> Result<&mut [T], &'static str> {
-        let start_vaddr = prusti_mapped_pages::cast_mp_as_slice::<T>(
+        let start_vaddr = verified::cast_mp_as_slice::<T>(
             self.start_address().value(), self.size_in_bytes(), byte_offset, length
         ).map_err(|e| e.into_str() )?;
 
@@ -1032,6 +1033,7 @@ impl<T: FromBytes + PartialEq, M: Mutability, B: Borrow<MappedPages>> PartialEq 
 }
 impl<T: FromBytes + Eq, M: Mutability, B: Borrow<MappedPages>> Eq for BorrowedMappedPages<T, M, B> { }
 impl<T: FromBytes + PartialOrd, M: Mutability, B: Borrow<MappedPages>> PartialOrd for BorrowedMappedPages<T, M, B> {
+    #[pure] // with opt_in_verification enabled I get a complaint if this isn't here
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> { self.deref().partial_cmp(other.deref()) }
 }
 impl<T: FromBytes + Ord, M: Mutability, B: Borrow<MappedPages>> Ord for BorrowedMappedPages<T, M, B> {
@@ -1188,6 +1190,7 @@ impl<T: FromBytes + PartialEq, M: Mutability, B: Borrow<MappedPages>> PartialEq 
 }
 impl<T: FromBytes + Eq, M: Mutability, B: Borrow<MappedPages>> Eq for BorrowedSliceMappedPages<T, M, B> { }
 impl<T: FromBytes + PartialOrd, M: Mutability, B: Borrow<MappedPages>> PartialOrd for BorrowedSliceMappedPages<T, M, B> {
+    #[pure] // with opt_in_verification I get a complaint if this isn't here
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> { self.deref().partial_cmp(other.deref()) }
 }
 impl<T: FromBytes + Ord, M: Mutability, B: Borrow<MappedPages>> Ord for BorrowedSliceMappedPages<T, M, B> {
