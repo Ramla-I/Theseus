@@ -84,6 +84,7 @@ macro_rules! implement_address {
 
                 #[doc = "Returns the underlying `usize` value for this `" $TypeName "`."]
                 #[inline]
+                #[pure]
                 pub const fn value(&self) -> usize {
                     self.0
                 }
