@@ -21,7 +21,6 @@ pub use self::paging::{
     translate,
 };
 mod verified;
-use verified::*;
 
 pub use memory_structs::*;
 pub use page_allocator::{

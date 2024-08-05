@@ -29,7 +29,7 @@ owned_borrowed_trait = { path = "../../libs/owned_borrowed_trait" }
 sync_irq = { path = "../../libs/sync_irq" }
 frame_range_callbacks = { path = "../frame_range_callbacks" }
 prusti_external_spec = { path = "../prusti_external_spec" }
-
+proc_static_assertions = {git = "https://github.com/ramla-i/proc-assertions" }
 
 [target.'cfg(not(prusti))'.dependencies]
 

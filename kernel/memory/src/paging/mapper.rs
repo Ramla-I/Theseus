@@ -15,22 +15,21 @@ use core::{
     mem,
     ops::{Deref, DerefMut},
     ptr::{NonNull, Unique},
-    slice,
 };
 use log::{error, warn, debug, trace};
-use crate::{verified, AllocatedFrames, AllocatedPages, Frame, FrameRange, Page, PhysicalAddress, UnmappedFrames, VirtualAddress, BROADCAST_TLB_SHOOTDOWN_FUNC}; 
+use crate::{verified, AllocatedFrames, AllocatedPages, Frame, Page, PhysicalAddress, UnmappedFrames, VirtualAddress, BROADCAST_TLB_SHOOTDOWN_FUNC}; 
 use crate::paging::{
     get_current_p4,
     table::{P4, UPCOMING_P4, Table, Level4},
 };
 use pte_flags::PteFlagsArch;
-use spin::Once;
 use kernel_config::memory::PAGE_SIZE;
 use super::tlb_flush_virt_addr;
 use zerocopy::FromBytes;
 use page_table_entry::UnmapResult;
 use owned_borrowed_trait::{OwnedOrBorrowed, Owned, Borrowed};
 use prusti_contracts::*;
+use proc_static_assertions::consumes;
 
 #[cfg(target_arch = "x86_64")]
 use kernel_config::memory::ENTRIES_PER_PAGE_TABLE;
@@ -225,7 +224,7 @@ impl Mapper {
         ))
     }
     
-
+    #[consumes("AllocatedPages", "AllocatedFrames")]
     /// Maps the given virtual `AllocatedPages` to the given physical `AllocatedFrames`.
     /// 
     /// Consumes the given `AllocatedPages` and returns a `MappedPages` object which contains those `AllocatedPages`.
@@ -348,6 +347,30 @@ impl Deref for MappedPages {
 }
 
 impl MappedPages {
+    #[trusted]
+    #[pure]
+    /// Returns the starting `VirtualAddress` in this range of pages.
+    /// Ideally we can just deref to Pages but prusti cannot verify const generics yet.
+    /// The deref path is MappedPages -> Pages -> PageRange -> Page
+    /// Since Prusti gives an internal error when chaining pure functions, this function is 
+    /// marked as trusted for PageRange in the memory_structs crate as well.
+    /// It's also not verified for Page because it canocalizes the address which onvolves bit operations
+    /// for which Prusti's support is limited.
+    /// So since it's a simple calculation, we just leave it as trusted.
+    pub(crate) fn start_address_trusted(&self) -> VirtualAddress {
+        self.start_address()
+    }
+
+    #[trusted]
+    #[pure]
+    /// Returns the size in bytes of this range of pages.
+    /// Ideally we can just deref to Pages but prusti cannot verify const generics yet.
+    /// and Prusti also gives errors at the moment when chaining pure functions.
+    /// So since it's a simple calculation, we just leave it as trusted.
+    pub(crate) fn size_in_bytes_trusted(&self) -> usize {
+        self.size_in_bytes()
+    }
+
     /// Returns an empty MappedPages object that performs no allocation or mapping actions. 
     /// Can be used as a placeholder, but will not permit any real usage. 
     pub const fn empty() -> MappedPages {
@@ -694,10 +717,6 @@ impl MappedPages {
     /// This ensures safety by guaranteeing that the returned struct reference 
     /// cannot be used after this `MappedPages` object is dropped and unmapped.
     pub fn as_type<T: FromBytes>(&self, byte_offset: usize) -> Result<&T, &'static str> {
-        let start_vaddr = verified::cast_mp_as_type::<T>(
-            self.start_address().value(), self.size_in_bytes(), byte_offset
-        ).map_err(|e| e.into_str())?;
-        
         if false {
             debug!("MappedPages::as_type(): requested type {} with size {} at byte_offset {}, MappedPages size {}!",
                 core::any::type_name::<T>(),
@@ -706,10 +725,9 @@ impl MappedPages {
         }
 
         // SAFE: we guarantee the size and lifetime are within that of this MappedPages object
-        let t: &T = unsafe {
-            &*(*start_vaddr as *const T)
-        };
-
+        let t = verified::cast_mp_as_ref::<T>(
+            &self, byte_offset, None
+        ).map_err(|e| e.into_str())?;
         Ok(t)
     }
 
@@ -718,10 +736,6 @@ impl MappedPages {
     /// 
     /// Thus, it also checks that the underlying mapping is writable.
     pub fn as_type_mut<T: FromBytes>(&mut self, byte_offset: usize) -> Result<&mut T, &'static str> {
-        let start_vaddr = verified::cast_mp_as_type::<T>(
-            self.start_address().value(), self.size_in_bytes(), byte_offset
-        ).map_err(|e| e.into_str())?;
-
         if false {
             debug!("MappedPages::as_type_mut(): requested type {} with size {} at byte_offset {}, MappedPages size {}!",
                 core::any::type_name::<T>(),
@@ -739,10 +753,9 @@ impl MappedPages {
         }
         
         // SAFE: we guarantee the size and lifetime are within that of this MappedPages object
-        let t: &mut T = unsafe {
-            &mut *(*start_vaddr as *mut T)
-        };
-
+        let t = verified::cast_mp_as_mut_ref::<T>(
+            self, byte_offset, None
+        ).map_err(|e| e.into_str())?;
         Ok(t)
     }
 
@@ -765,10 +778,6 @@ impl MappedPages {
     /// This ensures safety by guaranteeing that the returned slice 
     /// cannot be used after this `MappedPages` object is dropped and unmapped.
     pub fn as_slice<T: FromBytes>(&self, byte_offset: usize, length: usize) -> Result<&[T], &'static str> {
-        let start_vaddr = verified::cast_mp_as_slice::<T>(
-            self.start_address().value(), self.size_in_bytes(), byte_offset, length
-        ).map_err(|e| e.into_str())?;
-
         if false {
             debug!("MappedPages::as_slice(): requested slice of type {} with length {} (total size {}) at byte_offset {}, MappedPages size {}!",
                 core::any::type_name::<T>(),
@@ -783,9 +792,9 @@ impl MappedPages {
         // ✅ The slice memory cannot be mutated by anyone else because we only return an immutable reference to it.
         // ✅ The total size of the slice does not exceed isize::MAX (checked above).
         // ✅ The lifetime of the returned slice reference is tied to the lifetime of this `MappedPages`.
-        let slc: &[T] = unsafe {
-            slice::from_raw_parts(*start_vaddr as *const T, length)
-        };
+        let slc = verified::cast_mp_as_slice::<T>(
+            self, byte_offset, length, None
+        ).map_err(|e| e.into_str())?;
 
         Ok(slc)
     }
@@ -795,10 +804,6 @@ impl MappedPages {
     /// 
     /// Thus, it checks that the underlying mapping is writable.
     pub fn as_slice_mut<T: FromBytes>(&mut self, byte_offset: usize, length: usize) -> Result<&mut [T], &'static str> {
-        let start_vaddr = verified::cast_mp_as_slice::<T>(
-            self.start_address().value(), self.size_in_bytes(), byte_offset, length
-        ).map_err(|e| e.into_str() )?;
-
         if false {
             debug!("MappedPages::as_slice_mut(): requested slice of type {} with length {} (total size {}) at byte_offset {}, MappedPages size {}!",
                 core::any::type_name::<T>(), 
@@ -819,9 +824,9 @@ impl MappedPages {
         // ✅ same as for `MappedPages::as_slice()`, plus:
         // ✅ The underlying memory is not accessible through any other pointer, as we require a `&mut self` above.
         // ✅ The underlying memory can be mutated because it is mapped as writable (checked above).
-        let slc: &mut [T] = unsafe {
-            slice::from_raw_parts_mut(*start_vaddr as *mut T, length)
-        };
+        let slc = verified::cast_mp_as_slice_mut::<T>(
+            self, byte_offset, length, None
+        ).map_err(|e| e.into_str() )?;
 
         Ok(slc)
     }

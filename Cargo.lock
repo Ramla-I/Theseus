@@ -2058,6 +2058,7 @@ dependencies = [
  "owned_borrowed_trait",
  "page_allocator",
  "page_table_entry",
+ "proc_static_assertions",
  "prusti-contracts 0.2.0",
  "prusti_external_spec",
  "pte_flags",
@@ -2906,6 +2907,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "18fb31db3f9bddb2ea821cde30a9f70117e3f119938b5ee630b7403aa6e2ead9"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "proc_static_assertions"
+version = "0.0.0"
+source = "git+https://github.com/ramla-i/proc-assertions#84ef8aa535e7a2da1d46d26a285587ec841e805c"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.26",
 ]
 
 [[package]]
