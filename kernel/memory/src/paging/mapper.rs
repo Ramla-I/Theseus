@@ -357,7 +357,7 @@ impl MappedPages {
     /// It's also not verified for Page because it canocalizes the address which onvolves bit operations
     /// for which Prusti's support is limited.
     /// So since it's a simple calculation, we just leave it as trusted.
-    pub(crate) fn start_address_trusted(&self) -> VirtualAddress {
+    pub fn start_address_trusted(&self) -> VirtualAddress {
         self.start_address()
     }
 
@@ -367,7 +367,7 @@ impl MappedPages {
     /// Ideally we can just deref to Pages but prusti cannot verify const generics yet.
     /// and Prusti also gives errors at the moment when chaining pure functions.
     /// So since it's a simple calculation, we just leave it as trusted.
-    pub(crate) fn size_in_bytes_trusted(&self) -> usize {
+    pub fn size_in_bytes_trusted(&self) -> usize {
         self.size_in_bytes()
     }
 

@@ -11,6 +11,8 @@ use resource_identifier::ResourceIdentifier;
 use core::ptr::Unique;
 use core::{cmp::{max, min}, ops::{DerefMut, Deref}};
 
+// pub mod verified;
+
 pub struct Buffer<T>(Unique<T>);
 impl<T> Deref for Buffer<T> {
     type Target = T;
@@ -91,12 +93,13 @@ impl<R> BufferCreator<R> {
             }
 
             let buffer = rep_creator.create_unique_representation(buffer_info.unwrap()).map(|(buffer, _)| buffer);
-            if buffer.is_err() {
-                return Err((backing_mp, "Failed to create buffer"));
+            match buffer {
+                Ok(x) => {
+                    buffers.push_back(x);
+                    start_addr += buffer_size;
+                },
+                Err(_) => return Err((backing_mp, "Failed to create buffer"))
             }
-
-            buffers.push_back(buffer.unwrap());
-            start_addr += buffer_size;
         }
 
         Ok( BufferCreator {

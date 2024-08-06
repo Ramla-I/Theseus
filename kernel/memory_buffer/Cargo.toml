@@ -6,21 +6,11 @@ authors = ["Ramla <ijazramla@gmail.com>"]
 edition = "2021"
 
 [dependencies]
-spin = "0.9.0"
-volatile = "0.2.4"
-bit_field = "0.7.0"
-owning_ref = { git = "https://github.com/theseus-os/owning-ref-rs" }
-zerocopy = "0.5.0"
-static_assertions = "1.1.0"
-mpmc = "0.1.6"
-prusti-contracts = "^0.1"
-cfg-if = "1.0.0"
-bitflags = "1.0.4"
+prusti-contracts = "0.2"
 
 [dependencies.log]
 default-features = false
 version = "0.4.8"
-
 
 [dependencies.kernel_config]
 path = "../kernel_config"
@@ -28,8 +18,14 @@ path = "../kernel_config"
 [dependencies.memory]
 path = "../memory"
 
+[dependencies.memory_structs]
+path = "../memory_structs"
+
 [dependencies.prusti_representation_creator]
 path = "../prusti_representation_creator"
+
+[dependencies.prusti_external_spec]
+path = "../prusti_external_spec"
 
 [lib]
 crate-type = ["rlib"] # "lib" does the same thing I think

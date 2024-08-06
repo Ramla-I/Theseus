@@ -2087,20 +2087,13 @@ dependencies = [
 name = "memory_buffer"
 version = "0.1.0"
 dependencies = [
- "bit_field 0.7.0",
- "bitflags",
- "cfg-if 1.0.0",
  "kernel_config",
  "log",
  "memory",
- "mpmc",
- "owning_ref",
- "prusti-contracts 0.1.10",
+ "memory_structs",
+ "prusti-contracts 0.2.0",
+ "prusti_external_spec",
  "prusti_representation_creator",
- "spin 0.9.4",
- "static_assertions",
- "volatile 0.2.7",
- "zerocopy",
 ]
 
 [[package]]
