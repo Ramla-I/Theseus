@@ -1735,13 +1735,13 @@ dependencies = [
  "kernel_config",
  "log",
  "memory",
- "memory_buffer",
  "mpmc",
  "num_enum",
  "owning_ref",
  "pci",
  "pit_clock",
  "prusti-contracts 0.1.10",
+ "prusti_memory_buffer",
  "rand",
  "spin 0.9.4",
  "static_assertions",
@@ -2081,19 +2081,6 @@ dependencies = [
  "memory_structs",
  "pte_flags",
  "tock-registers",
-]
-
-[[package]]
-name = "memory_buffer"
-version = "0.1.0"
-dependencies = [
- "kernel_config",
- "log",
- "memory",
- "memory_structs",
- "prusti-contracts 0.2.0",
- "prusti_external_spec",
- "prusti_representation_creator",
 ]
 
 [[package]]
@@ -2960,6 +2947,19 @@ dependencies = [
  "prusti_representation_creator",
  "range_inclusive",
  "spin 0.9.4",
+]
+
+[[package]]
+name = "prusti_memory_buffer"
+version = "0.1.0"
+dependencies = [
+ "kernel_config",
+ "log",
+ "memory",
+ "memory_structs",
+ "prusti-contracts 0.2.0",
+ "prusti_external_spec",
+ "prusti_representation_creator",
 ]
 
 [[package]]

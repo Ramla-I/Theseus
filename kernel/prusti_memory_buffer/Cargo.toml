@@ -1,5 +1,5 @@
 [package]
-name = "memory_buffer"
+name = "prusti_memory_buffer"
 version = "0.1.0"
 description = "Create buffers that don't align on a page size by splitting a MappedPages. Uses the verified representation creator interface."
 authors = ["Ramla <ijazramla@gmail.com>"]

@@ -44,8 +44,8 @@ features = [ "alloc", "small_rng" ]
 [dependencies.hpet]
 path = "../acpi/hpet"
 
-[dependencies.memory_buffer]
-path = "../memory_buffer"
+[dependencies.prusti_memory_buffer]
+path = "../prusti_memory_buffer"
 
 [dependencies.num_enum]
 version = "0.5.2"

@@ -5,7 +5,7 @@ use crate::ethernet_frame::EthernetFrame;
 use crate::descriptor::*;
 use volatile::Volatile;
 use zerocopy::FromBytes;
-use memory_buffer::Buffer;
+use prusti_memory_buffer::Buffer;
 
 const IXGBE_AGENT_RECYCLE_PERIOD: u64 = 32;
 const IXGBE_AGENT_FLUSH_PERIOD: u64 = 8;
