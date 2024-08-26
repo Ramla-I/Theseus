@@ -14,19 +14,23 @@
 mod helper_fns;
 
 use core::{
-    cmp::{min, max, Ordering},
+    cmp::{min, max},
     fmt,
     iter::Step,
     marker::ConstParamTy,
     ops::{Add, AddAssign, Deref, DerefMut, Sub, SubAssign},
 };
-use kernel_config::memory::{MAX_PAGE_NUMBER, MIN_PAGE_NUMBER, PAGE_SIZE};
+#[allow(unused_imports)] // for prusti spec
+use core::cmp::Ordering;
+use kernel_config::memory::{MAX_PAGE_NUMBER, PAGE_SIZE};
+#[allow(unused_imports)] // for prusti spec
+use kernel_config::memory::MIN_PAGE_NUMBER;
 use zerocopy::FromBytes;
 use paste::paste;
 use derive_more::*;
 use range_inclusive::{RangeInclusive, RangeInclusiveIterator};
-use cfg_if::cfg_if;
 use prusti_contracts::*;
+#[allow(unused_imports)] // for prusti spec
 use prusti_external_spec::{cmp::*, partial_ord::*, trusted_option::*, trusted_result::*};
 use prusti_representation_creator::resource_identifier::ResourceIdentifier;
 
@@ -43,7 +47,6 @@ pub enum MemoryState {
     Unmapped
 }
 
-// cfg_if!{ if #[cfg(not(prusti))] {
 
 /// A macro for defining `VirtualAddress` and `PhysicalAddress` structs
 /// and implementing their common traits, which are generally identical.
@@ -264,7 +267,6 @@ implement_address!(
     canonicalize_physical_address,
     frame
 );
-// }}
 
 #[extern_spec]
 impl PartialOrd for PhysicalAddress {
@@ -397,7 +399,6 @@ impl Page {
     }
 }
 
-// cfg_if!{ if #[cfg(not(prusti))] {
 
 /// A macro for defining `Page` and `Frame` structs
 /// and implementing their common traits, which are generally identical.
@@ -522,7 +523,6 @@ impl Page {
         self.number & 0x1FF
     }
 }
-// }}
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub struct FrameRange(RangeInclusive<Frame>);
@@ -695,7 +695,7 @@ impl FrameRange {
         let orig_chunk = peek_err_ref(&result);
         (orig_chunk.start_frame() == self.start_frame()) && (orig_chunk.end_frame() == self.end_frame())
     })]
-    pub fn split_at(mut self, at_frame: Frame) -> Result<(Self, Self), Self> {
+    pub fn split_at(self, at_frame: Frame) -> Result<(Self, Self), Self> {
         if self.is_empty() {
             return Err(self);
         }
@@ -940,7 +940,7 @@ impl PageRange {
         let orig_chunk = peek_err_ref(&result);
         (orig_chunk.start_page() == self.start_page()) && (orig_chunk.end_page() == self.end_page())
     })]
-    pub fn split_at(mut self, at_frame: Page) -> Result<(Self, Self), Self> {
+    pub fn split_at(self, at_frame: Page) -> Result<(Self, Self), Self> {
         if self.is_empty() {
             return Err(self);
         }
@@ -1008,7 +1008,6 @@ impl PageRange {
     }
 }
 
-// cfg_if!{ if #[cfg(not(prusti))] {
 
 /// A macro for defining `PageRange` and `FrameRange` structs
 /// and implementing their common traits, which are generally identical.
@@ -1186,4 +1185,3 @@ macro_rules! implement_page_frame_range {
 
 implement_page_frame_range!(PageRange, "virtual", virt, Page, VirtualAddress);
 implement_page_frame_range!(FrameRange, "physical", phys, Frame, PhysicalAddress);
-// }}

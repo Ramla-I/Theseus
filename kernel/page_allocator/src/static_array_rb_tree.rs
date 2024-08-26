@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use alloc::boxed::Box;
 use core::ops::{Deref, DerefMut};
 use intrusive_collections::{

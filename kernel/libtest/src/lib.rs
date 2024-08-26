@@ -55,10 +55,11 @@ pub fn nr_tasks_in_rq(cpu: CpuId) -> Option<usize> {
 /// a free core will only have 1 task, the idle task, running on it.
 const NUM_TASKS_ON_FREE_CORE: usize = 0;
 
+#[allow(unused_variables)]
 /// True if only one task is running in the current runqueue.
 /// Used to verify if there are any other tasks than the current task in the runqueue
 pub fn check_myrq() -> bool {
-	let  required_num_tasks = NUM_TASKS_ON_FREE_CORE + 1;
+	let required_num_tasks = NUM_TASKS_ON_FREE_CORE + 1;
 	match nr_tasks_in_rq(CPU_ID!()) {
 		Some(required_num_tasks)=> { true }
 		_ => { false }

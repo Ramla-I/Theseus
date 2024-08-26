@@ -1,3 +1,4 @@
+#![allow(unused_imports)] // for prusti spec
 use prusti_contracts::*;
 use prusti_external_spec::partial_ord::*;
 use crate::{Frame, Page};
@@ -40,17 +41,17 @@ pub(crate) fn saturating_sub(a: usize, b: usize) -> usize {
      a.saturating_sub(b)
 }
 
-#[pure]
-#[trusted]
-#[ensures(if (a == 0 || b == 0) {
-    result == 0
-} else if (a >= usize::MAX / b) {
-    result == usize::MAX
-} else if (b >= usize::MAX / a) {
-    result == usize::MAX
-} else {
-    result == a*b
-})]
-pub(crate) fn saturating_mul(a: usize, b: usize) -> usize {
-     a.saturating_mul(b)
-}
+// #[pure]
+// #[trusted]
+// #[ensures(if (a == 0 || b == 0) {
+//     result == 0
+// } else if (a >= usize::MAX / b) {
+//     result == usize::MAX
+// } else if (b >= usize::MAX / a) {
+//     result == usize::MAX
+// } else {
+//     result == a*b
+// })]
+// pub(crate) fn saturating_mul(a: usize, b: usize) -> usize {
+//      a.saturating_mul(b)
+// }

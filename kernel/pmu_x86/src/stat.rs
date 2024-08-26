@@ -20,7 +20,6 @@
 use core::fmt;
 use crate::*;
 use core::ops::{Sub, SubAssign};
-use alloc::vec;
 
 pub struct PerformanceCounters {
     inst_retired: Counter,

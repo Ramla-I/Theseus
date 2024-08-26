@@ -6,7 +6,7 @@
 
 extern crate alloc;
 #[macro_use] extern crate app_io;
-#[macro_use] extern crate libtest;
+extern crate libtest;
 extern crate log;
 extern crate memory;
 extern crate getopts;
@@ -26,10 +26,10 @@ use alloc::vec::Vec;
 use getopts::{Matches, Options};
 use kernel_config::memory::PAGE_SIZE;
 use libtest::{hpet_timing_overhead, hpet_2_ns, calculate_stats, check_myrq, cpu_id};
-use memory::{allocate_pages, AllocatedPages, Mapper, MappedPages, get_kernel_mmi_ref, PageTable, MemoryManagementInfo, MmiRef};
+use memory::{allocate_pages, AllocatedPages, MappedPages, get_kernel_mmi_ref, MmiRef};
 use hpet::get_hpet;
 use pte_flags::PteFlags;
-use log::{error, warn, debug, trace};
+use log::error;
 
 fn create_mappings(
 	mmi_ref: &MmiRef,
@@ -38,7 +38,6 @@ fn create_mappings(
     num_mappings: usize,
     hpet_overhead: u64
 ) -> Result<(Option<Vec<MappedPages>>, Option<Vec<AllocatedPages>>, u64), &'static str> {
-    let start_vaddr = allocated_pages.start().start_address();
     // split the allocated pages into `num_mappings` chunks, each chunk being `size_in_pages` pages long.
     let mut allocated_pages_list: Vec<AllocatedPages> = Vec::with_capacity(num_mappings);
     let mut remaining_chunk = allocated_pages;
@@ -55,7 +54,6 @@ fn create_mappings(
     let hpet = get_hpet().ok_or("couldn't get HPET timer")?;
 
     let mut mapped_pages: Vec<MappedPages> =  Vec::with_capacity(num_mappings);
-    let size_in_bytes = size_in_pages * PAGE_SIZE;
     let mapper = &mut mmi_ref.lock().page_table;
     let start_time = hpet.get_counter();
 
@@ -92,7 +90,7 @@ fn remap_normal(
 
 
 fn unmap_normal(
-    mut mapped_pages: Vec<MappedPages>,
+    mapped_pages: Vec<MappedPages>,
     hpet_overhead: u64
 ) -> Result<u64, &'static str> {
 
@@ -190,7 +188,6 @@ pub fn rmain(matches: &Matches, _opts: &Options) -> Result<(), &'static str> {
     for _trial in 0..TRIES {
         let pages = allocate_pages(size_in_pages * num_mappings)
             .ok_or("couldn't allocate sufficient pages")?;
-        let start_vaddr = pages.start_address();
         // (1) create mappings
         if verbose { println!("*** Iteration {}: creating mappings.", _trial); }         
         let mut result = create_mappings(

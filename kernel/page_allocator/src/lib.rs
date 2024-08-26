@@ -65,7 +65,7 @@ static DESIGNATED_PAGES_HIGH_START: Page = Page::containing_address(
 	VirtualAddress::new_canonical(UPCOMING_PAGE_TABLE_RECURSIVE_P4_START)
 );
 
-const MIN_PAGE: Page = Page::containing_address(VirtualAddress::zero());
+// const MIN_PAGE: Page = Page::containing_address(VirtualAddress::zero()); // no longer needed because we use the verified split function
 const MAX_PAGE: Page = Page::containing_address(VirtualAddress::new_canonical(MAX_VIRTUAL_ADDRESS));
 
 /// The single, system-wide list of free chunks of virtual memory pages.

@@ -6,18 +6,20 @@ KERNEL_CRATES=(kernel_config memory_structs prusti_external_spec prusti_represen
 cd libs/
 for crate_name in "${LIB_CRATES[@]}"
 do
-    echo "using Prusti to verify: $crate_name"
+    echo "USING PRUSTI TO VERIFY: $crate_name"
     cd $crate_name
     ../../../prusti-release-v-2023-08-22/cargo-prusti 
     cd ..
+    sleep 5
 done
 
 cd ../kernel/
 
 for crate_name in "${KERNEL_CRATES[@]}"
 do
-    echo "using Prusti to verify: $crate_name"
+    echo "USING PRUSTI TO VERIFY: $crate_name"
     cd $crate_name
     ../../../prusti-release-v-2023-08-22/cargo-prusti 
     cd ..
+    sleep 5
 done

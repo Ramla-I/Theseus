@@ -43,8 +43,8 @@ use prusti_frame_chunk::{FrameChunk, FrameChunkCreator};
 use prusti_representation_creator::RepresentationCreationError;
 
 const FRAME_SIZE: usize = PAGE_SIZE;
-const MIN_FRAME: Frame = Frame::containing_address(PhysicalAddress::zero());
-const MAX_FRAME: Frame = Frame::containing_address(PhysicalAddress::new_canonical(usize::MAX));
+// const MIN_FRAME: Frame = Frame::containing_address(PhysicalAddress::zero()); // no longer need because we use the verified functions
+// const MAX_FRAME: Frame = Frame::containing_address(PhysicalAddress::new_canonical(usize::MAX));
 
 // Note: we keep separate lists for "free, general-purpose" areas and "reserved" areas, as it's much faster. 
 

@@ -1,10 +1,8 @@
 //! A restricted driver for a 82599 10GbE Network Interface Card.
 
 #![no_std]
-// #![allow(dead_code)] //  to suppress warnings for unused functions/methods
-#![allow(unaligned_references)] // temporary, just to suppress unsafe packed borrows 
+// #![allow(unaligned_references)] // temporary, just to suppress unsafe packed borrows 
 #![allow(incomplete_features)] // to allow adt_const_params without a warning
-#![feature(adt_const_params)]
 #![feature(rustc_private)]
 #![feature(ptr_internals)]
 
