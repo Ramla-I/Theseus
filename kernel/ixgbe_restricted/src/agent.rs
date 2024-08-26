@@ -1,4 +1,4 @@
-use core::ops::Deref;
+
 
 use memory::{create_contiguous_mapping, BorrowedMappedPages, BorrowedSliceMappedPages, Mutable, PhysicalAddress, DMA_FLAGS};
 use crate::{DescType, HThresh, IxgbeNic, NumDesc, RegistersRx, RegistersTx, RxBufferSizeKiB, U7};
@@ -7,8 +7,8 @@ use crate::ethernet_frame::EthernetFrame;
 use crate::descriptor::*;
 use crate::transmit_head_wb::TransmitHead;
 use crate::verified::{FlushCounter, ProcessedDelimiter};
-use volatile::Volatile;
-use zerocopy::FromBytes;
+
+
 use prusti_memory_buffer::Buffer;
 
 const IXGBE_AGENT_RECYCLE_PERIOD: u64 = 32;
@@ -23,9 +23,9 @@ pub struct IxgbeAgent {
     head_wb: BorrowedMappedPages<TransmitHead, Mutable>,
     processed_delimiter: ProcessedDelimiter,
     flush_counter: FlushCounter,
-    descs_paddr: PhysicalAddress, // Address of the descriptor ring, stored for speed
-    buffers_paddr: PhysicalAddress, // Address of the buffers, stored for speed
-    head_wb_paddr: PhysicalAddress // Address of the transmit head writeback, stored for speed
+    // descs_paddr: PhysicalAddress, // Address of the descriptor ring, stored for speed
+    // buffers_paddr: PhysicalAddress, // Address of the buffers, stored for speed
+    // head_wb_paddr: PhysicalAddress // Address of the transmit head writeback, stored for speed
 }
 
 impl IxgbeAgent {
@@ -55,9 +55,9 @@ impl IxgbeAgent {
             head_wb,
             processed_delimiter: ProcessedDelimiter::new(),
             flush_counter: FlushCounter::new(),
-            descs_paddr,
-            buffers_paddr,
-            head_wb_paddr
+            // descs_paddr,
+            // buffers_paddr,
+            // head_wb_paddr
         })
     }
 
@@ -178,7 +178,7 @@ impl IxgbeAgent {
     pub fn run(&mut self){
         let mut packet_length = PacketLength::zero();
         
-        for i in 0.. IXGBE_AGENT_FLUSH_PERIOD {
+        for _i in 0.. IXGBE_AGENT_FLUSH_PERIOD {
             if let Some(pkt) = self.receive(&mut packet_length) {
                 pkt.src_addr = [0,0,0,0,0,0];
                 pkt.dest_addr = [0,0,0,0,0,1];

@@ -23,7 +23,7 @@ use zerocopy::FromBytes;
 use bit_field::BitField;
 use num_enum::TryFromPrimitive;
 use crate::hal::*;
-use core::{num, ops::Deref};
+use core::{ops::Deref};
 
 /// The layout in memory of the first set of general registers of the 82599 device.
 #[derive(FromBytes)]

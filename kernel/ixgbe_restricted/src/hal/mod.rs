@@ -1,8 +1,8 @@
+#![allow(dead_code)]
 pub(crate) mod regs;
 pub(crate) mod descriptor;
 pub(crate) mod transmit_head_wb;
 
-use num_enum::TryFromPrimitive;
 use bitflags::bitflags;
 use static_assertions::*;
 

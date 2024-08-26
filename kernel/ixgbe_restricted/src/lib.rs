@@ -18,10 +18,10 @@ use hal::regs::*;
 use spin::Once;
 use alloc::vec::Vec;
 use irq_safety::MutexIrqSafe;
-use memory::{BorrowedMappedPages, BorrowedSliceMappedPages, Mutable, MMIO_FLAGS, MappedPages};
-use pci::{PciDevice, PciConfigSpaceAccessMechanism, PciLocation};
-use prusti_memory_buffer::{Buffer, BufferBackingStore, create_buffers_from_mp};
-use log::{debug, info, error};
+use memory::{BorrowedMappedPages, Mutable, MappedPages};
+use pci::{PciDevice, PciLocation};
+use prusti_memory_buffer::{BufferBackingStore, create_buffers_from_mp};
+use log::{debug, info};
 use core::ops::Deref;
 
 /// Vendor ID for Intel
@@ -71,6 +71,7 @@ pub fn get_ixgbe_nics_list() -> Option<&'static Vec<MutexIrqSafe<IxgbeNic>>> {
 }
 
 
+#[allow(dead_code)] // for unused registers
 /// A struct representing an ixgbe network interface card.
 pub struct IxgbeNic {
     /// Representation of the PCI device of the NIC assigned by the device manager.
@@ -106,9 +107,9 @@ impl IxgbeNic {
             mut mapped_registers2, 
             mut mapped_registers3, 
             mut mapped_registers_mac, 
-            mut rx_mapped_registers1, 
-            mut rx_mapped_registers2, 
-            mut tx_mapped_registers
+            rx_mapped_registers1, 
+            rx_mapped_registers2, 
+            tx_mapped_registers
         ) = Self::cast_mp_into_regs(mmio_mapped_pages).map_err(|(_,err)| err)?;
 
         // link initialization
@@ -162,7 +163,7 @@ impl IxgbeNic {
         const GENERAL_REGISTERS_2_SIZE:   usize = 4 * 4096 / 4096;
         const TX_REGISTERS_SIZE:          usize = 2 * 4096 / 4096;
         const MAC_REGISTERS_SIZE:         usize = 5 * 4096 / 4096;
-        const GENERAL_REGISTERS_3_SIZE:   usize = 18 * 4096 / 4096;
+        // const GENERAL_REGISTERS_3_SIZE:   usize = 18 * 4096 / 4096;
 
         // Allocate memory for the registers, making sure each successive memory region begins where the previous region ended.
         let mut offset_page = *mapped_pages.deref().start() + GENERAL_REGISTERS_1_SIZE;

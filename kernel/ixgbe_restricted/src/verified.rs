@@ -1,4 +1,4 @@
-use core::ops::Deref;
+
 use crate::regs::TDTWritten;
 
 pub struct ProcessedDelimiter(u16);
@@ -28,12 +28,12 @@ impl FlushCounter {
     }
 
     #[inline(always)]
-    pub fn increment(&mut self, proc_delim_inc: ProcDelimInc) {
+    pub fn increment(&mut self, _proc_delim_inc: ProcDelimInc) {
         self.0 += 1;
     }
 
     #[inline(always)]
-    pub fn clear(&mut self, tdt_written: TDTWritten) {
+    pub fn clear(&mut self, _tdt_written: TDTWritten) {
         self.0 = 0;
     }
 
