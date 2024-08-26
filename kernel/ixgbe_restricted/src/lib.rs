@@ -11,7 +11,7 @@ extern crate alloc;
 pub mod hal;
 pub mod agent;
 pub mod ethernet_frame;
-mod verified;
+mod agent_state;
 pub use hal::*;
 use hal::regs::*;
 

@@ -18,11 +18,12 @@
 //! and so we haven't implemented the necessary checks for safe access.
 
 
+use transmit_head_wb::TransmitHead;
 use volatile::{Volatile, ReadOnly, WriteOnly};
 use zerocopy::FromBytes;
 use bit_field::BitField;
 use num_enum::TryFromPrimitive;
-use crate::hal::*;
+use crate::{agent_state::AgentState, hal::*};
 use core::{ops::Deref};
 
 /// The layout in memory of the first set of general registers of the 82599 device.
@@ -619,11 +620,6 @@ impl Deref for ReportStatusBit {
     }
 }
 
-
-
-
-
-
 /// Set of registers associated with one transmit descriptor queue.
 #[derive(FromBytes)]
 #[repr(C)]
@@ -664,8 +660,8 @@ pub struct TDTWritten();
 impl RegistersTx {
     // gate access so that the upper 16 bits are always set to 0
     #[inline(always)]
-    pub fn tdt_write(&mut self, val: u16) -> TDTWritten {
-        self.tdt.write(val as u32);
+    pub fn tdt_write(&mut self, val: &AgentState) -> TDTWritten {
+        self.tdt.write(val.processed_delimiter() as u32);
         TDTWritten()
     }
     
@@ -774,8 +770,9 @@ impl RegistersRx {
     }
 
     #[inline(always)]
-    pub fn rdt_write(&mut self, val: u16) {
-        self.rdt.write(val as u32);
+    pub fn rdt_write(&mut self, val: &TransmitHead, ring_size: u32) {
+        let head = val.read();
+        self.rdt.write((head - 1) & (ring_size - 1));
     }
 
     // #[inline(always)]

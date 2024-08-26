@@ -2,7 +2,7 @@
 
 extern crate alloc;
 
-use core::str::FromStr;
+
 use alloc::{vec::Vec, string::String};
 use ixgbe_restricted::{get_ixgbe_nics_list, IxgbeStats, agent::IxgbeAgent};
 use getopts::{Matches, Options};
@@ -59,9 +59,9 @@ pub fn main(args: Vec<String>) -> isize {
 }
 
 fn rmain(matches: &Matches, _opts: &Options) -> Result<(), &'static str> {
-    let mut core = matches.opt_default("c", "0").unwrap_or(String::from("0")).parse::<u32>().map_err(|_e| "couldn't parse core ID")?;
-    let mut batch_size = matches.opt_default("b", "32").unwrap_or(String::from("32")).parse::<usize>().map_err(|_e| "couldn't parse batch size")?;
-    let mut packet_length_in_bytes = matches.opt_default("l", "60").unwrap_or(String::from("60")).parse::<u16>().map_err(|_e| "couldn't parse packet length")?;
+    let core = matches.opt_default("c", "0").unwrap_or(String::from("0")).parse::<u32>().map_err(|_e| "couldn't parse core ID")?;
+    let batch_size = matches.opt_default("b", "32").unwrap_or(String::from("32")).parse::<usize>().map_err(|_e| "couldn't parse batch size")?;
+    let packet_length_in_bytes = matches.opt_default("l", "60").unwrap_or(String::from("60")).parse::<u16>().map_err(|_e| "couldn't parse packet length")?;
     let collect_stats = matches.opt_present("s");
     let pmu = matches.opt_present("p");
 

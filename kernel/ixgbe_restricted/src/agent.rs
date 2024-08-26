@@ -6,13 +6,20 @@ use crate::regs::{IntelIxgbeRegisters1, IntelIxgbeRegisters2};
 use crate::ethernet_frame::EthernetFrame;
 use crate::descriptor::*;
 use crate::transmit_head_wb::TransmitHead;
-use crate::verified::{FlushCounter, ProcessedDelimiter};
-
+use crate::agent_state::AgentState;
 
 use prusti_memory_buffer::Buffer;
 
+/// After this many packets
+/// 1. Agent sets the Report Status bit which tells the NIC to write the descriptor head (TDH) back for this packet
+/// 2. Reads the descriptor head back and sets the RDT to the head - 1
+/// This reduces the number of writes to the RDT register
 const IXGBE_AGENT_RECYCLE_PERIOD: u64 = 32;
+/// After this many packets, the agent flushes the transmit queue meaning its writes to the TDT register
+/// This reduces the number of writes to the TDT register
 const IXGBE_AGENT_FLUSH_PERIOD: u64 = 8;
+/// The number of descriptors in the ring
+/// The value of the current processed descriptor must be less than this.
 const IXGBE_RING_SIZE: NumDesc = NumDesc::Descs1k;
 
 pub struct IxgbeAgent {
@@ -21,8 +28,7 @@ pub struct IxgbeAgent {
     desc_ring: BorrowedSliceMappedPages<LegacyDescriptor, Mutable>,
     buffer: BorrowedSliceMappedPages<EthernetFrame, Mutable>,
     head_wb: BorrowedMappedPages<TransmitHead, Mutable>,
-    processed_delimiter: ProcessedDelimiter,
-    flush_counter: FlushCounter,
+    agent_state: AgentState,
     // descs_paddr: PhysicalAddress, // Address of the descriptor ring, stored for speed
     // buffers_paddr: PhysicalAddress, // Address of the buffers, stored for speed
     // head_wb_paddr: PhysicalAddress // Address of the transmit head writeback, stored for speed
@@ -38,10 +44,12 @@ impl IxgbeAgent {
 
         let mut desc_ring = descs_mp.into_borrowed_slice_mut(0, num_desc as usize).map_err(|(_mp, err)| err)?;
 
+        let agent_state = AgentState::new();
+
         // should be impossible for the queues to be enabled at this point in our current design
         // later on we should check if the rxq registers are already in use
         Self::rx_init(num_desc, descs_paddr, &mut device_rx.regs_rx1.buffers[0], &mut device_rx.regs1);
-        Self::tx_init(num_desc, buffers_paddr, descs_paddr, head_wb_paddr, &mut desc_ring, &mut device_tx.regs_tx.buffers[0], &mut device_tx.regs2);
+        Self::tx_init(num_desc, buffers_paddr, descs_paddr, head_wb_paddr, &mut desc_ring, &mut device_tx.regs_tx.buffers[0], &mut device_tx.regs2, &agent_state);
 
         // clear the head writeback
         let mut head_wb: BorrowedMappedPages<TransmitHead, Mutable> = head_wb_mp.into_borrowed_mut(0).map_err(|(_mp, err)| err)?;
@@ -53,8 +61,7 @@ impl IxgbeAgent {
             desc_ring,
             buffer: buffers_mp.into_borrowed_slice_mut(0, num_desc as usize).map_err(|(_mp, err)| err)?,
             head_wb,
-            processed_delimiter: ProcessedDelimiter::new(),
-            flush_counter: FlushCounter::new(),
+            agent_state,
             // descs_paddr,
             // buffers_paddr,
             // head_wb_paddr
@@ -93,7 +100,7 @@ impl IxgbeAgent {
         rxq_regs.dca_rxctrl_clear_bit_12();
     }
 
-    fn tx_init(num_desc: NumDesc, buffers_paddr: PhysicalAddress, descs_paddr: PhysicalAddress, head_wb_paddr: PhysicalAddress, desc_ring: &mut [LegacyDescriptor], txq_regs: &mut RegistersTx, regs2: &mut IntelIxgbeRegisters2) {
+    fn tx_init(num_desc: NumDesc, buffers_paddr: PhysicalAddress, descs_paddr: PhysicalAddress, head_wb_paddr: PhysicalAddress, desc_ring: &mut [LegacyDescriptor], txq_regs: &mut RegistersTx, regs2: &mut IntelIxgbeRegisters2, agent_state: &AgentState) {
         // set buffer addresses
         for i in 0..num_desc as usize {
             let packet_paddr = buffers_paddr + (i * core::mem::size_of::<EthernetFrame>());
@@ -117,7 +124,7 @@ impl IxgbeAgent {
         }
         // write the head index and the tail index (both 0 initially because there are no tx requests yet)
         let tdh_set = txq_regs.tdh_write(0, tdlen_set);
-        let _ = txq_regs.tdt_write(0);
+        let _ = txq_regs.tdt_write(agent_state);
 
         //enable tx queue and make sure it's enabled
         txq_regs.txdctl_txq_enable(tdh_set); 
@@ -127,18 +134,15 @@ impl IxgbeAgent {
 
     #[inline(always)]
     fn receive(&mut self, packet_length: &mut PacketLength) -> Option<&mut EthernetFrame> {
-        let processed_delimiter = self.processed_delimiter.value();
+        let processed_delimiter = self.agent_state.processed_delimiter();
         let (dd, length) = self.desc_ring[processed_delimiter as usize].rx_metadata();
         // let rx_metadata = unsafe{ self.desc_ring.get_unchecked(self.processed_delimiter as usize).other.read()};
 
-        // We use linear types to enforce the order:
-        // tdt is written -> flush counter is cleared
-
-        if !*dd {
+        if !*dd { // DD bit is set for very received packet
             // no packet
-            if self.flush_counter.value() != 0 {
-                let tdt_written = self.tx_regs.tdt_write(processed_delimiter);
-                self.flush_counter.clear(tdt_written);
+            if self.agent_state.flush_counter() != 0 {
+                let tdt_written = self.tx_regs.tdt_write(&self.agent_state);
+                self.agent_state.clear_flush_counter(tdt_written);
             }
             return None;
         }
@@ -148,29 +152,26 @@ impl IxgbeAgent {
 
     #[inline(always)]
     fn transmit(&mut self, packet_length: PacketLength) {
-        let processed_delimiter = self.processed_delimiter.value();
+        let processed_delimiter = self.agent_state.processed_delimiter();
+
+        // This packet will be the IXGBE_AGENT_RECYCLE_PERIOD-th packet, so need to set the RS bit.
         let rs_set = (processed_delimiter as u64 & (IXGBE_AGENT_RECYCLE_PERIOD - 1)) == (IXGBE_AGENT_RECYCLE_PERIOD - 1);
         self.desc_ring[processed_delimiter as usize].send(packet_length, rs_set, DescType::Legacy);
         // unsafe{ self.desc_ring.get_unchecked_mut(self.processed_delimiter as usize).other.write(packet_length as u64 | rs_bit | (1 << (24 + 1)) | (1 << 24)); }
         
-        // We use linear types to enforce the order :
-        // processed delimiter is incremented -> flush counter is incremented 
-        // tdt is written -> flush counter is cleared
-
         // self.processed_delimiter = (self.processed_delimiter + 1) & (IXGBE_RING_SIZE as u16 - 1);
-        let delim_incremented = self.processed_delimiter.increment(IXGBE_RING_SIZE as u16);
-
         // self.flush_counter += 1;
-        self.flush_counter.increment(delim_incremented);
-        if self.flush_counter.value() == IXGBE_AGENT_FLUSH_PERIOD {
-            let tdt_written = self.tx_regs.tdt_write(self.processed_delimiter.value()); // To Do: just update to take processed delimiter
+        self.agent_state.increment(IXGBE_RING_SIZE as u16);
+
+        if self.agent_state.flush_counter() == IXGBE_AGENT_FLUSH_PERIOD {
+            let tdt_written = self.tx_regs.tdt_write(&self.agent_state);
             // self.flush_counter = 0;
-            self.flush_counter.clear(tdt_written);
+            self.agent_state.clear_flush_counter(tdt_written);
         }
 
-        if rs_set {
-            let head = self.head_wb.read() as u16;
-            self.rx_regs.rdt_write((head - 1) & (IXGBE_RING_SIZE as u16 - 1));
+        if rs_set { // since IXGBE_AGENT_RECYCLE_PERIOD packets have been received/ sent, we can now read the head write-back
+            // will set the RDT to 1 less than the TDH
+            self.rx_regs.rdt_write(&self.head_wb, IXGBE_RING_SIZE as u32);
         }
     }
 
