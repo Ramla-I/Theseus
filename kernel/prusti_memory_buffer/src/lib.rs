@@ -1,5 +1,7 @@
 #![no_std]
 #![feature(ptr_internals)]
+#![allow(unused_imports)]
+#![allow(dead_code)]
 
 use memory::MappedPages;
 use memory_structs::VirtualAddress;

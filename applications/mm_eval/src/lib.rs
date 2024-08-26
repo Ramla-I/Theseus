@@ -24,7 +24,6 @@ use alloc::vec::Vec;
 
 
 use getopts::{Matches, Options};
-use kernel_config::memory::PAGE_SIZE;
 use libtest::{hpet_timing_overhead, hpet_2_ns, calculate_stats, check_myrq, cpu_id};
 use memory::{allocate_pages, AllocatedPages, MappedPages, get_kernel_mmi_ref, MmiRef};
 use hpet::get_hpet;
