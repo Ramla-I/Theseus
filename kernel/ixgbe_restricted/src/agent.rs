@@ -1,41 +1,37 @@
+use core::ops::Deref;
+
 use memory::{create_contiguous_mapping, BorrowedMappedPages, BorrowedSliceMappedPages, Mutable, PhysicalAddress, DMA_FLAGS};
 use crate::{DescType, HThresh, IxgbeNic, NumDesc, RegistersRx, RegistersTx, RxBufferSizeKiB, U7};
 use crate::regs::{IntelIxgbeRegisters1, IntelIxgbeRegisters2};
 use crate::ethernet_frame::EthernetFrame;
 use crate::descriptor::*;
+use crate::transmit_head_wb::TransmitHead;
+use crate::verified::{FlushCounter, ProcessedDelimiter};
 use volatile::Volatile;
 use zerocopy::FromBytes;
 use prusti_memory_buffer::Buffer;
 
 const IXGBE_AGENT_RECYCLE_PERIOD: u64 = 32;
 const IXGBE_AGENT_FLUSH_PERIOD: u64 = 8;
-const IXGBE_RING_SIZE: u16 = 1024;
-
-#[derive(FromBytes)]
-#[repr(C)]
-pub struct TransmitHead {
-    pub value: Volatile<u32>,
-}
+const IXGBE_RING_SIZE: NumDesc = NumDesc::Descs1k;
 
 pub struct IxgbeAgent {
     pub(crate) rx_regs: Buffer<RegistersRx>,
     pub(crate) tx_regs: Buffer<RegistersTx>,
-    pub desc_ring: BorrowedSliceMappedPages<LegacyDescriptor, Mutable>,
-    pub buffer: BorrowedSliceMappedPages<EthernetFrame, Mutable>,
-    pub head_wb: BorrowedMappedPages<TransmitHead, Mutable>,
-    pub num_descs: u16,
-    pub processed_delimiter: u16,
-    pub flush_counter: u64,
-    pub tx_clean: u16,
-    pub descs_paddr: PhysicalAddress,
-    pub buffers_paddr: PhysicalAddress,
-    pub head_wb_paddr: PhysicalAddress
+    desc_ring: BorrowedSliceMappedPages<LegacyDescriptor, Mutable>,
+    buffer: BorrowedSliceMappedPages<EthernetFrame, Mutable>,
+    head_wb: BorrowedMappedPages<TransmitHead, Mutable>,
+    processed_delimiter: ProcessedDelimiter,
+    flush_counter: FlushCounter,
+    descs_paddr: PhysicalAddress, // Address of the descriptor ring, stored for speed
+    buffers_paddr: PhysicalAddress, // Address of the buffers, stored for speed
+    head_wb_paddr: PhysicalAddress // Address of the transmit head writeback, stored for speed
 }
 
 impl IxgbeAgent {
     pub fn new(device_rx: &mut IxgbeNic, device_tx: &mut IxgbeNic) -> Result<IxgbeAgent, &'static str> {
-        let num_desc = NumDesc::Descs1k;
-        assert!(num_desc as u16 == IXGBE_RING_SIZE);
+        let num_desc = IXGBE_RING_SIZE;
+
         let (buffers_mp, buffers_paddr) = create_contiguous_mapping(num_desc as usize * core::mem::size_of::<EthernetFrame>(), DMA_FLAGS)?;
         let (descs_mp, descs_paddr) = create_contiguous_mapping(num_desc as usize * core::mem::size_of::<LegacyDescriptor>(), DMA_FLAGS)?;
         let (head_wb_mp, head_wb_paddr) = create_contiguous_mapping(core::mem::size_of::<TransmitHead>(), DMA_FLAGS)?;
@@ -43,20 +39,22 @@ impl IxgbeAgent {
         let mut desc_ring = descs_mp.into_borrowed_slice_mut(0, num_desc as usize).map_err(|(_mp, err)| err)?;
 
         // should be impossible for the queues to be enabled at this point in our current design
-        // later on we should check if the rxq registers are alreadyin use
+        // later on we should check if the rxq registers are already in use
         Self::rx_init(num_desc, descs_paddr, &mut device_rx.regs_rx1.buffers[0], &mut device_rx.regs1);
         Self::tx_init(num_desc, buffers_paddr, descs_paddr, head_wb_paddr, &mut desc_ring, &mut device_tx.regs_tx.buffers[0], &mut device_tx.regs2);
+
+        // clear the head writeback
+        let mut head_wb: BorrowedMappedPages<TransmitHead, Mutable> = head_wb_mp.into_borrowed_mut(0).map_err(|(_mp, err)| err)?;
+        head_wb.clear();
 
         Ok(IxgbeAgent {
             rx_regs: device_rx.regs_rx1.buffers.pop_front().unwrap(),
             tx_regs: device_tx.regs_tx.buffers.pop_front().unwrap(),
             desc_ring,
             buffer: buffers_mp.into_borrowed_slice_mut(0, num_desc as usize).map_err(|(_mp, err)| err)?,
-            head_wb: head_wb_mp.into_borrowed_mut(0).map_err(|(_mp, err)| err)?,
-            num_descs: num_desc as u16,
-            processed_delimiter: 0,
-            flush_counter: 0,
-            tx_clean: 0,
+            head_wb,
+            processed_delimiter: ProcessedDelimiter::new(),
+            flush_counter: FlushCounter::new(),
             descs_paddr,
             buffers_paddr,
             head_wb_paddr
@@ -119,7 +117,8 @@ impl IxgbeAgent {
         }
         // write the head index and the tail index (both 0 initially because there are no tx requests yet)
         let tdh_set = txq_regs.tdh_write(0, tdlen_set);
-        txq_regs.tdt_write(0);
+        let _ = txq_regs.tdt_write(0);
+
         //enable tx queue and make sure it's enabled
         txq_regs.txdctl_txq_enable(tdh_set); 
         const TX_Q_ENABLE: u32 = 1 << 25;
@@ -128,37 +127,50 @@ impl IxgbeAgent {
 
     #[inline(always)]
     fn receive(&mut self, packet_length: &mut PacketLength) -> Option<&mut EthernetFrame> {
-        let (dd, length) = self.desc_ring[self.processed_delimiter as usize].rx_metadata();
+        let processed_delimiter = self.processed_delimiter.value();
+        let (dd, length) = self.desc_ring[processed_delimiter as usize].rx_metadata();
         // let rx_metadata = unsafe{ self.desc_ring.get_unchecked(self.processed_delimiter as usize).other.read()};
+
+        // We use linear types to enforce the order:
+        // tdt is written -> flush counter is cleared
 
         if !*dd {
             // no packet
-            if self.flush_counter != 0 {
-                self.tx_regs.tdt_write(self.processed_delimiter);
-                self.flush_counter = 0;
+            if self.flush_counter.value() != 0 {
+                let tdt_written = self.tx_regs.tdt_write(processed_delimiter);
+                self.flush_counter.clear(tdt_written);
             }
             return None;
         }
         *packet_length = length; 
-        Some(&mut self.buffer[self.processed_delimiter as usize])
+        Some(&mut self.buffer[processed_delimiter as usize])
     }
 
     #[inline(always)]
     fn transmit(&mut self, packet_length: PacketLength) {
-        let rs_bit = if (self.processed_delimiter as u64 & (IXGBE_AGENT_RECYCLE_PERIOD - 1)) == (IXGBE_AGENT_RECYCLE_PERIOD - 1) { 1 << (24 + 3) } else { 0 };
-        self.desc_ring[self.processed_delimiter as usize].send(packet_length, rs_bit, DescType::Legacy);
+        let processed_delimiter = self.processed_delimiter.value();
+        let rs_set = (processed_delimiter as u64 & (IXGBE_AGENT_RECYCLE_PERIOD - 1)) == (IXGBE_AGENT_RECYCLE_PERIOD - 1);
+        self.desc_ring[processed_delimiter as usize].send(packet_length, rs_set, DescType::Legacy);
         // unsafe{ self.desc_ring.get_unchecked_mut(self.processed_delimiter as usize).other.write(packet_length as u64 | rs_bit | (1 << (24 + 1)) | (1 << 24)); }
-        self.processed_delimiter = (self.processed_delimiter + 1) & (IXGBE_RING_SIZE - 1);
+        
+        // We use linear types to enforce the order :
+        // processed delimiter is incremented -> flush counter is incremented 
+        // tdt is written -> flush counter is cleared
 
-        self.flush_counter += 1;
-        if self.flush_counter == IXGBE_AGENT_FLUSH_PERIOD {
-            self.tx_regs.tdt_write(self.processed_delimiter);
-            self.flush_counter = 0;
+        // self.processed_delimiter = (self.processed_delimiter + 1) & (IXGBE_RING_SIZE as u16 - 1);
+        let delim_incremented = self.processed_delimiter.increment(IXGBE_RING_SIZE as u16);
+
+        // self.flush_counter += 1;
+        self.flush_counter.increment(delim_incremented);
+        if self.flush_counter.value() == IXGBE_AGENT_FLUSH_PERIOD {
+            let tdt_written = self.tx_regs.tdt_write(self.processed_delimiter.value()); // To Do: just update to take processed delimiter
+            // self.flush_counter = 0;
+            self.flush_counter.clear(tdt_written);
         }
 
-        if rs_bit != 0 {
-            let head = self.head_wb.value.read() as u16;
-            self.rx_regs.rdt_write((head - 1) & (IXGBE_RING_SIZE - 1));
+        if rs_set {
+            let head = self.head_wb.read() as u16;
+            self.rx_regs.rdt_write((head - 1) & (IXGBE_RING_SIZE as u16 - 1));
         }
     }
 

@@ -24,7 +24,7 @@ impl LegacyDescriptor {
     }
 
     #[inline(always)]
-    pub fn send(&mut self, packet_length: PacketLength, rs_bit: u64, desc_type: DescType) {
+    pub fn send(&mut self, packet_length: PacketLength, rs_set: bool, desc_type: DescType) {
         let (desc_type, length) = match desc_type {
             DescType::Legacy => (0, *packet_length as u64),
             DescType::AdvDesc1Buf =>  (1 << 29 | 0x3 << 20, *packet_length as u64 | (*packet_length as u64) << 46),
@@ -32,6 +32,7 @@ impl LegacyDescriptor {
         const CMD_EOP:  u64 = 1 << 24;
         const CMD_IFCS: u64 = 1 << 25;
         const CMD_RS:   u64 = 1 << 27;
+        let rs_bit = if rs_set { 1 << (24 + 3) } else { 0 };
         self.metadata.write(length | rs_bit | CMD_IFCS | CMD_EOP | desc_type);
     }
 

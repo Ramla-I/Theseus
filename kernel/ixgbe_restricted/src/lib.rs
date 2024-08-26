@@ -11,6 +11,7 @@ extern crate alloc;
 pub mod hal;
 pub mod agent;
 pub mod ethernet_frame;
+mod verified;
 pub use hal::*;
 use hal::regs::*;
 
@@ -70,7 +71,6 @@ pub fn get_ixgbe_nics_list() -> Option<&'static Vec<MutexIrqSafe<IxgbeNic>>> {
 }
 
 
-
 /// A struct representing an ixgbe network interface card.
 pub struct IxgbeNic {
     /// Representation of the PCI device of the NIC assigned by the device manager.
@@ -88,7 +88,7 @@ pub struct IxgbeNic {
 
 // Functions that setup the NIC struct and handle the sending and receiving of packets.
 impl IxgbeNic {
-    /// Store required values from the device's PCI config space, and initialize different features of the nic.
+    /// Map the MMIO registers, and intialize the NIC.
     /// 
     /// # Arguments
     /// * `ixgbe_pci_dev`: Contains the pci device information for this NIC.
@@ -114,8 +114,8 @@ impl IxgbeNic {
         // link initialization
         Self::start_link(&mut mapped_registers1, &mut mapped_registers2, &mut mapped_registers3, &mut mapped_registers_mac)?;
 
-        // // clear stats registers
-        // Self::clear_stats_internal(&mapped_registers2);
+        // clear stats registers
+        Self::clear_stats_internal(&mapped_registers2);
 
         // store the mac address of this device
         let mac_addr_hardware = Self::read_mac_address_from_nic(&mut mapped_registers_mac);
@@ -156,6 +156,7 @@ impl IxgbeNic {
     ), (MappedPages, &'static str)> {
         // We've divided the memory-mapped registers into multiple regions.
         // The size of each region is found from the data sheet, but it always lies on a page boundary.
+        // The size here is in pages, so we divide by 4096.
         const GENERAL_REGISTERS_1_SIZE:   usize = 4096 / 4096;
         const RX_REGISTERS_SIZE:          usize = 4096 / 4096;
         const GENERAL_REGISTERS_2_SIZE:   usize = 4 * 4096 / 4096;
@@ -383,7 +384,6 @@ impl IxgbeNic {
         regs_mac.dtxmxszrq_allow_max_byte_requests(); 
         regs2.rttdcs_clear_arbdis();
 
-
         Ok(())
     }   
 
@@ -402,10 +402,9 @@ impl IxgbeNic {
         regs2.rxctrl_rx_enable(fctrl_set); 
     }
     
-    // pub fn mac_addr(&self) -> [u8; 6] {
-    //     self.mac_hardware
-    // }
-
+    pub fn mac_addr(&self) -> [u8; 6] {
+        self.mac_hardware
+    }
 }
 
 

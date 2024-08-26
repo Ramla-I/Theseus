@@ -2,7 +2,7 @@ use zerocopy::FromBytes;
 use static_assertions::*;
 
 /// All buffers are created with 2KiB so that the max ethernet frame can fit in one packet buffer
-pub const DEFAULT_RX_BUFFER_SIZE_IN_BYTES_2KiB:         usize   = 2 * 1024;
+pub const DEFAULT_RX_BUFFER_SIZE_IN_BYTES:              usize   = 2 * 1024;
 /// Size of ether type field in ethernet frame header
 pub const ETHER_TYPE_LEN_IN_BYTES:                      u16 = 2;
 /// Size of CRC checksum field in ethernet frame header
@@ -29,7 +29,7 @@ pub struct EthernetFrame {
     pub src_addr:   [u8; MAC_ADDR_LEN_IN_BYTES as usize],
     pub length:     u16,
     pub payload:    [u8; MAX_STANDARD_PAYLOAD_LEN_IN_BYTES as usize],
-    _padding:       [u8; 2048 - 1514]
+    _padding:       [u8; DEFAULT_RX_BUFFER_SIZE_IN_BYTES - 1514]
 }
 
-const_assert_eq!(core::mem::size_of::<EthernetFrame>(), 2048);
+const_assert_eq!(core::mem::size_of::<EthernetFrame>(), DEFAULT_RX_BUFFER_SIZE_IN_BYTES);

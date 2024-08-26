@@ -660,11 +660,13 @@ pub(crate) struct RegistersTx {
 } // 64B
 const_assert_eq!(core::mem::size_of::<RegistersTx>(), 64);
 
+pub struct TDTWritten();
 impl RegistersTx {
     // gate access so that the upper 16 bits are always set to 0
     #[inline(always)]
-    pub fn tdt_write(&mut self, val: u16) {
+    pub fn tdt_write(&mut self, val: u16) -> TDTWritten {
         self.tdt.write(val as u32);
+        TDTWritten()
     }
     
     // #[inline(always)]
