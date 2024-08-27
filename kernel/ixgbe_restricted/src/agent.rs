@@ -190,3 +190,5 @@ impl IxgbeAgent {
         }
     }
 }
+
+// Potential TODO: Add drop handler, but check performance if we wrap regs in Option

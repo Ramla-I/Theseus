@@ -57,7 +57,7 @@ impl Deref for PacketLength {
     }
 }
 
- #[derive(Debug, Copy, Clone)]
+ #[derive(Debug)]
 pub struct DescriptorDone(bool);
 impl Deref for DescriptorDone {
     type Target = bool;

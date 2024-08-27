@@ -664,6 +664,13 @@ impl RegistersTx {
         self.tdt.write(val.processed_delimiter() as u32);
         TDTWritten()
     }
+
+    // // gate access so that the upper 16 bits are always set to 0
+    // // alternative that's not driver specific
+    // #[inline(always)]
+    // pub fn tdt_write(&mut self, val: u16)  {
+    //     self.tdt.write(val as u32);
+    // }
     
     // #[inline(always)]
     // pub fn tdt_read(&mut self) -> u32 {
@@ -775,10 +782,13 @@ impl RegistersRx {
         self.rdt.write((head - 1) & (ring_size - 1));
     }
 
+    // // gate access so that the upper 16 bits are always set to 0
+    // // alternative that's not driver specific
     // #[inline(always)]
-    // pub fn rdt_read(&mut self) -> u32 {
-    //     self.rdt.read()
+    // pub fn rdt_write(&mut self, val: u16) {
+    //     self.rdt.write(val as u32);
     // }
+
 }
 
 impl RegistersRx {
