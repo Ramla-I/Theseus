@@ -1,0 +1,6 @@
+check_overflows = false
+use_new_encoder = false
+# skip_unsupported_features = true # BE CAREFUL OF THIS, may cause verification to never happen (like using an iterator in a fn you're trying to verify or ptr cast)
+no_verify_deps = true
+opt_in_verification = true
+# allow_unreachable_unsupported_code = true

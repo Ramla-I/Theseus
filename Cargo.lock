@@ -2930,6 +2930,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f4d18a93d2e7feb85b057978063c3abd0848a63c1b8386046f52e66e796a99e"
 
 [[package]]
+name = "prusti_borrowed_shared_mp"
+version = "0.1.0"
+dependencies = [
+ "kernel_config",
+ "log",
+ "memory",
+ "memory_structs",
+ "prusti-contracts 0.2.0",
+ "prusti_external_spec",
+ "zerocopy",
+]
+
+[[package]]
 name = "prusti_external_spec"
 version = "0.1.0"
 dependencies = [
