@@ -1741,6 +1741,7 @@ dependencies = [
  "pci",
  "pit_clock",
  "prusti-contracts 0.1.10",
+ "prusti_borrowed_shared_mp",
  "prusti_external_spec",
  "prusti_memory_buffer",
  "rand",

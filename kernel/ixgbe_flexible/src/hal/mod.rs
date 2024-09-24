@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 pub(crate) mod regs;
-pub(crate) mod descriptor;
+pub(crate) mod descriptors;
 pub(crate) mod transmit_head_wb;
 
 use bitflags::bitflags;

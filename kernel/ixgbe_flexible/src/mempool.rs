@@ -7,7 +7,7 @@
 //! To Do: Drop handler that returns buffers to their backing store
 //! To Do: Ideally some id field that relates buffer to the mempool to make it easier to return.
 
-use memory::{ MappedPages, create_contiguous_mapping, DMA_FLAGS, PhysicalAddress};
+use memory::{create_contiguous_mapping, DMA_FLAGS, PhysicalAddress};
 use crate::ethernet_frame::EthernetFrame;
 // use zerocopy::FromBytes;
 use prusti_memory_buffer::{Buffer, BufferBackingStore, create_buffers_from_mp};
@@ -21,9 +21,9 @@ pub struct PacketBuffer {
 
 // const_assert_eq!(core::mem::size_of::<Buffer>(), 24);
 
-type PktBuff = Buffer<PacketBuffer>; // Just for convenience, so we don't have to write Buffer<> everywhere
+pub type PktBuff = Buffer<PacketBuffer>; // Just for convenience, so we don't have to write Buffer<> everywhere
 pub struct Mempool {
-    buffers: VecDequeWrapper<PktBuff>,
+    pub buffers: VecDequeWrapper<PktBuff>,
     frames_paddr: PhysicalAddress,
     pkt_buffers_paddr: PhysicalAddress,
     frames_mp: BufferBackingStore<EthernetFrame>,
@@ -36,15 +36,15 @@ pub struct Mempool {
 
 impl Mempool {
     pub fn new(num_buffers: usize) -> Result<Mempool, &'static str> {
-        let (frames_mp, mut frames_paddr) = 
+        let (frames_mp, frames_paddr) = 
             create_contiguous_mapping(num_buffers as usize * core::mem::size_of::<EthernetFrame>(), DMA_FLAGS)?;
         let (pkt_buffers_mp, pkt_buffers_paddr) = 
             create_contiguous_mapping(num_buffers * core::mem::size_of::<PacketBuffer>(), DMA_FLAGS)?;
 
         let mut frames_backing_store: BufferBackingStore<EthernetFrame> = create_buffers_from_mp(frames_mp, num_buffers)
-            .map_err(|(mp, e)| e.into_str())?; // just drop the MappedPages
+            .map_err(|(_mp, e)| e.into_str())?; // just drop the MappedPages
         let mut pkt_buffers_backing_store: BufferBackingStore<PacketBuffer> = create_buffers_from_mp(pkt_buffers_mp, num_buffers)
-            .map_err(|(mp, e)| e.into_str())?; // just drop the MappedPages
+            .map_err(|(_mp, e)| e.into_str())?; // just drop the MappedPages
 
         // Update the packet buffer information
         let current_frame_paddr = frames_paddr;

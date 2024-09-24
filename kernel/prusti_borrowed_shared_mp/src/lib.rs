@@ -3,7 +3,7 @@
 #![allow(dead_code)]
 
 extern crate alloc;
-mod verified;
+pub mod verified;
 
 use memory::MappedPages;
 use core::ptr::Unique;

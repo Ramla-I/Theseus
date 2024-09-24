@@ -50,6 +50,9 @@ path = "../prusti_memory_buffer"
 [dependencies.prusti_external_spec]
 path = "../prusti_external_spec"
 
+[dependencies.prusti_borrowed_shared_mp]
+path = "../prusti_borrowed_shared_mp"
+
 [dependencies.num_enum]
 version = "0.5.2"
 default-features = false

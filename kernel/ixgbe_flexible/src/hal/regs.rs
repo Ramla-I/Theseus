@@ -18,6 +18,7 @@
 //! and so we haven't implemented the necessary checks for safe access.
 
 
+use descriptors::AdvancedTxDescriptor;
 use volatile::{Volatile, ReadOnly, WriteOnly};
 use zerocopy::FromBytes;
 use bit_field::BitField;
@@ -648,11 +649,11 @@ pub struct ReportStatusBit(u8);
 
 impl ReportStatusBit {
     fn one() -> ReportStatusBit {
-        ReportStatusBit(1 << 3)
+        ReportStatusBit(1)
     }
 
     fn zero() -> ReportStatusBit {
-        ReportStatusBit(0 << 3)
+        ReportStatusBit(0)
     }
 
     fn value(&self) -> u8 {
@@ -699,6 +700,11 @@ const_assert_eq!(core::mem::size_of::<RegistersTx>(), 64);
 pub struct TDTWritten();
     
 impl RegistersTx {
+    // gate access so that the upper 16 bits are always set to 0
+    #[inline(always)]
+    pub fn tdt_write(&mut self, val: u16) {
+        self.tdt.write(val as u32);
+    }
 
     pub fn txdctl_read(&self) -> u32 {
         self.txdctl.read()
@@ -729,7 +735,7 @@ impl RegistersTx {
 
     /// Assume we used the advanced tx descriptors, otherwise create an enum for descriptor types
     pub fn tdlen_write(&mut self, num_descs: NumDesc) -> TDLENSet{
-        self.tdlen.write((num_descs as u32) * 16);
+        self.tdlen.write((num_descs as u32) * (core::mem::size_of::<AdvancedTxDescriptor>() as u32));
         TDLENSet()
     }
 
