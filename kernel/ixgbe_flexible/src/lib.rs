@@ -14,9 +14,9 @@ extern crate alloc;
 mod hal;
 mod queue_registers;
 mod ethernet_frame;
-mod mempool;
-mod rx_queue;
-mod tx_queue;
+pub mod mempool;
+pub mod rx_queue;
+pub mod tx_queue;
 
 use hal::{*, regs::*, NumDesc, IXGBE_MAX_RX_QUEUES};
 use queue_registers::*;
@@ -463,6 +463,13 @@ impl IxgbeNic {
 
 // public functions
 impl IxgbeNic {
+    pub fn borrow_queue_pair(&mut self) -> Result<(&mut RxQueueE, &mut TxQueueE), &'static str> {
+        if self.rx_queues.is_empty() || self.tx_queues.is_empty() {
+            return Err("There is no queue pair available");
+        }
+        Ok((&mut self.rx_queues[0], &mut self.tx_queues[0]))
+    }
+
     /// Clear the statistic registers by reading from them.
     pub fn clear_stats(&self) {
         Self::clear_stats_internal(&self.regs.regs2);
@@ -488,8 +495,8 @@ impl IxgbeNic {
 }
 
 /// All the MMIO registers for the NIC, except those that are located within the queue instances.
-/// This was all done so that we oculd separate the queue registers out.
-/// Otherwise we could have just had 1 single MappedPages and 1 regsiter struct that it is cast as.
+/// This was all done so that we could separate out the queue registers.
+/// Otherwise we could have just had 1 single MappedPages cast to 1 register struct.
 struct IxgbeRegisters {
     regs1: BorrowedMappedPages<IntelIxgbeRegisters1, Mutable>,
     regs2: BorrowedMappedPages<IntelIxgbeRegisters2, Mutable>,

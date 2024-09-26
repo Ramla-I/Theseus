@@ -2614,6 +2614,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "packet_forwarder_flexible"
+version = "0.1.0"
+dependencies = [
+ "app_io",
+ "getopts",
+ "hpet",
+ "irq_safety",
+ "ixgbe_flexible",
+ "libtest",
+ "log",
+ "pmu_x86",
+ "spawn",
+]
+
+[[package]]
 name = "packet_forwarder_restricted"
 version = "0.1.0"
 dependencies = [

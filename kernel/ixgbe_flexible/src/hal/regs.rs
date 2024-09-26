@@ -644,19 +644,20 @@ pub struct TDHSet();
 pub struct TDLENSet();
 
 // Tells what the value of the RS bit should be in the 8-bit DCMD field of the transmit descriptor.
-// The inner vlaue will be ORed with the remaining flags for the DCMD field
-pub struct ReportStatusBit(u8);
+// The inner value will be ORed with the remaining flags for the DCMD field
+#[derive(Clone, Copy)]
+pub struct ReportStatusBit(u64);
 
 impl ReportStatusBit {
     fn one() -> ReportStatusBit {
         ReportStatusBit(1)
     }
 
-    fn zero() -> ReportStatusBit {
+    pub fn zero() -> ReportStatusBit {
         ReportStatusBit(0)
     }
 
-    fn value(&self) -> u8 {
+    pub fn value(&self) -> u64 {
         self.0
     }
 }

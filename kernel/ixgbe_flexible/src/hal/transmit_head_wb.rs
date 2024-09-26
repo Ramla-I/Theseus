@@ -10,7 +10,7 @@ impl TransmitHead {
         self.0.write(0);
     }
 
-    fn value(&self) -> u32 {
+    pub fn value(&self) -> u32 {
         self.0.read()
     }
 }

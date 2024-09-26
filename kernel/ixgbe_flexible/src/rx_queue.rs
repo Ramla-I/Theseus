@@ -5,6 +5,7 @@ use memory::{BorrowedSliceMappedPages, Mutable, DMA_FLAGS, create_contiguous_map
 use core::convert::TryFrom;
 use alloc::vec::Vec;
 use core::marker::ConstParamTy;
+use log::error;
 
 #[derive(PartialEq, Eq)]
 #[derive(ConstParamTy)]
@@ -24,7 +25,7 @@ pub type RxQueueRSS = RxQueue<{RxState::RSS}>;
 /// There should be one such object per queue.
 pub struct RxQueue<const S: RxState> {
     /// The number of the queue, stored here for our convenience.
-    pub id: QueueID,
+    pub(crate) id: QueueID,
     /// Registers for this receive queue
     regs: RxQueueRegisters,
     /// Receive descriptors
@@ -34,10 +35,10 @@ pub struct RxQueue<const S: RxState> {
     /// Current receive descriptor index
     curr_desc: u16,
     /// The list of rx buffers, in which the index in the vector corresponds to the index in `rx_descs`.
-    /// For example, `rx_bufs_in_use[2]` is the receive buffer that will be used when `rx_descs[2]` is the current rx descriptor (rx_cur = 2).
+    /// For example, `rx_bufs_in_use[2]` is the receive buffer that will be used when `rx_descs[2]` is the current rx descriptor (curr_desc = 2).
     buffs_in_use: Vec<PktBuff>,
     /// Extra packet buffers
-    mempool: Mempool,
+    pub(crate) mempool: Mempool,
     /// The filter id for the physical NIC filter that is set for this queue
     filter_id: Option<L5FilterID>
 }
@@ -104,107 +105,57 @@ impl RxQueue<{RxState::Enabled}> {
         })
     }
 
-    // /// Retrieves a maximum of `batch_size` number of packets and stores them in `buffers`.
-    // /// Returns the total number of received packets.
-    // #[inline(always)]
-    // pub fn rx_batch(&mut self, buffers: &mut Vec<PacketBuffer>, batch_size: usize, pool: &mut Mempool) -> u16 {
-    //     // verified_functions::rx_batch(
-    //     //     &mut self.rx_descs, 
-    //     //     &mut self.rx_cur, 
-    //     //     &mut self.rx_bufs_in_use, 
-    //     //     &mut self.regs, 
-    //     //     self.num_rx_descs, 
-    //     //     buffers, 
-    //     //     batch_size, 
-    //     //     pool
-    //     // )
+    /// Retrieves a maximum of `batch_size` number of packets and stores them in `buffers`.
+    /// Returns the total number of received packets.
+    #[inline(always)]
+    pub fn receive_batch(&mut self, buffers: &mut Vec<PktBuff>, batch_size: usize) -> u16 {
+        let mut curr_desc = self.curr_desc;
+        let mut prev_curr_desc = self.curr_desc;
 
-    //     let mut rx_cur = self.rx_cur;
-    //     let mut last_rx_cur = self.rx_cur;
+        let mut rcvd_pkts = 0;
 
-    //     let mut rcvd_pkts = 0;
+        for _ in 0..batch_size {
+            let desc = &mut self.desc_ring[curr_desc as usize];
+            let (dd, length) = desc.rx_metadata();
 
-    //     for _ in 0..batch_size {
-    //         let desc = &mut self.rx_descs[rx_cur as usize];
-    //         let (dd, length) = desc.rx_metadata();
+            if !dd { break; }
 
-    //         if !dd {
-    //             break;
-    //         }
+            // if !desc.end_of_packet() {
+            //     error!("intel_ethernet::rx_batch(): multi-descriptor packets are not supported yet!");
+            //     panic!();
+            // }
 
-    //         // if !desc.end_of_packet() {
-    //         //     error!("intel_ethernet::rx_batch(): multi-descriptor packets are not supported yet!");
-    //         //     panic!();
-    //         //     // return Err("Currently do not support multi-descriptor packets");
-    //         // }
-
-    //         // let length = desc.length();
-
-    //         // Now that we are "removing" the current receive buffer from the list of receive buffers that the NIC can use,
-    //         // (because we're saving it for higher layers to use),
-    //         // we need to obtain a new `ReceiveBuffer` and set it up such that the NIC will use it for future receivals.
-    //         if let Some(new_receive_buf) = pool.pop() {
-    //             // actually tell the NIC about the new receive buffer, and that it's ready for use now
-    //             desc.set_packet_address(new_receive_buf.paddr);
-    //             // desc.reset_status();
+            // Now that we are "removing" the current receive buffer from the list of receive buffers that the NIC can use,
+            // (because we're saving it for higher layers to use),
+            // we need to obtain a new `PktBuff` and set it up such that the NIC will use it for future receivals.
+            if let Some(new_receive_buf) = self.mempool.buffers.pop_front() {
+                // actually tell the NIC about the new receive buffer, and that it's ready for use now
+                desc.set_packet_address(new_receive_buf.paddr);
                 
-    //             let mut current_rx_buf = core::mem::replace(&mut self.rx_bufs_in_use[rx_cur as usize], new_receive_buf);
-    //             // current_rx_buf.length = length as u16; // set the ReceiveBuffer's length to the size of the actual packet received
-    //             // unsafe{ core::arch::x86_64::_mm_prefetch(current_rx_buf.buffer.as_ptr() as *const i8, _MM_HINT_ET0);}
-    //             current_rx_buf.length = length as u16; // set the ReceiveBuffer's length to the size of the actual packet received
-    //             buffers.push(current_rx_buf);
+                let mut current_rx_buf = core::mem::replace(&mut self.buffs_in_use[curr_desc as usize], new_receive_buf);
 
-    //             rcvd_pkts += 1;
-    //             last_rx_cur = rx_cur;
-    //             rx_cur = (rx_cur + 1) & (self.num_rx_descs - 1);
-    //         } else {
-    //             error!("Ran out of packet buffers in the pool!");
-    //             panic!("Ran out of packet buffers in the pool!");
-    //         }
-    //     }
+                // unsafe{ core::arch::x86_64::_mm_prefetch(current_rx_buf.buffer.as_ptr() as *const i8, _MM_HINT_ET0);}
+                current_rx_buf.length = length as u16; // set the ReceiveBuffer's length to the size of the actual packet received
+                buffers.push(current_rx_buf);
 
-    //     if last_rx_cur != rx_cur {
-    //         self.rx_cur = rx_cur as u16;
-    //         self.regs.rdt_write(last_rx_cur); 
-    //     }
+                rcvd_pkts += 1;
+                prev_curr_desc = curr_desc;
+                curr_desc = (curr_desc + 1) & (self.num_descs - 1);
+            } else {
+                error!("Ran out of packet buffers in the pool!");
+                panic!("Ran out of packet buffers in the pool!");
+            }
+        }
 
-    //     rcvd_pkts
-    // }
+        if prev_curr_desc != curr_desc {
+            self.curr_desc = curr_desc as u16;
+            self.regs.rdt_write(prev_curr_desc); 
+        }
+
+        rcvd_pkts
+    }
+
+    pub fn mempool(&mut self) -> &mut Mempool {
+        &mut self.mempool
+    }
 }
-
-
-// // implementation of pseudo functions that should only be used for testing
-// impl RxQueue<{RxState::Enabled}> {
-//     /// Simply iterates through a max of `batch_size` descriptors and resets the descriptors. 
-//     /// There is no buffer management, and this function simply reuses the packet buffer that's already stored.
-//     /// Returns the total number of received packets.
-//     pub fn rx_batch_pseudo(&mut self, batch_size: usize) -> usize {
-//         let mut rx_cur = self.rx_cur as usize;
-//         let mut last_rx_cur = self.rx_cur as usize;
-
-//         let mut rcvd_pkts = 0;
-
-//         for _ in 0..batch_size {
-//             let desc = &mut self.rx_descs[rx_cur];
-//             if !desc.descriptor_done() {
-//                 break;
-//             }
-
-//             // actually tell the NIC about the new receive buffer, and that it's ready for use now
-//             desc.set_packet_address(self.rx_bufs_in_use[rx_cur].phys_addr());
-//             desc.reset_status();
-                
-//             rcvd_pkts += 1;
-//             last_rx_cur = rx_cur;
-//             rx_cur = (rx_cur + 1) & (self.num_rx_descs as usize - 1);
-//         }
-
-//         if last_rx_cur != rx_cur {
-//             self.rx_cur = rx_cur as u16;
-//             self.regs.rdt_write(last_rx_cur as u16); 
-//         }
-
-//         rcvd_pkts
-//     }
-
-// }

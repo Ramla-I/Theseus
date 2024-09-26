@@ -4,7 +4,7 @@
 extern crate alloc;
 
 use alloc::{vec::Vec, string::String};
-use ixgbe_restricted::{get_ixgbe_nics_list, IxgbeStats, agent::IxgbeAgent};
+use ixgbe_flexible::{get_ixgbe_nics_list, IxgbeStats, mempool::PktBuff};
 use getopts::{Matches, Options};
 use hpet::get_hpet;
 use pmu_x86::{stat::{PMUResults, PerformanceCounters}, EventType};
@@ -99,7 +99,7 @@ fn packet_forwarder(args: PacketForwarderArgs) {
         return;
     }
     let mut dev0 = ixgbe_devs[0].lock(); // To Do: Make this variable
-    let mut dev1 = ixgbe_devs[2].lock();
+    let mut dev1 = ixgbe_devs[1].lock();
     info!("Link speed: {} Mbps", dev0.link_speed() as usize);
     info!("Link speed: {} Mbps", dev1.link_speed() as usize);
 
@@ -110,8 +110,8 @@ fn packet_forwarder(args: PacketForwarderArgs) {
     let cycles_in_one_sec = (1_000_000_000 * NANO_TO_FEMTO) / hpet_period;
 
     // stats variables
-    let mut dev0_stats = IxgbeStats::default();
-    let mut dev1_stats = IxgbeStats::default();
+    // let mut dev0_stats = IxgbeStats::default();
+    // let mut dev1_stats = IxgbeStats::default();
     let mut self_stats = SelfCalculatedPacketStats::default();
 
     // clear the stats
@@ -121,8 +121,8 @@ fn packet_forwarder(args: PacketForwarderArgs) {
     }
 
     // Initialize the ixgbe agents
-    let mut agent0 = IxgbeAgent::new(&mut dev0, &mut dev1).expect("failed to init agent 0");
-    let mut agent1 = IxgbeAgent::new(&mut dev1, &mut dev0).expect("failed to init agent 1");
+    let (rxq0, txq0) = dev0.borrow_queue_pair().expect("No queue pair available for dev0");
+    let (rxq1, txq1) = dev1.borrow_queue_pair().expect("No queue pair available for dev1");
 
     // start the PMU if enabled
     let mut counters = None;
@@ -136,15 +136,21 @@ fn packet_forwarder(args: PacketForwarderArgs) {
     let mut start_hpet: u64 = hpet.get_counter();
     let mut delta_hpet: u64;
 
+    // store pkt buffs
+    let mut received_buffs0: Vec<PktBuff> = Vec::with_capacity(args.batch_size);
+    let mut received_buffs1: Vec<PktBuff> = Vec::with_capacity(args.batch_size);
+
     loop {
         if args.collect_stats && (iterations & 0xFFFF == 0){
             delta_hpet = hpet.get_counter() - start_hpet;
 
             if delta_hpet >= cycles_in_one_sec { // print once every second
-                dev0.get_stats(&mut dev0_stats);
-                dev1.get_stats(&mut dev1_stats);
-                print_stats(0, &dev0_stats,  &mut self_stats.rx_packets_dev0, &mut self_stats.tx_packets_dev0);
-                print_stats(1, &dev1_stats, &mut self_stats.rx_packets_dev1, &mut self_stats.tx_packets_dev1);
+                // dev0.get_stats(&mut dev0_stats);
+                // dev1.get_stats(&mut dev1_stats);
+                // print_stats(0, &dev0_stats,  &mut self_stats.rx_packets_dev0, &mut self_stats.tx_packets_dev0);
+                // print_stats(1, &dev1_stats, &mut self_stats.rx_packets_dev1, &mut self_stats.tx_packets_dev1);
+                
+                // To Do: Return instances of rx queue and tx queue, not borrows so that we can get stats concurrently
                 start_hpet = hpet.get_counter();
             }
         }
@@ -161,20 +167,11 @@ fn packet_forwarder(args: PacketForwarderArgs) {
             }
         }
 
+        rxq0.receive_batch(&mut received_buffs0, args.batch_size);
+        txq1.send_batch(args.batch_size, &mut received_buffs0, rxq0.mempool());
 
-    //     /*** bidirectional forwarder 2 ports (tested till 8.8 Mpps)***/
-
-    //     // rx_packets_dev0 += agent0.rx(&mut length0);
-    //     // rx_packets_dev1 += agent1.rx(&mut length1);
-
-    //     // tx_packets_dev0 += agent0.tx();
-    //     // tx_packets_dev1 += agent1.tx();
-
-    //     // rx_packets_dev0 += agent0.run(print);
-    //     // rx_packets_dev1 += agent1.run(print);
-
-        agent0.run();
-        agent1.run();
+        rxq1.receive_batch(&mut received_buffs1, args.batch_size);
+        txq0.send_batch(args.batch_size, &mut received_buffs1, rxq1.mempool());
         
         if args.collect_stats {
             iterations += 1;

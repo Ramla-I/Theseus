@@ -1,7 +1,7 @@
 use memory::{create_contiguous_mapping, BorrowedMappedPages, BorrowedSliceMappedPages, Mutable, DMA_FLAGS};
 use crate::hal::{*, regs::{ReportStatusBit, TDHSet}, descriptors::AdvancedTxDescriptor, transmit_head_wb::TransmitHead};
 use crate::queue_registers::TxQueueRegisters;
-use crate::mempool::PktBuff;
+use crate::mempool::{Mempool, PktBuff};
 use alloc::vec::Vec;
 use core::marker::ConstParamTy;
 
@@ -70,11 +70,6 @@ impl TxQueue<{TxState::Enabled}> {
         let tdh_set = regs.tdh_write(0, tdlen_set);
         regs.tdt_write(0);
         
-        // // enable tx queue and make sure it's enabled
-        // regs.txdctl_txq_enable(tdh_set); 
-        // const TX_Q_ENABLE: u32 = 1 << 25;
-        // while regs.txdctl_read() & TX_Q_ENABLE == 0 {} 
-
         Ok((TxQueue { 
             id: QueueID::try_from(regs.id() as u8).map_err(|_| "tried to create queue with id >= 64")?, 
             regs, 
@@ -88,244 +83,59 @@ impl TxQueue<{TxState::Enabled}> {
         }, tdh_set))
     }
 
-    // /// Sends a maximum of `batch_size` number of packets from the stored `buffers`.
-    // /// The number of packets sent are returned.
-    // /// 
-    // /// I don't think this code is very stable, if the TX_CLEAN_THRESHOLD is less than the number of descriptors, and divisor, then we should be good.
-    // #[inline(always)]
-    // pub fn tx_batch(&mut self, batch_size: usize,  buffers: &mut Vec<PacketBuffer>, pool: &mut Mempool) -> u16 {
-    //     const TX_CLEAN_THRESHOLD: u16 = 64; // make sure this is less than and an even divisor fo the queue size
-    //     // error!("before cleaning: tx_cur = {}, tx_clean ={}", self.tx_cur, self.tx_clean);
+    /// Sends a maximum of `batch_size` number of packets from the stored `buffers`.
+    /// The number of packets sent are returned.
+    /// 
+    /// I don't think this code is very stable, if the TX_CLEAN_THRESHOLD is less than the number of descriptors, and divisor, then we should be good.
+    #[inline(always)]
+    pub fn send_batch(&mut self, batch_size: usize,  buffers: &mut Vec<PktBuff>, pool: &mut Mempool) -> u16 {
+        const TX_CLEAN_THRESHOLD: u16 = 64; // make sure this is less than and an even divisor to the queue size
 
-    //     // let mut descs_to_clean = self.tx_cur as i32 - self.tx_clean as i32;
-    //     // if descs_to_clean < 0 { descs_to_clean += self.num_tx_descs as i32; }
+        self.tx_clean(pool);
+        let mut pkts_sent = 0;
 
-    //     // if descs_to_clean as u16 >= 2 * TX_CLEAN_THRESHOLD {
-    //     //     // error!("Cleaning {} descs", descs_to_clean);
-    //     //     let mut old_clean_batch = 0;
-    //     //     let mut clean_batch = TX_CLEAN_THRESHOLD;
+        for _ in 0..batch_size {
+            let next_desc = (self.curr_desc + 1) % self.num_descs;
+            if next_desc == self.tx_clean { //&& (next_desc != 0) {
+                break;
+            }
 
-    //     //     while clean_batch <= descs_to_clean as u16 {
-    //     //         let desc_to_check = (self.tx_clean + clean_batch - 1) & (self.num_tx_descs - 1);
-    //     //         if self.tx_descs[desc_to_check as usize].desc_done() {
-    //     //             old_clean_batch = clean_batch;
-    //     //             clean_batch += TX_CLEAN_THRESHOLD;
-    //     //             // error!("desc {} is done, old = {} new clean batch = {}", desc_to_check, old_clean_batch, clean_batch);
-    //     //         } 
-    //     //     }
+            if let Some(packet) = buffers.pop() {
+                let rs_bit = if (self.curr_desc % TX_CLEAN_THRESHOLD) == TX_CLEAN_THRESHOLD - 1 { self.rs_bit } else { ReportStatusBit::zero() };
+                self.desc_ring[self.curr_desc as usize].send(packet.paddr, packet.length, rs_bit);
+                self.buffs_in_use.push(packet);
     
-    //     //     pool.extend(self.tx_bufs_in_use.drain(..old_clean_batch as usize)); // if descs_to_clean = 0, won't do anything
-    //     //     self.tx_clean = (self.tx_clean + old_clean_batch as u16) % self.num_tx_descs;
-    //     // }
+                self.curr_desc = next_desc;
+                pkts_sent += 1;
+            } else {
+                break;
+            }
+        }
 
-    //     self.tx_clean(pool);
-    //     let mut pkts_sent = 0;
+        if pkts_sent > 0 { 
+            // To Do: Try adding all buffers together at this point. should be fewer vec operations
+            self.regs.tdt_write(self.curr_desc); 
+        }
+        pkts_sent
+    }
 
-    //     for _ in 0..batch_size {
-    //         let tx_next = (self.tx_cur + 1) % self.num_tx_descs;
-    //         if (tx_next == self.tx_clean) { //&& (tx_next != 0) {
-    //             break;
-    //         }
+    /// Removes sent packets from the descriptor ring.    
+    #[inline(always)]
+    fn tx_clean(&mut self, pool: &mut Mempool)  {
+        const TX_CLEAN_BATCH: u16 = 64;
+        let head = self.head_wb.value() as u16;
 
-    //         if let Some(packet) = buffers.pop() {
-    //             // if packet.length == 0 {
-    //             //     error!("zero sized packet!");
-    //             //     panic!();
-    //             // }
-    //             let rs_bit = if (self.tx_cur % TX_CLEAN_THRESHOLD) == TX_CLEAN_THRESHOLD - 1 { self.rs_bit.value() } else { 0 };
-    //             // error!("rs_bit = {}", rs_bit);
-    //             let (paddr, length) = (packet.paddr, packet.length);
-    //             self.tx_descs[self.tx_cur as usize].send(paddr, length, rs_bit);
-    //             self.tx_bufs_in_use.push(packet);
-    
-    //             self.tx_cur = tx_next;
-    //             pkts_sent += 1;
-    //         } else {
-    //             break;
-    //         }
-    //     }
+        let cleanable = (head as i32 - self.tx_clean as i32) as u16 & (self.num_descs - 1);
+        if cleanable < TX_CLEAN_BATCH {
+            return;
+        }
 
+        if cleanable as usize >= self.buffs_in_use.len() {
+            pool.buffers.extend(self.buffs_in_use.drain(..))
+        } else {
+            pool.buffers.extend(self.buffs_in_use.drain(..cleanable as usize))
+        };
 
-    //     // error!("sent {} packets", pkts_sent);
-    //     // error!("end cleaning: tx_cur = {}, tx_clean ={}", self.tx_cur, self.tx_clean);
-    //     // for i in 0..self.num_tx_descs {
-    //     //     error!("desc{}: {:?}", i, self.tx_descs[i as usize].desc_done());
-    //     // }
-    //     if pkts_sent > 0 { self.regs.tdt_write(self.tx_cur); }
-    //     pkts_sent
-    // }
-
-    // /// Sends a maximum of `batch_size` number of packets from the stored `buffers`.
-    // /// The number of packets sent are returned.
-    // #[inline(always)]
-    // pub fn tx_batch_wo_wb(&mut self, batch_size: usize,  buffers: &mut Vec<PacketBufferS>, pool: &mut Vec<PacketBufferS>) -> u16 {
-    //     // verified_functions::tx_batch(
-    //     //     &mut self.tx_descs, 
-    //     //     &mut self.tx_bufs_in_use,
-    //     //     self.num_tx_descs,
-    //     //     &mut self.tx_clean,
-    //     //     &mut self.tx_cur,
-    //     //     &mut self.regs,
-    //     //     batch_size,  
-    //     //     buffers, 
-    //     //     used_buffers,
-    //     //     self.RS_bit
-    //     // ).0
-    //     let mut pkts_sent = 0;
-    //     let mut tx_cur = self.tx_cur;
-
-    //     self.tx_clean(pool);
-    //     let tx_clean = self.tx_clean;
-    //     // debug!("tx_cur = {}, tx_clean ={}", tx_cur, tx_clean);
-
-    //     for _ in 0..batch_size {
-    //         if let Some(packet) = buffers.pop() {
-    //             let tx_next = (tx_cur + 1) % self.num_tx_descs;
-    
-    //             if tx_clean == tx_next {
-    //                 // tx queue of device is full, push packet back onto the
-    //                 // queue of to-be-sent packets
-    //                 // error!("could not send packet, tx queue is full {}", buffers.len() + 1);
-    //                 // error!("tx clean {}, tx cur {}", tx_clean, tx_cur);
-    //                 buffers.push(packet);
-    //                 break;
-    //             }
-    //             if packet.length == 0 {
-    //                 error!("zero sized packet!");
-    //                 panic!();
-    //             }
-    //             self.tx_descs[tx_cur as usize].send(packet.phys_addr(), packet.length, self.rs_bit);
-    //             self.tx_bufs_in_use.push(packet);
-    
-    //             tx_cur = tx_next;
-    //             pkts_sent += 1;
-    //         } else {
-    //             break;
-    //         }
-    //     }
-
-    //     // error!("sent {} packets", pkts_sent);
-    //     // error!("tx_clean = {}, tx_cur = {}", tx_clean, tx_cur);
-
-    //     self.tx_cur = tx_cur;
-    //     self.regs.tdt_write(tx_cur);
-
-    //     pkts_sent
-    // }
-
-    // /// Removes multiples of `TX_CLEAN_BATCH` packets from `queue`.    
-    // /// (code taken from https://github.com/ixy-languages/ixy.rs/blob/master/src/ixgbe.rs#L1016)
-    // #[inline(always)]
-    // fn tx_clean(&mut self, used_buffers: &mut Mempool)  {
-    //     const TX_CLEAN_BATCH: u16 = 64;
-    //     let head = self.head_wb.value.read() as u16;
-    //     // error!("head = {}", head);
-
-    //     let cleanable = (head as i32 - self.tx_clean as i32) as u16 & (self.num_tx_descs - 1);
-    //     // error!("Cleanable = {}", cleanable);
-    //     // if cleanable < 0 {
-    //     //     cleanable += self.num_tx_descs as i32;
-    //     // }
-    //     if cleanable < TX_CLEAN_BATCH {
-    //         return;
-    //     }
-
-    //     // let cleanup_to = (tx_clean + cleanable - 1) & (self.num_tx_descs - 1);
-
-    //     // if cleanup_to >= self.num_tx_descs as usize {
-    //     //     cleanup_to -= self.num_tx_descs as usize;
-    //     // }
-
-    //     if cleanable as usize >= self.tx_bufs_in_use.len() {
-    //         used_buffers.extend(self.tx_bufs_in_use.drain(..))
-    //     } else {
-    //         used_buffers.extend(self.tx_bufs_in_use.drain(..cleanable as usize))
-    //     };
-
-    //     // tx_clean = (cleanup_to + 1) % self.num_tx_descs;
-
-    //     // self.tx_clean = tx_clean;
-    //     self.tx_clean = head;
-    // }
+        self.tx_clean = head;
+    }
 }
-
-// implementation of pseudo functions that should only be used for testing
-impl TxQueue<{TxState::Enabled}> {
-    // /// Sets all the descriptors in the tx queue with a valid packet buffer but doesn't update the TDT.
-    // /// Requires that the length of `buffers` is equal to the number of descriptors in the queue
-    // pub fn tx_populate(&mut self, buffers: &mut Vec<PacketBufferS>) {
-    //     // assert!(buffers.len() == self.tx_descs.len());
-
-    //     for desc in self.tx_descs.iter_mut() {
-    //         let mut packet = buffers.pop().unwrap();
-    //         packet.length = 64;
-    //         desc.send(packet.phys_addr(), packet.length, self.rs_bit);
-    //         self.tx_bufs_in_use.push(packet);
-    //     }
-
-    //     assert!(self.tx_bufs_in_use.len() == self.tx_descs.len());
-    // }
-
-
-    // /// Send a max `batch_size` number of packets.
-    // /// There is no buffer management, and this function simply reuses the packet buffer that's already stored.
-    // /// The number of packets sent is returned.
-    // pub fn tx_batch_pseudo(&mut self, batch_size: usize) -> usize {
-    //     let mut pkts_sent = 0;
-    //     let mut tx_cur = self.tx_cur;
-
-    //     self.tx_clean_pseudo();
-    //     let tx_clean = self.tx_clean;
-
-    //     for _ in 0..batch_size {
-    //         let tx_next = (tx_cur + 1) % self.num_tx_descs;
-
-    //         if tx_clean == tx_next {
-    //             // tx queue of device is full
-    //             break;
-    //         }
-
-    //         self.tx_descs[tx_cur as usize].send(self.tx_bufs_in_use[tx_cur as usize].phys_addr(), self.tx_bufs_in_use[tx_cur as usize].length, self.rs_bit);
-
-    //         tx_cur = tx_next;
-    //         pkts_sent += 1;
-    //     }
-
-    //     self.tx_cur = tx_cur;
-    //     self.regs.tdt_write(tx_cur);
-
-    //     pkts_sent
-    // }
-
-    // fn tx_clean_pseudo(&mut self) {
-    //     const TX_CLEAN_BATCH: usize = 32;
-    //     let mut tx_clean = self.tx_clean as usize;
-    //     let tx_cur = self.tx_cur;
-
-    //     loop {
-    //         let mut cleanable = tx_cur as i32 - tx_clean as i32;
-
-    //         if cleanable < 0 {
-    //             cleanable += self.num_tx_descs as i32;
-    //         }
-    
-    //         if cleanable < TX_CLEAN_BATCH as i32 {
-    //             break;
-    //         }
-    
-    //         let mut cleanup_to = tx_clean + TX_CLEAN_BATCH - 1;
-
-    //         if cleanup_to >= self.num_tx_descs as usize {
-    //             cleanup_to -= self.num_tx_descs as usize;
-    //         }
-
-    //         if self.tx_descs[cleanup_to].desc_done() {
-    //             tx_clean = (cleanup_to + 1) % self.num_tx_descs as usize;
-    //         } else {
-    //             break;
-    //         }
-    //     }
-    //     self.tx_clean = tx_clean as u16;
-    // }
-}
-

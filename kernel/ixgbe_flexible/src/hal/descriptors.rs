@@ -3,6 +3,8 @@ use volatile::Volatile;
 use zerocopy::FromBytes;
 use bit_field::BitField;
 
+use crate::ReportStatusBit;
+
 
 /// Advanced Transmit Descriptor used by the `ixgbe` NIC driver.
 ///
@@ -33,15 +35,15 @@ pub struct AdvancedTxDescriptor {
 
 impl AdvancedTxDescriptor {
     #[inline(always)]
-    pub(crate) fn send(&mut self, buffer_addr: PhysicalAddress, buffer_length_in_bytes: u16, rs_set: bool) {
+    pub(crate) fn send(&mut self, buffer_addr: PhysicalAddress, buffer_length_in_bytes: u16, rs_bit: ReportStatusBit) {
         const TX_PAYLEN_SHIFT:                  u64 = 46;
+        const TX_DCMD_RS_SHIFT:                 u64 = 24 + 3;     
         const TX_DCMD_EOP:                      u64 = 1 << 24;     
         const TX_DCMD_IFCS:                     u64 = 1 << (24 + 1);     
-        const TX_DCMD_RS:                       u64 = 1 << (24 + 3);     
         const TX_DCMD_DEXT:                     u64 = 1 << (24 + 5);  
         const TX_DTYP_ADV:                      u64 = 0x3 << 20;
 
-        let rs_bit: u64 = if rs_set { TX_DCMD_RS } else { 0 };
+        let rs_bit: u64 = rs_bit.value() << TX_DCMD_RS_SHIFT; //if rs_set { TX_DCMD_RS } else { 0 };
 
         self.buffer_addr.write(buffer_addr.value() as u64);
         self.metadata.write(
