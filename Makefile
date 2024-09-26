@@ -958,8 +958,12 @@ endif
 
 ## Enable passthrough of a PCI device in QEMU by passing its slot information to VFIO.
 ## Slot information is its bus, device, and function number assigned by the host OS, e.g., 'vfio=59:00.0'.
-ifdef vfio
-	QEMU_FLAGS += -device vfio-pci,host=$(vfio)
+ifdef vfio1
+	QEMU_FLAGS += -device vfio-pci,host=$(vfio1)
+endif
+
+ifdef vfio2
+	QEMU_FLAGS += -device vfio-pci,host=$(vfio2)
 endif
 
 QEMU_FLAGS += $(QEMU_EXTRA)
