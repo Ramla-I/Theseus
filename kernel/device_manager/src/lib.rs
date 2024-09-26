@@ -97,6 +97,7 @@ pub fn init(
     #[cfg(target_arch = "x86_64")] {
 
     // store all the initialized ixgbe NICs here to be added to the network interface list
+    let mut ixgbe_pci_devs: Vec<pci::PciLocation> = Vec::new();
     let mut ixgbe_devs = Vec::new();
 
     // Iterate over all PCI devices and initialize the drivers for the devices we support.
@@ -133,28 +134,30 @@ pub fn init(
 
                 continue;
             }
-            if dev.vendor_id() == ixgbe::INTEL_VEND && dev.device_id() == ixgbe::INTEL_82599 {
+            if dev.vendor_id() == ixgbe_flexible::INTEL_VEND && 
+                (dev.device_id() == ixgbe_flexible::INTEL_82599ES || dev.device_id() == ixgbe_flexible::INTEL_X520_DA2) 
+            {
                 info!("ixgbe PCI device found at: {:?}", dev);
                 
-                // Initialization parameters of the NIC.
-                // These can be changed according to the requirements specified in the ixgbe init function.
-                const VIRT_ENABLED: bool = true;
-                const RSS_ENABLED: bool = false;
-                const RX_DESCS: u16 = 8;
-                const TX_DESCS: u16 = 8;
+                // // Initialization parameters of the NIC.
+                // // These can be changed according to the requirements specified in the ixgbe init function.
+                // const VIRT_ENABLED: bool = true;
+                // const RSS_ENABLED: bool = false;
+                // const RX_DESCS: u16 = 8;
+                // const TX_DESCS: u16 = 8;
                 
-                let ixgbe_nic = ixgbe::IxgbeNic::init(
-                    dev, 
-                    *dev.deref(),
-                    VIRT_ENABLED, 
-                    None, 
-                    RSS_ENABLED, 
-                    ixgbe::RxBufferSizeKiB::Buffer2KiB,
-                    RX_DESCS,
-                    TX_DESCS
-                )?;
+                // let ixgbe_nic = ixgbe::IxgbeNic::init(
+                //     dev, 
+                //     *dev.deref(),
+                //     VIRT_ENABLED, 
+                //     None, 
+                //     RSS_ENABLED, 
+                //     ixgbe::RxBufferSizeKiB::Buffer2KiB,
+                //     RX_DESCS,
+                //     TX_DESCS
+                // )?;
 
-                ixgbe_devs.push(ixgbe_nic);
+                ixgbe_pci_devs.push(*dev.deref());
                 continue;
             }
             // if dev.vendor_id == mlx5::MLX_VEND && (dev.device_id == mlx5::CONNECTX5_DEV || dev.device_id == mlx5::CONNECTX5_EX_DEV) {
@@ -173,11 +176,16 @@ pub fn init(
         warn!("Ignoring PCI device with no handler. {:X?}", dev);
     }
 
-    // Once all the NICs have been initialized, we can store them and add them to the list of network interfaces.
-    let ixgbe_nics = ixgbe::IXGBE_NICS.call_once(|| ixgbe_devs);
-    for ixgbe_nic_ref in ixgbe_nics.iter() {
-        net::register_device(ixgbe_nic_ref);
+    for pci_dev in ixgbe_pci_devs {
+        let dev = pci::get_pci_device_bsf(pci_dev.bus(), pci_dev.slot(), pci_dev.function())?;
+        let ixgbe_nic = ixgbe_flexible::IxgbeNic::init(dev, None)?;
+        ixgbe_devs.push(ixgbe_nic);
     }
+    // Once all the NICs have been initialized, we can store them and add them to the list of network interfaces.
+    let ixgbe_nics = ixgbe_flexible::IXGBE_NICS.call_once(|| ixgbe_devs);
+    // for ixgbe_nic_ref in ixgbe_nics.iter() {
+    //     net::register_device(ixgbe_nic_ref);
+    // }
 
     // Convenience notification for developers to inform them of no networking devices
     if net::get_default_interface().is_none() {

@@ -892,11 +892,11 @@ ifeq ($(graphic), no)
 endif
 
 ## Set the amount of system memory (RAM) provided to the QEMU guest OS
-QEMU_MEMORY ?= 512M
+QEMU_MEMORY ?= 4G
 QEMU_FLAGS += -m $(QEMU_MEMORY) 
 
 ## Enable multicore CPUs, i.e., SMP (Symmetric Multi-Processor)
-QEMU_CPUS ?= 4
+QEMU_CPUS ?= 8
 QEMU_FLAGS += -smp $(QEMU_CPUS)
 
 ## Add a disk drive, a PATA drive over an IDE controller interface.

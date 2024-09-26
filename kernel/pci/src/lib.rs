@@ -248,7 +248,7 @@ pub fn get_pci_buses() -> Result<&'static Mutex<Vec<PciBus>>, &'static str> {
 #[cfg(not(prusti))]
 /// Returns a reference to the `PciDevice` with the given bus, slot, func identifier.
 /// If the PCI bus hasn't been initialized, this initializes the PCI bus & scans it to enumerates devices.
-pub fn get_pci_device_bsf(bus: u8, slot: u8, func: u8) -> Result<Option<PciDevice>, &'static str> {
+pub fn get_pci_device_bsf(bus: u8, slot: u8, func: u8) -> Result<PciDevice, &'static str> {
     let mut pci_buses = get_pci_buses()?.lock();
     let mut index = None;
 
@@ -262,7 +262,11 @@ pub fn get_pci_device_bsf(bus: u8, slot: u8, func: u8) -> Result<Option<PciDevic
         }
     }
 
-    Ok(index.map(|idx| pci_buses[bus as usize].devices.swap_remove(idx)))
+    if let Some(idx) = index {
+        Ok(pci_buses[bus as usize].devices.swap_remove(idx))
+    } else {
+        Err("The PCI device with the given location is not available")
+    }
 }
 
 // /// Returns an iterator that iterates over all `PciDevice`s, in no particular guaranteed order. 

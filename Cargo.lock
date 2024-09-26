@@ -916,7 +916,7 @@ dependencies = [
  "fatfs",
  "io",
  "iommu",
- "ixgbe",
+ "ixgbe_flexible",
  "keyboard",
  "log",
  "logger",

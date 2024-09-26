@@ -25,7 +25,7 @@ ps2 = { path = "../ps2" }
 keyboard = { path = "../keyboard" }
 mouse = { path = "../mouse" }
 storage_manager = { path = "../storage_manager" }
-ixgbe = { path = "../ixgbe" }
+ixgbe_flexible = { path = "../ixgbe_flexible" }
 io = { path = "../io" }
 mlx5 = { path = "../mlx5" }
 iommu = { path = "../iommu" }
