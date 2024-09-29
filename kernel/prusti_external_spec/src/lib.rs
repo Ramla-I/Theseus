@@ -14,3 +14,4 @@ pub mod mem;
 pub mod num;
 pub mod ptr;
 pub mod vecdeque_wrapper;
+pub mod vec_wrapper;
