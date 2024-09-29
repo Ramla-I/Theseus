@@ -91,7 +91,7 @@ struct PacketForwarderArgs {
     pmu: bool,
 }
 
-fn packet_forwarder(args: PacketForwarderArgs) {
+fn packet_forwarder(mut args: PacketForwarderArgs) {
     // get a handle on the ixgbe nics, there should be at least 2.
     let ixgbe_devs = get_ixgbe_nics_list().expect("ixgbe NICs list not initialized");
     if ixgbe_devs.len() < 2 {  
@@ -135,6 +135,9 @@ fn packet_forwarder(args: PacketForwarderArgs) {
     let mut iterations = 0;
     let mut start_hpet: u64 = hpet.get_counter();
     let mut delta_hpet: u64;
+    
+    // Uncomment this line for a simple test after a change
+    args.collect_stats = true;
 
     loop {
         if args.collect_stats && (iterations & 0xFFFF == 0){

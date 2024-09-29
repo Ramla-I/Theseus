@@ -108,7 +108,7 @@ pub fn main(_args: Vec<String>) -> isize {
 	let namespace = task::with_current_task(|t| t.get_namespace().clone())
         .map_err(|_| "could not find the application namespace").unwrap();
     let namespace_dir = namespace.dir();
-    let app_path = namespace_dir.get_file_starting_with("packet_forwarder_flexible-")
+    let app_path = namespace_dir.get_file_starting_with("packet_forwarder_restricted-")
         .map(|f| Path::new(f.lock().get_absolute_path()))
         .ok_or("Could not find the application 'packet_forwarder_flexible'").unwrap();
 

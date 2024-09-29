@@ -169,11 +169,16 @@ fn packet_forwarder(args: PacketForwarderArgs) {
 
         let rx0 = rxq0.receive_batch(&mut received_buffs0, args.batch_size);
         let tx1 = txq1.send_batch(args.batch_size, &mut received_buffs0, rxq0.mempool());
-
+        
         let rx1 = rxq1.receive_batch(&mut received_buffs1, args.batch_size);
         let tx0 = txq0.send_batch(args.batch_size, &mut received_buffs1, rxq1.mempool());
 
-        error!("{} {} {} {}", rx0, tx1, rx1, tx0);
+        // // Uncomment for a quick test to see if rx tx is still working after a change to the driver
+        // let rx0 = rxq0.receive_batch(&mut received_buffs0, args.batch_size);
+        // let tx1 = txq1.send_batch(args.batch_size, &mut received_buffs0, rxq0.mempool());
+        // let rx1 = rxq1.receive_batch(&mut received_buffs1, args.batch_size);
+        // let tx0 = txq0.send_batch(args.batch_size, &mut received_buffs1, rxq1.mempool());
+        // error!("{} {} {} {}", rx0, tx1, rx1, tx0);
         
         if args.collect_stats {
             iterations += 1;
