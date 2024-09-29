@@ -167,11 +167,13 @@ fn packet_forwarder(args: PacketForwarderArgs) {
             }
         }
 
-        rxq0.receive_batch(&mut received_buffs0, args.batch_size);
-        txq1.send_batch(args.batch_size, &mut received_buffs0, rxq0.mempool());
+        let rx0 = rxq0.receive_batch(&mut received_buffs0, args.batch_size);
+        let tx1 = txq1.send_batch(args.batch_size, &mut received_buffs0, rxq0.mempool());
 
-        rxq1.receive_batch(&mut received_buffs1, args.batch_size);
-        txq0.send_batch(args.batch_size, &mut received_buffs1, rxq1.mempool());
+        let rx1 = rxq1.receive_batch(&mut received_buffs1, args.batch_size);
+        let tx0 = txq0.send_batch(args.batch_size, &mut received_buffs1, rxq1.mempool());
+
+        error!("{} {} {} {}", rx0, tx1, rx1, tx0);
         
         if args.collect_stats {
             iterations += 1;
