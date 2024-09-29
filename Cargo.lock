@@ -917,6 +917,7 @@ dependencies = [
  "io",
  "iommu",
  "ixgbe_flexible",
+ "ixgbe_restricted",
  "keyboard",
  "log",
  "logger",

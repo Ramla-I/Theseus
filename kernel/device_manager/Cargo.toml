@@ -26,6 +26,7 @@ keyboard = { path = "../keyboard" }
 mouse = { path = "../mouse" }
 storage_manager = { path = "../storage_manager" }
 ixgbe_flexible = { path = "../ixgbe_flexible" }
+ixgbe_restricted = { path = "../ixgbe_restricted" }
 io = { path = "../io" }
 mlx5 = { path = "../mlx5" }
 iommu = { path = "../iommu" }
