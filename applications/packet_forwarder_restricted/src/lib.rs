@@ -99,7 +99,7 @@ fn packet_forwarder(mut args: PacketForwarderArgs) {
         return;
     }
     let mut dev0 = ixgbe_devs[0].lock(); // To Do: Make this variable
-    let mut dev1 = ixgbe_devs[2].lock();
+    let mut dev1 = ixgbe_devs[1].lock();
     info!("Link speed: {} Mbps", dev0.link_speed() as usize);
     info!("Link speed: {} Mbps", dev1.link_speed() as usize);
 
