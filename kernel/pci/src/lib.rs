@@ -26,9 +26,9 @@ use bit_field::BitField;
 use static_assertions::assert_not_impl_any;
 use zerocopy::FromBytes;
 use volatile::Volatile;
+use memory::{PhysicalAddress, BorrowedSliceMappedPages, Mutable, MappedPages, map_frame_range, MMIO_FLAGS};
 
 cfg_if::cfg_if! { if #[cfg(not(prusti))] { // to remove these out of the cfg will need to look at all these dependencies as well. Unneccesary right now because they're not involved in verification
-use memory::{PhysicalAddress, BorrowedSliceMappedPages, Mutable, MappedPages, map_frame_range, MMIO_FLAGS};
 use interrupts::InterruptNumber;
 use cpu::CpuId;
 
@@ -713,7 +713,8 @@ impl PciDevice {
     pub fn header_type(&self) -> u8 { self.header_type }
     pub fn bist(&self) -> u8 { self.bist }
 
-    #[cfg(not(prusti))]
+    // #[cfg(not(prusti))]
+    #[trusted]
     /// Returns the base address of the memory region specified by the given `BAR` 
     /// (Base Address Register) for this PCI device. 
     ///
@@ -934,7 +935,8 @@ impl PciDevice {
     ///
     /// # Arguments 
     /// * `bar_index`: index of the Base Address Register to use
-    #[cfg(not(prusti))]
+    // #[cfg(not(prusti))]
+    #[trusted]
     pub fn pci_map_bar_mem(&self, bar_index: usize) -> Result<MappedPages, &'static str> {
         let mem_base = self.determine_mem_base(bar_index)?;
         let mem_size = self.determine_mem_size(bar_index);
