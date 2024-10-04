@@ -48,8 +48,8 @@ impl IxgbeAgent {
 
         // should be impossible for the queues to be enabled at this point in our current design
         // later on we should check if the rxq registers are already in use
-        Self::rx_init(num_desc, descs_paddr, &mut device_rx.regs_rx1.buffers[0], &mut device_rx.regs1);
-        Self::tx_init(num_desc, buffers_paddr, descs_paddr, head_wb_paddr, &mut desc_ring, &mut device_tx.regs_tx.buffers[0], &mut device_tx.regs2, &agent_state);
+        Self::rx_init(num_desc, descs_paddr, &mut device_rx.regs_rx1.buffers.0[0], &mut device_rx.regs1);
+        Self::tx_init(num_desc, buffers_paddr, descs_paddr, head_wb_paddr, &mut desc_ring, &mut device_tx.regs_tx.buffers.0[0], &mut device_tx.regs2, &agent_state);
 
         // clear the head writeback
         let mut head_wb: BorrowedMappedPages<TransmitHead, Mutable> = head_wb_mp.into_borrowed_mut(0).map_err(|(_mp, err)| err)?;

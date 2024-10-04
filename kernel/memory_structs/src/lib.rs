@@ -85,12 +85,12 @@ macro_rules! implement_address {
                     $TypeName(0)
                 }
 
-                #[doc = "Returns the underlying `usize` value for this `" $TypeName "`."]
-                #[inline]
-                #[pure]
-                pub const fn value(&self) -> usize {
-                    self.0
-                }
+                // #[doc = "Returns the underlying `usize` value for this `" $TypeName "`."]
+                // #[inline]
+                // #[pure]
+                // pub const fn value(&self) -> usize {
+                //     self.0
+                // }
 
                 #[doc = "Returns the offset from the " $chunk " boundary specified by this `"
                     $TypeName ".\n\n \
@@ -267,6 +267,25 @@ implement_address!(
     canonicalize_physical_address,
     frame
 );
+
+impl PhysicalAddress {
+    /// "Returns the underlying `usize` value for this `PhysicalAddress`.
+    #[inline]
+    #[pure]
+    pub const fn value(&self) -> usize {
+        self.0
+    }
+}
+
+impl VirtualAddress {
+    /// "Returns the underlying `usize` value for this `VirtualAddress`.
+    #[inline]
+    #[pure]
+    pub const fn value(&self) -> usize {
+        self.0
+    }
+}
+
 
 #[extern_spec]
 impl PartialOrd for PhysicalAddress {

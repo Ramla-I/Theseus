@@ -17,6 +17,8 @@ mod ethernet_frame;
 pub mod mempool;
 pub mod rx_queue;
 pub mod tx_queue;
+mod verified;
+mod spec;
 
 use hal::{*, regs::*, NumDesc, IXGBE_MAX_RX_QUEUES};
 use queue_registers::*;
@@ -222,7 +224,7 @@ impl IxgbeNic {
         
         let length = nic_rx_regs2_mapped_page.size_in_bytes() / core::mem::size_of::<RegistersRx>();
         let mut regs_rx2 = prusti_borrowed_shared_mp::verified::create_buffers_from_mp(nic_rx_regs2_mapped_page, length).map_err(|(mp,e)| (mp, e.into_str()))?;
-        regs_rx1.append(&mut regs_rx2); // move all 128 rx reg sets into 1
+        regs_rx1.0.append(&mut regs_rx2.0); // move all 128 rx reg sets into 1
 
         // create the RxQueueRegisters objects which store the ID with the mapped registers
         let mut regs_rxq_unused = Vec::with_capacity(IXGBE_MAX_RX_QUEUES as usize);

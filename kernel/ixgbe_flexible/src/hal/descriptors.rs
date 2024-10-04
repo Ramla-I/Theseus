@@ -1,10 +1,11 @@
-use memory::PhysicalAddress;
+use memory_structs::PhysicalAddress;
 use volatile::Volatile;
 use zerocopy::FromBytes;
 use bit_field::BitField;
+use prusti_contracts::*;
 
 use crate::ReportStatusBit;
-
+use crate::spec::*;
 
 /// Advanced Transmit Descriptor used by the `ixgbe` NIC driver.
 ///
@@ -84,10 +85,21 @@ pub struct AdvancedRxDescriptor {
 
 impl AdvancedRxDescriptor {
     #[inline(always)]
+    #[verified]
+    #[ensures(self.packet_buffer_addr.read() == value(packet_buffer_address) as u64)]
     /// Descriptor Read mode
     pub(crate) fn set_packet_address(&mut self, packet_buffer_address: PhysicalAddress) {
-        self.packet_buffer_addr.write(packet_buffer_address.value() as u64);
+        self.packet_buffer_addr.write(value(packet_buffer_address) as u64);
         self.header_buffer_addr.write(0);
+    }
+
+    #[inline(always)]
+    #[pure]
+    #[verified]
+    // #[ensures(self.packet_buffer_addr.read() = result)]
+    /// Descriptor Read mode
+    pub(crate) fn packet_address(&self) -> u64 {
+        self.packet_buffer_addr.read()
     }
 
     #[inline(always)]

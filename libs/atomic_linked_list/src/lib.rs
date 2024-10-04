@@ -1,5 +1,5 @@
 #![no_std]
-#![feature(stmt_expr_attributes)]
+// #![feature(stmt_expr_attributes)]
 
 #[cfg(test)]
 #[macro_use] extern crate std;

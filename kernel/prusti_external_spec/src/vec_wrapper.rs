@@ -18,14 +18,14 @@ impl<T> VecWrapper<T> {
         VecWrapper( Vec::with_capacity(capacity) )
     }
 
-    #[trusted]
     #[pure]
+    #[trusted]
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
-    #[trusted]
     #[pure]
+    #[trusted]
     #[requires(index < self.len())]
     pub fn index(&self, index: usize) -> &T {
         &self.0[index]

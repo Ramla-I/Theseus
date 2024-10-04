@@ -62,7 +62,7 @@ impl Mempool {
         // Update the packet buffer information
         let current_frame_paddr = frames_paddr;
         for i in 0..num_buffers {
-            *pkt_buffers_backing_store.buffers[i] = PacketBuffer {
+            *pkt_buffers_backing_store.buffers.0[i] = PacketBuffer {
                 frame: frames_backing_store.buffers.pop_front().unwrap(),
                 length: 0,
                 paddr: current_frame_paddr + i * core::mem::size_of::<EthernetFrame>()

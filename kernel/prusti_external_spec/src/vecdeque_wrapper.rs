@@ -49,23 +49,3 @@ impl<T> VecDequeWrapper<T> {
         self.0.pop_front()
     }
 }
-
-
-#[cfg(not(prusti))]
-use core::ops::{Deref, DerefMut};
-
-#[cfg(not(prusti))]
-impl<T> Deref for VecDequeWrapper<T> {
-    type Target = VecDeque<T>;
-
-    fn deref(&self) -> &VecDeque<T> {
-        &self.0
-    }
-}
-
-#[cfg(not(prusti))]
-impl<T> DerefMut for VecDequeWrapper<T> {
-    fn deref_mut(&mut self) -> &mut VecDeque<T> {
-        &mut self.0
-    }
-}

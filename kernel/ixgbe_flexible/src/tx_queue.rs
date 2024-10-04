@@ -131,9 +131,9 @@ impl TxQueue<{TxState::Enabled}> {
         }
 
         if cleanable as usize >= self.buffs_in_use.len() {
-            pool.buffers.extend(self.buffs_in_use.drain(..))
+            pool.buffers.0.extend(self.buffs_in_use.drain(..))
         } else {
-            pool.buffers.extend(self.buffs_in_use.drain(..cleanable as usize))
+            pool.buffers.0.extend(self.buffs_in_use.drain(..cleanable as usize))
         };
 
         self.tx_clean = head;
