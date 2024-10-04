@@ -51,8 +51,11 @@ fn calc_descriptor_rec(curr_desc: u16, add: u16, num_descs: u16) -> u16 {
 #[requires(desc_ring.len() == buffs_in_use.len())]
 #[requires(desc_ring.len() < U16_MAX)]
 #[requires(buffs_in_use.len() < U16_MAX)]
+#[requires(batch_size < 32)]
+#[ensures(result.0 <= batch_size)]
 #[ensures(*curr_desc_stored < desc_ring.len() as u16)]
-// #[ensures(result.0 > 0 ==> forall (|i: u16| i < result.0 ==> {
+#[ensures(*curr_desc_stored == calc_descriptor_rec(old(*curr_desc_stored), result.0, desc_ring.len() as u16))]
+// #[ensures(forall (|i: u16| i < result.0 ==> {
 //     let curr_desc = calc_descriptor_rec(*curr_desc_stored, i, desc_ring.len() as u16);
 //     desc_ring[curr_desc as usize].packet_address() == value(pktbuff_addr(&buffs_in_use[curr_desc as usize])) as u64
 // }))]
