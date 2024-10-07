@@ -1,7 +1,23 @@
 #!/bin/bash
 
-LIB_CRATES=(range_inclusive port_io)
-KERNEL_CRATES=(kernel_config memory_structs prusti_external_spec prusti_representation_creator pci prusti_frame_chunk prusti_page_chunk memory prusti_memory_buffer prusti_borrowed_shared_mp)
+LIB_CRATES=(
+    range_inclusive 
+    port_io
+)
+
+KERNEL_CRATES=(
+    kernel_config 
+    memory_structs 
+    prusti_external_spec 
+    prusti_representation_creator 
+    pci 
+    prusti_frame_chunk 
+    prusti_page_chunk 
+    memory 
+    prusti_memory_buffer 
+    prusti_borrowed_shared_mp
+    ixgbe_flexible
+)
 
 cd libs/
 for crate_name in "${LIB_CRATES[@]}"

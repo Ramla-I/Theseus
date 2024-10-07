@@ -11,6 +11,15 @@
 
 extern crate alloc;
 
+cfg_if::cfg_if! {
+if #[cfg(prusti)] {
+    mod hal;
+    pub mod mempool;
+    mod ethernet_frame;
+    mod verified;
+    mod spec;
+} else {
+
 mod hal;
 mod queue_registers;
 mod ethernet_frame;
@@ -19,6 +28,7 @@ pub mod rx_queue;
 pub mod tx_queue;
 mod verified;
 mod spec;
+
 
 use hal::{*, regs::*, NumDesc, IXGBE_MAX_RX_QUEUES};
 use queue_registers::*;
@@ -525,4 +535,7 @@ pub struct FilterParameters {
     pub protocol: Option<L5FilterProtocol>,
     pub priority: L5FilterPriority,
     pub qid: QueueID
+}
+
+}
 }

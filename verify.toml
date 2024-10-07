@@ -10,6 +10,3 @@ prusti_frame_chunk
 prusti_page_chunk
 memory
 memory_buffer
-
-## List of crates that need to be verified by running cargo-prusti in them
-## maybe run on all of them because we have the no verify deps flag enabled

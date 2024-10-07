@@ -24,6 +24,7 @@ use zerocopy::FromBytes;
 use bit_field::BitField;
 use num_enum::TryFromPrimitive;
 use crate::hal::*;
+use prusti_contracts::*;
 
 /// The layout in memory of the first set of general registers of the 82599 device.
 #[derive(FromBytes)]
@@ -642,25 +643,6 @@ pub const DISABLE_INTERRUPTS:           u32 = 0x7FFFFFFF;
 
 pub struct TDHSet();
 pub struct TDLENSet();
-
-// Tells what the value of the RS bit should be in the 8-bit DCMD field of the transmit descriptor.
-// The inner value will be ORed with the remaining flags for the DCMD field
-#[derive(Clone, Copy)]
-pub struct ReportStatusBit(u64);
-
-impl ReportStatusBit {
-    fn one() -> ReportStatusBit {
-        ReportStatusBit(1)
-    }
-
-    pub fn zero() -> ReportStatusBit {
-        ReportStatusBit(0)
-    }
-
-    pub fn value(&self) -> u64 {
-        self.0
-    }
-}
 
 /// Set of registers associated with one transmit descriptor queue.
 #[derive(FromBytes)]

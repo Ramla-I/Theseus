@@ -1,61 +1,22 @@
-use crate::hal::descriptors::*;
+use crate::hal::{descriptors::*};
 use crate::mempool::PktBuff;
 use crate::spec::*;
 use prusti_external_spec::{vec_wrapper::*, vecdeque_wrapper::*};
 use prusti_contracts::*;
 
 struct RDTUpdate(u16);
+struct TDTUpdate(u16);
 const U16_MAX: usize = 65535;
-
-
-// https://viperproject.github.io/prusti-dev/user-guide/verify/pledge.html
-// https://viperproject.github.io/prusti-dev/user-guide/tour/pledges.html#writing-the-pledge
-#[trusted] // has to be trusted to deal with mutable borrow
-#[requires(index < s.len())]
-#[after_expiry(
-    old(s.len()) === s.len() // (1. condition)
-    && forall(|i: usize| i < s.len()  &&  i != index // (2. condition)
-        ==> old(snap(&s[i])) === snap(&s[i]))
-    && snap(&s[index]) === before_expiry(snap(result)) // (3. condition)
-)]
-fn index_mut<T>(s: &mut [T], index: usize) -> &mut T {
-    &mut s[index]
-}
-
-
-
-#[trusted] // to deal with incomplete bitvector support
-#[requires(num_descs > 0)]
-#[ensures(result < num_descs)]
-#[ensures(result == ((curr_desc + 1) % num_descs))]
-fn update_desc(curr_desc: u16, num_descs: u16) -> u16 {
-    (curr_desc + 1) & (num_descs as u16 - 1)
-}
-
-#[pure] // only used in spec
-#[verified]
-#[requires(num_descs > 0)]
-fn calc_descriptor_rec(curr_desc: u16, add: u16, num_descs: u16) -> u16 {
-    if add == 0 {
-        curr_desc
-    } else {
-        (calc_descriptor_rec(curr_desc, add - 1, num_descs) + 1) % num_descs
-    }
-}
 
 
 #[verified]
 #[requires(desc_ring.len() > 0)]
-#[requires((*curr_desc_stored as usize) < desc_ring.len())]
-#[requires((*curr_desc_stored as usize) < buffs_in_use.len())]
+#[requires((*curr_desc_stored as usize) < desc_ring.len() && (*curr_desc_stored as usize) < buffs_in_use.len())]
 #[requires(desc_ring.len() == buffs_in_use.len())]
 #[requires(desc_ring.len() < U16_MAX)]
 #[requires(buffs_in_use.len() < U16_MAX)]
-#[requires(batch_size < 4)]
 #[ensures(desc_ring.len() == old(desc_ring.len()))]
-#[ensures(result.0 <= batch_size)]
 #[ensures(*curr_desc_stored < desc_ring.len() as u16)]
-#[ensures(*curr_desc_stored == calc_descriptor_rec(old(*curr_desc_stored), result.0, desc_ring.len() as u16))]
 fn receive(
     curr_desc_stored: &mut u16, 
     desc_ring: &mut [AdvancedRxDescriptor],
@@ -76,15 +37,11 @@ fn receive(
     let mut i = 0;
     while i < batch_size {
         body_invariant!(i < batch_size);
-        body_invariant!(rcvd_pkts == i);
-
         body_invariant!(desc_ring.len() == buffs_in_use.len());
         body_invariant!(desc_ring.len() == _orig_desc_ring_len && buffs_in_use.len() == _orig_buffs_in_use_len);
         body_invariant!(curr_desc < desc_ring.len() as u16 && curr_desc < buffs_in_use.len() as u16);
-        
         body_invariant!((curr_desc == prev_curr_desc) || curr_desc == (prev_curr_desc + 1) % desc_ring.len() as u16);
         body_invariant!(i > 0 ==> desc_ring[prev_curr_desc as usize].packet_address() == value(pktbuff_addr(&buffs_in_use[prev_curr_desc as usize])) as u64);
-        body_invariant!(curr_desc == calc_descriptor_rec(*curr_desc_stored, i, desc_ring.len() as u16));
 
         let desc = index_mut(desc_ring, curr_desc as usize);
         let (dd, length) = desc.rx_metadata();
@@ -121,4 +78,116 @@ fn receive(
 
     *curr_desc_stored = curr_desc; // should put if condition in case rcvd_pkts = 0, but make sure there's no overhead
     (rcvd_pkts, RDTUpdate(prev_curr_desc) )
+}
+
+// #[verified]
+// #[requires(desc_ring.len() > 0)]
+// // #[requires((*curr_desc_stored as usize) < desc_ring.len() && (*curr_desc_stored as usize) < buffs_in_use.len())]
+// // #[requires(desc_ring.len() == buffs_in_use.len())]
+// // #[requires(desc_ring.len() < U16_MAX)]
+// // #[requires(buffs_in_use.len() < U16_MAX)]
+// // #[ensures(result.0 <= batch_size)]
+// // #[ensures(desc_ring.len() == old(desc_ring.len()))]
+// // #[ensures(*curr_desc_stored < desc_ring.len() as u16)]
+// // #[ensures(*curr_desc_stored == calc_descriptor_rec(old(*curr_desc_stored), result.0, desc_ring.len() as u16))]
+// fn transmit(
+//     curr_desc_stored: &mut u16, 
+//     tx_clean: &mut u16,
+//     desc_ring: &mut [AdvancedTxDescriptor],
+//     buffs_in_use: &mut VecWrapper<PktBuff>,
+//     buffers: &mut VecWrapper<PktBuff>,
+//     batch_size: u16,
+//     rs_bit: ReportStatusBit
+// ) -> (u16, TDTUpdate) {
+//     const TX_CLEAN_THRESHOLD: u16 = 64; // make sure this is less than and an even divisor to the queue size
+
+//     let mut curr_desc = *curr_desc_stored;
+//     let mut next_desc = curr_desc;
+//     let mut sent_pkts = 0;
+    
+//     let mut i = 0;
+//     while i < batch_size {
+//         body_invariant!(i < batch_size);
+//         // body_invariant!(desc_ring.len() == buffs_in_use.len());
+//         // body_invariant!(desc_ring.len() == _orig_desc_ring_len && buffs_in_use.len() == _orig_buffs_in_use_len);
+//         body_invariant!(curr_desc < desc_ring.len() as u16 && curr_desc < buffs_in_use.len() as u16);
+//         // body_invariant!((curr_desc == prev_curr_desc) || curr_desc == (prev_curr_desc + 1) % desc_ring.len() as u16);
+//         // body_invariant!(i > 0 ==> desc_ring[prev_curr_desc as usize].packet_address() == value(pktbuff_addr(&buffs_in_use[prev_curr_desc as usize])) as u64);
+
+//         let next_desc = update_desc(curr_desc, desc_ring.len() as u16);
+//         if next_desc == *tx_clean { //&& (next_desc != 0) {
+//             break;
+//         }
+
+//         // if let Some(packet) = buffers.pop() {
+//         //     let rs_bit = if (curr_desc % TX_CLEAN_THRESHOLD) == TX_CLEAN_THRESHOLD - 1 { rs_bit } else { ReportStatusBit::zero() };
+//         //     desc_ring[curr_desc as usize].send(packet.paddr, packet.length, rs_bit);
+//         //     buffs_in_use.push(packet);
+
+//         //     curr_desc = next_desc;
+//         //     sent_pkts += 1;
+//         // } else {
+//         //     break;
+//         // }
+//         i += 1;
+//     }
+//     *curr_desc_stored = curr_desc; // should put if condition in case sent_pkts = 0, but make sure there's no overhead
+//     (sent_pkts, TDTUpdate(curr_desc) )
+// }
+
+
+// /// Removes sent packets from the descriptor ring.    
+// #[trusted]
+// #[inline(always)]
+// fn clean(head: u16, tx_clean: &mut u16, num_descs: u16, pool: &mut VecDequeWrapper<PktBuff>, buffs_in_use: &mut VecWrapper<PktBuff>)  {
+//     const TX_CLEAN_BATCH: u16 = 64;
+
+//     let cleanable = (head as i32 - *tx_clean as i32) as u16 & (num_descs - 1);
+//     if cleanable < TX_CLEAN_BATCH {
+//         return;
+//     }
+
+//     if cleanable as usize >= buffs_in_use.len() {
+//         pool.0.extend(buffs_in_use.0.drain(..))
+//     } else {
+//         pool.0.extend(buffs_in_use.0.drain(..cleanable as usize))
+//     };
+
+//     *tx_clean = head;
+// }
+
+
+// https://viperproject.github.io/prusti-dev/user-guide/verify/pledge.html
+// https://viperproject.github.io/prusti-dev/user-guide/tour/pledges.html#writing-the-pledge
+#[trusted] // has to be trusted to deal with mutable borrow
+#[requires(index < s.len())]
+#[after_expiry(
+    old(s.len()) === s.len() // (1. condition)
+    && forall(|i: usize| i < s.len()  &&  i != index // (2. condition)
+        ==> old(snap(&s[i])) === snap(&s[i]))
+    && snap(&s[index]) === before_expiry(snap(result)) // (3. condition)
+)]
+fn index_mut<T>(s: &mut [T], index: usize) -> &mut T {
+    &mut s[index]
+}
+
+
+
+#[trusted] // to deal with incomplete bitvector support
+#[requires(num_descs > 0)]
+#[ensures(result < num_descs)]
+#[ensures(result == ((curr_desc + 1) % num_descs))]
+fn update_desc(curr_desc: u16, num_descs: u16) -> u16 {
+    (curr_desc + 1) & (num_descs as u16 - 1)
+}
+
+#[pure] // only used in spec
+#[verified]
+#[requires(num_descs > 0)]
+fn calc_descriptor_rec(curr_desc: u16, add: u16, num_descs: u16) -> u16 {
+    if add == 0 {
+        curr_desc
+    } else {
+        (calc_descriptor_rec(curr_desc, add - 1, num_descs) + 1) % num_descs
+    }
 }

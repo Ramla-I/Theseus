@@ -1739,7 +1739,7 @@ dependencies = [
  "num_enum",
  "pci",
  "pit_clock",
- "prusti-contracts 0.1.10",
+ "prusti-contracts",
  "prusti_borrowed_shared_mp",
  "prusti_external_spec",
  "prusti_memory_buffer",
@@ -1767,7 +1767,6 @@ dependencies = [
  "owning_ref",
  "pci",
  "pit_clock",
- "prusti-contracts 0.1.10",
  "prusti_memory_buffer",
  "rand",
  "spin 0.9.4",
@@ -1786,7 +1785,7 @@ checksum = "67c21572b4949434e4fc1e1978b99c5f77064153c59d998bf13ecd96fb5ecba7"
 name = "kernel_config"
 version = "0.1.0"
 dependencies = [
- "prusti-contracts 0.2.0",
+ "prusti-contracts",
 ]
 
 [[package]]
@@ -2086,7 +2085,7 @@ dependencies = [
  "page_allocator",
  "page_table_entry",
  "proc_static_assertions",
- "prusti-contracts 0.2.0",
+ "prusti-contracts",
  "prusti_external_spec",
  "pte_flags",
  "spin 0.9.4",
@@ -2134,7 +2133,7 @@ dependencies = [
  "derive_more",
  "kernel_config",
  "paste",
- "prusti-contracts 0.2.0",
+ "prusti-contracts",
  "prusti_external_spec",
  "prusti_representation_creator",
  "range_inclusive",
@@ -2742,7 +2741,7 @@ dependencies = [
  "log",
  "memory",
  "port_io",
- "prusti-contracts 0.2.0",
+ "prusti-contracts",
  "prusti_external_spec",
  "prusti_representation_creator",
  "spin 0.9.4",
@@ -2873,7 +2872,7 @@ dependencies = [
 name = "port_io"
 version = "0.2.1"
 dependencies = [
- "prusti-contracts 0.2.0",
+ "prusti-contracts",
 ]
 
 [[package]]
@@ -2943,27 +2942,12 @@ dependencies = [
 
 [[package]]
 name = "prusti-contracts"
-version = "0.1.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84501b8931e0e15f177bb49f107a0fe54f8d4da05cfff4d95c298af6f3f1487e"
-dependencies = [
- "prusti-contracts-proc-macros 0.1.10",
-]
-
-[[package]]
-name = "prusti-contracts"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c6e618695ddeec4c85c216d887ef958f2706c6fbafe824ba39ac260466c3043"
 dependencies = [
- "prusti-contracts-proc-macros 0.2.0",
+ "prusti-contracts-proc-macros",
 ]
-
-[[package]]
-name = "prusti-contracts-proc-macros"
-version = "0.1.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0130aef475bc8363bdfc2e5104e2fed091d4ac63b4ea8039fd55453b14d7c8a"
 
 [[package]]
 name = "prusti-contracts-proc-macros"
@@ -2979,7 +2963,7 @@ dependencies = [
  "log",
  "memory",
  "memory_structs",
- "prusti-contracts 0.2.0",
+ "prusti-contracts",
  "prusti_external_spec",
  "zerocopy",
 ]
@@ -2988,7 +2972,7 @@ dependencies = [
 name = "prusti_external_spec"
 version = "0.1.0"
 dependencies = [
- "prusti-contracts 0.2.0",
+ "prusti-contracts",
 ]
 
 [[package]]
@@ -2997,7 +2981,7 @@ version = "0.1.0"
 dependencies = [
  "kernel_config",
  "memory_structs",
- "prusti-contracts 0.2.0",
+ "prusti-contracts",
  "prusti_external_spec",
  "prusti_representation_creator",
  "range_inclusive",
@@ -3012,7 +2996,7 @@ dependencies = [
  "log",
  "memory",
  "memory_structs",
- "prusti-contracts 0.2.0",
+ "prusti-contracts",
  "prusti_external_spec",
  "prusti_representation_creator",
 ]
@@ -3023,7 +3007,7 @@ version = "0.1.0"
 dependencies = [
  "kernel_config",
  "memory_structs",
- "prusti-contracts 0.2.0",
+ "prusti-contracts",
  "prusti_external_spec",
  "prusti_representation_creator",
  "range_inclusive",
@@ -3033,7 +3017,7 @@ dependencies = [
 name = "prusti_representation_creator"
 version = "0.1.0"
 dependencies = [
- "prusti-contracts 0.2.0",
+ "prusti-contracts",
  "prusti_external_spec",
 ]
 
@@ -3152,7 +3136,7 @@ dependencies = [
 name = "range_inclusive"
 version = "0.1.0"
 dependencies = [
- "prusti-contracts 0.2.0",
+ "prusti-contracts",
 ]
 
 [[package]]

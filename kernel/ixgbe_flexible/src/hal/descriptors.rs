@@ -4,8 +4,28 @@ use zerocopy::FromBytes;
 use bit_field::BitField;
 use prusti_contracts::*;
 
-use crate::ReportStatusBit;
 use crate::spec::*;
+
+
+// Tells what the value of the RS bit should be in the 8-bit DCMD field of the transmit descriptor.
+// The inner value will be ORed with the remaining flags for the DCMD field
+#[derive(Clone, Copy)]
+pub struct ReportStatusBit(u64);
+
+impl ReportStatusBit {
+    fn one() -> ReportStatusBit {
+        ReportStatusBit(1)
+    }
+
+    pub fn zero() -> ReportStatusBit {
+        ReportStatusBit(0)
+    }
+
+    pub fn value(&self) -> u64 {
+        self.0
+    }
+}
+
 
 /// Advanced Transmit Descriptor used by the `ixgbe` NIC driver.
 ///

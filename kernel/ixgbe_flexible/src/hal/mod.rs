@@ -1,8 +1,15 @@
 #![allow(dead_code)]
 
-pub(crate) mod regs;
-pub(crate) mod descriptors;
-pub(crate) mod transmit_head_wb;
+cfg_if::cfg_if! {
+    if #[cfg(prusti)] {
+        pub(crate) mod descriptors;
+    } else {
+        pub(crate) mod regs;
+        pub(crate) mod descriptors;
+        pub(crate) mod transmit_head_wb;
+    }
+}
+
 
 use bitflags::bitflags;
 use static_assertions::*;
@@ -81,6 +88,7 @@ pub enum NumDesc {
     Descs8k = 8192
 }
 
+#[cfg(not(prusti))] // Prusti should ignore this but it throws an error about the PartialOrd derivation
 bitflags! {
     /// A number that can take any value ranging in 7 bits
     pub struct U7: u8 {
@@ -94,15 +102,18 @@ bitflags! {
     }
 }
 
+#[cfg(not(prusti))]
 // Ensure that we never expose bit 7 as part of the `U7` interface.
 const_assert_eq!(U7::all().bits() & 0x80, 0);
 
+#[cfg(not(prusti))]
 impl U7 {
     pub const fn zero() -> U7 {
         U7::from_bits_truncate(0)
     }
 }
 
+#[cfg(not(prusti))] // Prusti should ignore this but it throws an error about the PartialOrd derivation
 bitflags! {
     /// A number that can take any value ranging in 7 bits except 0
     pub struct HThresh: u8 {
@@ -117,6 +128,7 @@ bitflags! {
 }
 
 // Ensure that we never expose bit 7 as part of the `U7` interface.
+#[cfg(not(prusti))]
 const_assert_eq!(HThresh::all().bits() & 0x80, 0);
 
 pub enum DescType {
@@ -170,6 +182,7 @@ pub enum L5FilterID {
     F120, F121, F122, F123, F124, F125, F126, F127, 
 }
 
+#[cfg(not(prusti))] // Prusti should ignore this but it throws an error about the PartialOrd derivation
 bitflags! {
     // If a bit is set, then it is NOT used in the comparison
     pub struct L5FilterMaskFlags: u32 {
@@ -181,6 +194,7 @@ bitflags! {
     }
 }
 
+#[cfg(not(prusti))]
 impl L5FilterMaskFlags {
     pub const fn zero() -> L5FilterMaskFlags {
         L5FilterMaskFlags::from_bits_truncate(0)
@@ -188,6 +202,7 @@ impl L5FilterMaskFlags {
 }
 
 // Ensure that we never expose bits besides [29:25] as part of the `L5FilterMaskFlags` interface.
+#[cfg(not(prusti))]
 const_assert_eq!(L5FilterMaskFlags::all().bits() & 0xC1FF_FFFF, 0);
 
 
@@ -203,6 +218,7 @@ pub enum RedirectionTableReg {
     R30, R31
 }
 
+#[cfg(not(prusti))]
 bitflags! {
     // The fields that should be used to calculate the hash
     pub struct RSSFieldFlags: u32 {
@@ -216,8 +232,10 @@ bitflags! {
 }
 
 // Ensure that we never expose bits besides [16:17] and [20:23] as part of the `RSSFieldFlags` interface.
+#[cfg(not(prusti))]
 const_assert_eq!(RSSFieldFlags::all().bits() & 0xFF0C_FFFF, 0);
 
+#[cfg(not(prusti))]
 impl RSSFieldFlags {
     pub const fn zero() -> RSSFieldFlags {
         RSSFieldFlags::from_bits_truncate(0)
