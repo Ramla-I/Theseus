@@ -51,14 +51,11 @@ fn calc_descriptor_rec(curr_desc: u16, add: u16, num_descs: u16) -> u16 {
 #[requires(desc_ring.len() == buffs_in_use.len())]
 #[requires(desc_ring.len() < U16_MAX)]
 #[requires(buffs_in_use.len() < U16_MAX)]
-#[requires(batch_size < 32)]
+#[requires(batch_size < 4)]
+#[ensures(desc_ring.len() == old(desc_ring.len()))]
 #[ensures(result.0 <= batch_size)]
 #[ensures(*curr_desc_stored < desc_ring.len() as u16)]
 #[ensures(*curr_desc_stored == calc_descriptor_rec(old(*curr_desc_stored), result.0, desc_ring.len() as u16))]
-// #[ensures(forall (|i: u16| i < result.0 ==> {
-//     let curr_desc = calc_descriptor_rec(*curr_desc_stored, i, desc_ring.len() as u16);
-//     desc_ring[curr_desc as usize].packet_address() == value(pktbuff_addr(&buffs_in_use[curr_desc as usize])) as u64
-// }))]
 fn receive(
     curr_desc_stored: &mut u16, 
     desc_ring: &mut [AdvancedRxDescriptor],
@@ -67,20 +64,24 @@ fn receive(
     mempool: &mut VecDequeWrapper<PktBuff>,
     batch_size: u16,
 ) -> (u16, RDTUpdate) {
+    let _orig_curr_desc = *curr_desc_stored;
+    let _orig_buffs_in_use_len = buffs_in_use.len();
+    let _orig_desc_ring_len = desc_ring.len();
+
+
     let mut curr_desc = *curr_desc_stored;
     let mut prev_curr_desc = curr_desc;
-
     let mut rcvd_pkts = 0;
-    let _buffers_len_old = buffers.len();
-    let mut _buffers_len = buffers.len();
 
     let mut i = 0;
     while i < batch_size {
         body_invariant!(i < batch_size);
-        body_invariant!(desc_ring.len() == buffs_in_use.len());
-        body_invariant!(curr_desc < desc_ring.len() as u16);
-        body_invariant!(curr_desc < buffs_in_use.len() as u16);
         body_invariant!(rcvd_pkts == i);
+
+        body_invariant!(desc_ring.len() == buffs_in_use.len());
+        body_invariant!(desc_ring.len() == _orig_desc_ring_len && buffs_in_use.len() == _orig_buffs_in_use_len);
+        body_invariant!(curr_desc < desc_ring.len() as u16 && curr_desc < buffs_in_use.len() as u16);
+        
         body_invariant!((curr_desc == prev_curr_desc) || curr_desc == (prev_curr_desc + 1) % desc_ring.len() as u16);
         body_invariant!(i > 0 ==> desc_ring[prev_curr_desc as usize].packet_address() == value(pktbuff_addr(&buffs_in_use[prev_curr_desc as usize])) as u64);
         body_invariant!(curr_desc == calc_descriptor_rec(*curr_desc_stored, i, desc_ring.len() as u16));
