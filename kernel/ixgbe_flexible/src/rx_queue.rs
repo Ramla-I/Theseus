@@ -273,6 +273,12 @@ impl RxQueue<{RxState::Enabled}> {
             ..self
         })
     }
+
+    /// This function personally doesn't change anything about the queue except its state, since all steps to 
+    /// start RSS have to be done at the device level and not at the queue level.
+    pub(crate) fn add_to_reta(self) -> RxQueue<{RxState::RSS}> {
+        RxQueue { ..self }
+    }
 }
 
 impl RxQueue<{RxState::L3L4Filter}> {
@@ -288,6 +294,28 @@ impl RxQueue<{RxState::L3L4Filter}> {
         RxQueue { filter_id: None, ..self }
     }
 
+    /// Retrieves a maximum of `batch_size` number of packets and stores them in `buffers`.
+    /// Returns the total number of received packets.
+    #[inline(always)]
+    #[cfg(verified)]
+    pub fn receive_batch(&mut self, buffers: &mut VecWrapper<PktBuff>, batch_size: usize) -> u16 {
+        let (rcvd_pkts, rdt) = verified::receive(
+            &mut self.curr_desc, 
+            &mut self.desc_ring, 
+            &mut self.buffs_in_use.0, 
+            buffers, 
+            &mut self.mempool.buffers, 
+            batch_size as u16
+        );
+
+        if rcvd_pkts > 0 {
+            self.regs.rdt_write(rdt.value()); 
+        }
+        rcvd_pkts
+    }
+}
+
+impl RxQueue<{RxState::RSS}> {
     /// Retrieves a maximum of `batch_size` number of packets and stores them in `buffers`.
     /// Returns the total number of received packets.
     #[inline(always)]

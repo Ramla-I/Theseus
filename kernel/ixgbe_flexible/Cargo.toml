@@ -37,6 +37,9 @@ path = "../pci"
 [dependencies.pit_clock]
 path = "../pit_clock"
 
+[dependencies.hpet]
+path = "../acpi/hpet"
+
 [dependencies.rand]
 version = "0.8"
 default-features = false 

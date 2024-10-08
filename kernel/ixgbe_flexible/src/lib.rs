@@ -75,6 +75,7 @@ use memory::{MappedPages, BorrowedMappedPages, Mutable};
 use pci::{PciDevice,PciLocation};
 use core::ops::Deref;
 use log::{debug, info};
+use rand::{SeedableRng, RngCore};
 
 /// Vendor ID for Intel
 pub const INTEL_VEND:                   u16 = 0x8086;  
@@ -140,9 +141,8 @@ pub struct IxgbeNic {
     /// There are 128 such filters available.
     l34_5_tuple_filters: [Option<FilterParameters>; 128],
     /// The current RETA for RSS.
-    /// We always enable RSS, but if no RETA is provided all routing is forwarded to queue 0.
-    /// This is the default behavior, even when RSS isn't enabled.
-    reta: [[RSSQueueID; 4]; 32],
+    /// We currently only allow adding queues to the RETA at initialization.
+    reta: Option<[[RSSQueueID; 4]; 32]>,
     rx_queues: Vec<RxQueueE>,
     rx_queues_disabled: Vec<RxQueueD>,
     rx_queues_filters: Vec<RxQueueF>,
@@ -186,17 +186,13 @@ impl IxgbeNic {
         let regs_rxq_unused = regs.regs_rxq_unused.split_off(IXGBE_NUM_RX_QUEUES_ENABLED as usize);
         let rx_regs = core::mem::replace(&mut regs.regs_rxq_unused, regs_rxq_unused);
         assert!(rx_regs.len() == IXGBE_NUM_RX_QUEUES_ENABLED as usize);
-        let rx_queues = Self::rx_init(&mut regs.regs1, &mut regs.regs2, rx_regs, num_rx_descs)?;
+        let (rx_queues, rx_queues_rss) = Self::rx_init(&mut regs.regs1, &mut regs.regs2, &mut regs.regs3, rx_regs, num_rx_descs, reta)?;
         
         // create the tx descriptor queues
         let regs_txq_unused = regs.regs_txq_unused.split_off(IXGBE_NUM_TX_QUEUES_ENABLED as usize);
         let tx_regs = core::mem::replace(&mut regs.regs_txq_unused, regs_txq_unused);
         assert!(tx_regs.len() == IXGBE_NUM_TX_QUEUES_ENABLED as usize);
         let tx_queues = Self::tx_init(&mut regs.regs2, &mut regs.regs_mac, tx_regs, num_tx_descs)?;
-        
-        // enable Receive Side Scaling if required
-        let reta = reta.unwrap_or([[RSSQueueID::Q0; 4]; 32]);
-        // let rx_queues_rss = Self::enable_rss(&mut mapped_registers2, &mut mapped_registers3, &mut rx_queues, reta)?;
 
         // wait 10 seconds for the link to come up, as seen in other ixgbe drivers
         Self::wait_for_link(&regs.regs2, 10_000_000);
@@ -210,7 +206,7 @@ impl IxgbeNic {
             rx_queues,
             rx_queues_disabled: Vec::new(),
             rx_queues_filters: Vec::new(),
-            rx_queues_rss: Vec::new(),
+            rx_queues_rss: rx_queues_rss,
             tx_queues,
             tx_queues_disabled: Vec::new(),
         };
@@ -416,9 +412,11 @@ impl IxgbeNic {
     fn rx_init(
         regs1: &mut IntelIxgbeRegisters1, 
         regs2: &mut IntelIxgbeRegisters2, 
+        regs3: &mut IntelIxgbeRegisters3, 
         rx_regs: Vec<RxQueueRegisters>,
         num_rx_descs: NumDesc,
-    ) -> Result<Vec<RxQueueE>, &'static str> {
+        reta: Option<[[RSSQueueID; 4]; 32]>
+    ) -> Result<(Vec<RxQueueE>, Vec<RxQueueRSS>), &'static str> {
 
         //CRC offloading
         regs2.crc_strip();
@@ -443,16 +441,28 @@ impl IxgbeNic {
             FilterCtrlFlags::BROADCAST_ACCEPT_MODE, 
             rxctrl_disabled
         ); 
+
+        let mut rss_queue_ids = Vec::new();
+        if let Some(reta) = reta {
+            let rxctrl_disabled = regs2.rxctrl_rx_disable();
+            rss_queue_ids = Self::enable_rss(regs2, regs3, reta, rxctrl_disabled)?;
+        }
+
         // enable receive functionality
         regs2.rxctrl_rx_enable(fctrl_set); 
 
-        let mut rx_all_queues = Vec::new();
+        let mut rx_enabled_queues = Vec::new();
+        let mut rx_rss_queues = Vec::new();
         for rxq_reg in rx_regs {      
-            let rxq = RxQueueE::new(rxq_reg, num_rx_descs)?;           
-            rx_all_queues.push(rxq);
+            let rxq = RxQueueE::new(rxq_reg, num_rx_descs)?;   
+            if rss_queue_ids.contains(&rxq.id) {
+                rx_rss_queues.push(rxq.add_to_reta());
+            } else {
+                rx_enabled_queues.push(rxq);
+            }        
         }
         regs1.ctrl_ext_no_snoop_disable();        
-        Ok(rx_all_queues)
+        Ok((rx_enabled_queues, rx_rss_queues))
     }
 
     /// Initialize the array of transmit descriptors for all queues and returns them.
@@ -503,6 +513,41 @@ impl IxgbeNic {
         }
         Ok(tx_all_queues)
     }  
+
+    /// (7.1.2.8.1: RSS Hash Function Configuration)
+    /// RSS can only be enabled after a software reset, but the RETA can be changed on the fly, 
+    /// though there is no assurance when the change will take affect. 
+    /// We've set the RSS flags to a default value, can be changed later.
+    fn enable_rss(regs2: &mut IntelIxgbeRegisters2, regs3: &mut IntelIxgbeRegisters3, reta: [[RSSQueueID; 4]; 32], rxctrl_disabled: RXCTRLDisabled) -> Result<Vec<QueueID>, &'static str> {
+        let mut used_queue_ids: Vec<QueueID> = Vec::new();
+        for rss_qid in reta.iter().flatten() {
+            let qid = QueueID::from(*rss_qid);
+            if !used_queue_ids.contains(&qid) { used_queue_ids.push(qid); }
+        }
+ 
+        // enable RSS writeback in the header field of the receive descriptor
+        regs2.rxcsum_enable_rss_writeback(rxctrl_disabled);
+
+        //set the random keys for the hash function
+        let seed = hpet::get_hpet().as_ref().ok_or("couldn't get HPET timer")?.get_counter();
+        let mut rng = rand::rngs::SmallRng::seed_from_u64(seed);
+        for rssrk in regs3.rssrk.iter_mut() {
+            rssrk.write(rng.next_u32());
+        }
+
+        // Initialize the RSS redirection table
+        for idx in 0..32 { // TODO: iterate over the enum
+            let queue_ids = &reta[idx];
+            let reta_reg = RedirectionTableReg::try_from(idx).map_err(|_| "invalid RETA register index")?;
+            regs3.reta_write(reta_reg, queue_ids);
+        }
+
+        // enable RSS and set fields that will be used by hash function
+        // According to the datasheet:"System software must initialize the table prior to enabling multiple receive queues"
+        regs3.mrqc_enable_rss(RSSFieldFlags::UDP_IPV4); // To Do: make this a parameter 
+
+        Ok(used_queue_ids)
+    }
 
     fn find_enabled_queue_with_id(&mut self, qid: QueueID) -> Option<RxQueueE> {
         self.rx_queues.iter().position(|x| x.id == qid)
