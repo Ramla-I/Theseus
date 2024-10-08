@@ -1,5 +1,5 @@
 use memory::{create_contiguous_mapping, BorrowedMappedPages, BorrowedSliceMappedPages, Mutable, DMA_FLAGS};
-use crate::hal::{*, regs::{ReportStatusBit, TDHSet}, descriptors::AdvancedTxDescriptor, transmit_head_wb::TransmitHead};
+use crate::hal::{*, regs::{TDHSet, ReportStatusBit}, descriptors::AdvancedTxDescriptor, transmit_head_wb::TransmitHead};
 use crate::queue_registers::TxQueueRegisters;
 use crate::mempool::{Mempool, PktBuff};
 use alloc::vec::Vec;
@@ -83,11 +83,36 @@ impl TxQueue<{TxState::Enabled}> {
         }, tdh_set))
     }
 
+    #[inline(always)]
+    #[cfg(verified)]
+    pub fn send_batch(&mut self, batch_size: usize,  buffers: &mut Vec<PktBuff>, pool: &mut Mempool) -> u16 {
+        const TX_CLEAN_THRESHOLD: u16 = 64; // make sure this is less than and an even divisor to the queue size
+
+        self.tx_clean(pool);
+        let mut pkts_sent = 0;
+
+        let(sent_pkts, tdt) = verified::transmit(
+            &mut self.curr_desc, 
+            self.tx_clean, 
+            &mut self.desc_ring, 
+            &mut self.buffs_in_use, 
+            buffers, 
+            batch_size as u16, 
+            self.rs_bit
+        );
+
+        if sent_pkts > 0 { 
+            self.regs.tdt_write(tdt.0); 
+        }
+        sent_pkts
+    }
+
     /// Sends a maximum of `batch_size` number of packets from the stored `buffers`.
     /// The number of packets sent are returned.
     /// 
     /// I don't think this code is very stable, if the TX_CLEAN_THRESHOLD is less than the number of descriptors, and divisor, then we should be good.
     #[inline(always)]
+    #[cfg(not(verified))]
     pub fn send_batch(&mut self, batch_size: usize,  buffers: &mut Vec<PktBuff>, pool: &mut Mempool) -> u16 {
         const TX_CLEAN_THRESHOLD: u16 = 64; // make sure this is less than and an even divisor to the queue size
 

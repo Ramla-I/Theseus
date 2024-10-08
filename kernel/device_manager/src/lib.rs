@@ -183,7 +183,7 @@ pub fn init(
         ixgbe_devs.push(ixgbe_nic);
     }
     // Once all the NICs have been initialized, we can store them and add them to the list of network interfaces.
-    let ixgbe_nics = ixgbe_restricted::IXGBE_NICS.call_once(|| ixgbe_devs);
+    let _ixgbe_nics = ixgbe_restricted::IXGBE_NICS.call_once(|| ixgbe_devs);
     // for ixgbe_nic_ref in ixgbe_nics.iter() {
     //     net::register_device(ixgbe_nic_ref);
     // }

@@ -1,4 +1,4 @@
-use crate::hal::{descriptors::*};
+use crate::hal::{regs::ReportStatusBit, descriptors::*};
 use crate::mempool::{PktBuff, pktbuff_addr};
 use prusti_external_spec::{vec_wrapper::*, vecdeque_wrapper::*};
 use prusti_contracts::*;
@@ -88,7 +88,7 @@ fn receive(
 #[ensures(buffs_in_use.len() == old(buffs_in_use.len()) + result.0 as usize)]
 fn transmit(
     curr_desc_stored: &mut u16, 
-    tx_clean: &mut u16,
+    tx_clean: u16,
     desc_ring: &mut [AdvancedTxDescriptor],
     buffs_in_use: &mut VecWrapper<PktBuff>,
     buffers: &mut VecWrapper<PktBuff>,
@@ -117,7 +117,7 @@ fn transmit(
         // body_invariant!(i > 0 ==> desc_ring[_prev_curr_desc as usize].packet_address() == pktbuff_addr(&buffs_in_use.index(_orig_buffs_in_use_len + (i as usize - 1))).value() as u64);
 
         next_desc = update_desc(curr_desc, desc_ring.len() as u16);
-        if next_desc == *tx_clean {
+        if next_desc == tx_clean {
             break;
         }
 

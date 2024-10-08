@@ -112,7 +112,7 @@ pub fn main(_args: Vec<String>) -> isize {
         .map(|f| Path::new(f.lock().get_absolute_path()))
         .ok_or("Could not find the application 'packet_forwarder_flexible'").unwrap();
 
-    let child = spawn::new_application_task_builder(app_path.clone(), None).unwrap()
+    let _child = spawn::new_application_task_builder(app_path.clone(), None).unwrap()
         .spawn().unwrap();
 
     // block this task, because it never needs to actually run again

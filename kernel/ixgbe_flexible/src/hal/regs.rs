@@ -24,7 +24,27 @@ use zerocopy::FromBytes;
 use bit_field::BitField;
 use num_enum::TryFromPrimitive;
 use crate::hal::*;
-use prusti_contracts::*;
+
+// Tells what the value of the RS bit should be in the 8-bit DCMD field of the transmit descriptor.
+// The inner value will be ORed with the remaining flags for the DCMD field
+#[derive(Clone, Copy)]
+pub struct ReportStatusBit(u64);
+
+impl ReportStatusBit {
+    fn one() -> ReportStatusBit {
+        ReportStatusBit(1)
+    }
+
+    pub fn zero() -> ReportStatusBit {
+        ReportStatusBit(0)
+    }
+
+    pub fn value(&self) -> u64 {
+        self.0
+    }
+}
+
+cfg_if::cfg_if! {if #[cfg(not(prusti))] { // because of the bitflags! macro, should eventually try to remove this
 
 /// The layout in memory of the first set of general registers of the 82599 device.
 #[derive(FromBytes)]
@@ -681,7 +701,7 @@ pub(crate) struct RegistersTx {
 const_assert_eq!(core::mem::size_of::<RegistersTx>(), 64);
 
 pub struct TDTWritten();
-    
+
 impl RegistersTx {
     // gate access so that the upper 16 bits are always set to 0
     #[inline(always)]
@@ -822,3 +842,4 @@ impl RegistersRx {
         self.rxdctl.write(val | RX_Q_ENABLE); 
     }
 }
+}}

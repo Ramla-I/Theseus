@@ -1,15 +1,8 @@
 #![allow(dead_code)]
 
-cfg_if::cfg_if! {
-    if #[cfg(prusti)] {
-        pub(crate) mod descriptors;
-    } else {
-        pub(crate) mod regs;
-        pub(crate) mod descriptors;
-        pub(crate) mod transmit_head_wb;
-    }
-}
-
+pub(crate) mod regs;
+pub(crate) mod descriptors;
+pub(crate) mod transmit_head_wb;
 
 use bitflags::bitflags;
 use static_assertions::*;

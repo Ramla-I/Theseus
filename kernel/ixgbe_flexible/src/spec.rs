@@ -1,4 +1,6 @@
 use prusti_contracts::*;
+
+#[allow(unused_imports)] // for prusti spec
 use volatile::Volatile;
 
 

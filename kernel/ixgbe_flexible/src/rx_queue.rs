@@ -108,6 +108,27 @@ impl RxQueue<{RxState::Enabled}> {
     /// Retrieves a maximum of `batch_size` number of packets and stores them in `buffers`.
     /// Returns the total number of received packets.
     #[inline(always)]
+    #[cfg(verified)]
+    pub fn receive_batch(&mut self, buffers: &mut Vec<PktBuff>, batch_size: usize) -> u16 {
+        let (rcvd_pkts, rdt) = verified::receive(
+            &mut self.curr_desc, 
+            &mut self.desc_ring, 
+            &mut self.buffs_in_use, 
+            buffers, 
+            &mut self.mempool.buffers, 
+            batch_size as u16
+        );
+
+        if rcvd_pkts > 0 {
+            self.regs.rdt_write(rdt.0); 
+        }
+        rcvd_pkts
+    }
+
+    /// Retrieves a maximum of `batch_size` number of packets and stores them in `buffers`.
+    /// Returns the total number of received packets.
+    #[inline(always)]
+    #[cfg(not(verified))]
     pub fn receive_batch(&mut self, buffers: &mut Vec<PktBuff>, batch_size: usize) -> u16 {
         let mut curr_desc = self.curr_desc;
         let mut prev_curr_desc = self.curr_desc;
