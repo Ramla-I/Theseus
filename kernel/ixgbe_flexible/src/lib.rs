@@ -8,6 +8,7 @@
 #![feature(ptr_internals)]
 #![allow(dead_code)]
 #![feature(adt_const_params)]
+#![feature(type_changing_struct_update)]
 
 extern crate alloc;
 

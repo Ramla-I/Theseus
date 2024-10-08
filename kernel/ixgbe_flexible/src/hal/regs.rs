@@ -719,6 +719,11 @@ impl RegistersTx {
         self.txdctl.write(val | TX_Q_ENABLE); 
     }
 
+    pub fn txdctl_txq_disable(&mut self) {
+        let val = self.txdctl.read();
+        self.txdctl.write(val & !TX_Q_ENABLE); 
+    }
+
     pub fn txdctl_write_wthresh(&mut self, wthresh: U7) -> ReportStatusBit {
         let val = self.txdctl.read() & !0x7F_0000;
         self.txdctl.write(val | ((wthresh.bits() as u32) << 16));
@@ -840,6 +845,11 @@ impl RegistersRx {
     pub fn rxdctl_rxq_enable(&mut self) {
         let val = self.rxdctl.read();
         self.rxdctl.write(val | RX_Q_ENABLE); 
+    }
+
+    pub fn rxdctl_rxq_disable(&mut self) {
+        let val = self.rxdctl.read();
+        self.rxdctl.write(val & !RX_Q_ENABLE); 
     }
 }
 }}

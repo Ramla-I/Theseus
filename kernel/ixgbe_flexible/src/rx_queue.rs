@@ -1,3 +1,5 @@
+// To Do: test the state transition functions
+
 use crate::hal::{*, descriptors::AdvancedRxDescriptor};
 use crate::queue_registers::RxQueueRegisters;
 use crate::mempool::*;
@@ -105,6 +107,13 @@ impl RxQueue<{RxState::Enabled}> {
         })
     }
 
+    // To Do: wait until all descriptors are written back
+    pub fn disable(mut self) -> RxQueueD {
+        self.regs.rxdctl_rxq_disable();
+        self.buffs_in_use.clear();
+        RxQueueD{.. self}
+    }
+
     /// Retrieves a maximum of `batch_size` number of packets and stores them in `buffers`.
     /// Returns the total number of received packets.
     #[inline(always)]
@@ -178,5 +187,40 @@ impl RxQueue<{RxState::Enabled}> {
 
     pub fn mempool(&mut self) -> &mut Mempool {
         &mut self.mempool
+    }
+}
+
+
+impl RxQueue<{RxState::Disabled}> {
+    pub fn enable(mut self) -> Result<RxQueueE, &'static str> {
+        self.curr_desc = 0;
+
+        for rd in self.desc_ring.iter_mut()
+        {
+            // obtain a receive buffer for each rx_desc
+            // letting this fail instead of allocating here alerts us to a logic error, we should always have more buffers in the pool than the fdescriptor ringh
+            let rx_buf = self.mempool.buffers.pop_front()
+                .ok_or("Couldn't obtain a PktBuff from the pool")?; 
+            
+            rd.set_packet_address(rx_buf.paddr); 
+            self.buffs_in_use.push(rx_buf); 
+        }
+        // descriptor ring is still stored so need to update it.'
+        // probably would be more memory efficient to drop desc ring when disabled, 
+        // have an entirely separate struct for the disabled state
+        
+        // Write the head index (the first receive descriptor)
+        self.regs.rdh_write(0);        
+        // enable the rx queue and make sure it's enabled
+        self.regs.rxdctl_rxq_enable();
+        const RX_Q_ENABLE: u32 = 1 << 25;
+        while self.regs.rxdctl_read() & RX_Q_ENABLE == 0 {}
+
+        // Write the tail index.
+        // Note that the 82599 datasheet (section 8.2.3.8.5) states that we should set the RDT (tail index) to the index *beyond* the last receive descriptor, 
+        // but we set it to the last receive descriptor for the same reason as the e1000 driver
+        self.regs.rdt_write(self.num_descs - 1);
+
+        Ok(RxQueueE{.. self})
     }
 }

@@ -1,3 +1,5 @@
+// To Do: test the state transition functions
+
 use memory::{create_contiguous_mapping, BorrowedMappedPages, BorrowedSliceMappedPages, Mutable, DMA_FLAGS};
 use crate::hal::{*, regs::{TDHSet, ReportStatusBit}, descriptors::AdvancedTxDescriptor, transmit_head_wb::TransmitHead};
 use crate::queue_registers::TxQueueRegisters;
@@ -26,7 +28,7 @@ pub struct TxQueue<const S: TxState> {
     /// Transmit descriptors 
     desc_ring: BorrowedSliceMappedPages<AdvancedTxDescriptor, Mutable>,
     /// The number of transmit descriptors in the descriptor ring
-    num_descs: u16,
+    num_descs: NumDesc,
     /// Current transmit descriptor index (first desc that can be used)
     curr_desc: u16,
     /// The packet buffers that descriptors have stored information of
@@ -74,13 +76,20 @@ impl TxQueue<{TxState::Enabled}> {
             id: QueueID::try_from(regs.id() as u8).map_err(|_| "tried to create queue with id >= 64")?, 
             regs, 
             desc_ring, 
-            num_descs: num_descs as u16, 
+            num_descs: num_descs, 
             curr_desc: 0, 
             buffs_in_use: Vec::with_capacity(num_descs as usize), 
             tx_clean: 0,
             rs_bit: rs_bit, 
             head_wb: head_wb_mp.into_borrowed_mut(0).map_err(|(_mp, err)| err)? 
         }, tdh_set))
+    }
+
+    // To Do: wait until all descriptors are written back (check head writeback)
+    pub fn disable(mut self) -> TxQueueD {
+        self.regs.txdctl_txq_disable();
+        self.buffs_in_use.clear();
+        TxQueueD{.. self}
     }
 
     #[inline(always)]
@@ -120,7 +129,7 @@ impl TxQueue<{TxState::Enabled}> {
         let mut pkts_sent = 0;
 
         for _ in 0..batch_size {
-            let next_desc = (self.curr_desc + 1) % self.num_descs;
+            let next_desc = (self.curr_desc + 1) % self.num_descs as u16;
             if next_desc == self.tx_clean { //&& (next_desc != 0) {
                 break;
             }
@@ -150,7 +159,7 @@ impl TxQueue<{TxState::Enabled}> {
         const TX_CLEAN_BATCH: u16 = 64;
         let head = self.head_wb.value() as u16;
 
-        let cleanable = (head as i32 - self.tx_clean as i32) as u16 & (self.num_descs - 1);
+        let cleanable = (head as i32 - self.tx_clean as i32) as u16 & (self.num_descs as u16 - 1);
         if cleanable < TX_CLEAN_BATCH {
             return;
         }
@@ -162,5 +171,23 @@ impl TxQueue<{TxState::Enabled}> {
         };
 
         self.tx_clean = head;
+    }
+}
+
+
+impl TxQueue<{TxState::Disabled}> {
+    pub fn enable(mut self) -> TxQueueE {
+        self.tx_clean = 0;
+        self.curr_desc = 0;
+
+        let tdlen_set = self.regs.tdlen_write(self.num_descs);
+        let tdh_set = self.regs.tdh_write(0, tdlen_set);
+        self.regs.tdt_write(0);
+        // descriptor ring is still stored so need to update it.'
+        // probably would be more memory efficient to drop desc ring when disabled, 
+        // have an entirely separate struct for the disabled state
+        
+        self.regs.txdctl_txq_enable(tdh_set);
+        TxQueueE{.. self}
     }
 }
