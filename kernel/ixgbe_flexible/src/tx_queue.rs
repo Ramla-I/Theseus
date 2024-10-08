@@ -4,8 +4,10 @@ use memory::{create_contiguous_mapping, BorrowedMappedPages, BorrowedSliceMapped
 use crate::hal::{*, regs::{TDHSet, ReportStatusBit}, descriptors::AdvancedTxDescriptor, transmit_head_wb::TransmitHead};
 use crate::queue_registers::TxQueueRegisters;
 use crate::mempool::{Mempool, PktBuff};
+use crate::verified;
 use alloc::vec::Vec;
 use core::marker::ConstParamTy;
+use prusti_external_spec::vec_wrapper::VecWrapper;
 
 #[derive(PartialEq, Eq)]
 #[derive(ConstParamTy)]
@@ -32,7 +34,7 @@ pub struct TxQueue<const S: TxState> {
     /// Current transmit descriptor index (first desc that can be used)
     curr_desc: u16,
     /// The packet buffers that descriptors have stored information of
-    buffs_in_use: Vec<PktBuff>,
+    buffs_in_use: VecWrapper<PktBuff>,
     /// first descriptor that has been used but not checked for transmit completion
     /// or in some cases, it hasn't been used like when we start out and right after clean
     tx_clean: u16,
@@ -78,7 +80,7 @@ impl TxQueue<{TxState::Enabled}> {
             desc_ring, 
             num_descs: num_descs, 
             curr_desc: 0, 
-            buffs_in_use: Vec::with_capacity(num_descs as usize), 
+            buffs_in_use: VecWrapper::with_capacity(num_descs as usize), 
             tx_clean: 0,
             rs_bit: rs_bit, 
             head_wb: head_wb_mp.into_borrowed_mut(0).map_err(|(_mp, err)| err)? 
@@ -88,13 +90,13 @@ impl TxQueue<{TxState::Enabled}> {
     // To Do: wait until all descriptors are written back (check head writeback)
     pub fn disable(mut self) -> TxQueueD {
         self.regs.txdctl_txq_disable();
-        self.buffs_in_use.clear();
+        self.buffs_in_use.0.clear();
         TxQueueD{.. self}
     }
 
     #[inline(always)]
     #[cfg(verified)]
-    pub fn send_batch(&mut self, batch_size: usize,  buffers: &mut Vec<PktBuff>, pool: &mut Mempool) -> u16 {
+    pub fn send_batch(&mut self, batch_size: usize,  buffers: &mut VecWrapper<PktBuff>, pool: &mut Mempool) -> u16 {
         const TX_CLEAN_THRESHOLD: u16 = 64; // make sure this is less than and an even divisor to the queue size
 
         self.tx_clean(pool);
@@ -111,7 +113,7 @@ impl TxQueue<{TxState::Enabled}> {
         );
 
         if sent_pkts > 0 { 
-            self.regs.tdt_write(tdt.0); 
+            self.regs.tdt_write(tdt.value()); 
         }
         sent_pkts
     }
@@ -165,9 +167,9 @@ impl TxQueue<{TxState::Enabled}> {
         }
 
         if cleanable as usize >= self.buffs_in_use.len() {
-            pool.buffers.0.extend(self.buffs_in_use.drain(..))
+            pool.buffers.0.extend(self.buffs_in_use.0.drain(..))
         } else {
-            pool.buffers.0.extend(self.buffs_in_use.drain(..cleanable as usize))
+            pool.buffers.0.extend(self.buffs_in_use.0.drain(..cleanable as usize))
         };
 
         self.tx_clean = head;

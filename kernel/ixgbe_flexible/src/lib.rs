@@ -503,6 +503,11 @@ impl IxgbeNic {
         }
         Ok(tx_all_queues)
     }  
+
+    fn find_enabled_queue_with_id(&mut self, qid: QueueID) -> Option<RxQueueE> {
+        self.rx_queues.iter().position(|x| x.id == qid)
+            .and_then(|idx| Some(self.rx_queues.remove(idx)))
+    }
 }
 
 
@@ -536,6 +541,39 @@ impl IxgbeNic {
         stats.tx_bytes = tx_bytes;
         stats.rx_packets = self.regs.regs2.gprc.read();
         stats.tx_packets = self.regs.regs2.gptc.read();
+    }
+
+    /// Sets the L3/L4 5-tuple filter which can do an exact match of the packet's header with the filter and send to chosen rx queue (7.1.2.5).
+    /// There are up to 128 such filters. If more are needed, will have to enable Flow Director filters.
+    /// 
+    /// # Argument
+    /// * `source_ip`: ipv4 source address
+    /// * `dest_ip`: ipv4 destination address
+    /// * `source_port`: TCP/UDP/SCTP source port
+    /// * `dest_port`: TCP/UDP/SCTP destination port
+    /// * `protocol`: IP L4 protocol
+    /// * `priority`: priority relative to other filters, can be from 0 (lowest) to 7 (highest)
+    /// * `qid`: number of the queue to forward packet to
+    pub fn set_5_tuple_filter(
+        &mut self, 
+        filter_params: FilterParameters,
+    ) -> Result<(), &'static str> {
+        let queue = self.find_enabled_queue_with_id(filter_params.qid).ok_or("Requested queue is not in an enabled state")?;
+        let l5_queue = queue.add_filter(filter_params, &mut self.l34_5_tuple_filters, &mut self.regs.regs3)?;
+        self.rx_queues_filters.push(l5_queue);
+        Ok(())
+    }
+
+    /// Disables the the L3/L4 5-tuple filter for the given filter number
+    /// but keeps the values stored in the filter registers.
+    fn disable_5_tuple_filter(&mut self, qid: QueueID) -> Result<(), &'static str> {
+        let queue = self.rx_queues_filters.iter().position(|x| x.id == qid)
+            .and_then(|idx| Some(self.rx_queues_filters.remove(idx)))
+            .ok_or("requested qid is not in the list of L5 queues")?;
+
+        let enabled_queue = queue.disable_filter(&mut self.l34_5_tuple_filters, &mut self.regs.regs3);
+        self.rx_queues.push(enabled_queue);
+        Ok(())
     }
 }
 

@@ -1,13 +1,16 @@
 // To Do: test the state transition functions
 
-use crate::hal::{*, descriptors::AdvancedRxDescriptor};
+use crate::hal::{*, descriptors::AdvancedRxDescriptor, regs::IntelIxgbeRegisters3};
 use crate::queue_registers::RxQueueRegisters;
 use crate::mempool::*;
+use crate::{FilterParameters, FilterError};
+use crate::verified;
 use memory::{BorrowedSliceMappedPages, Mutable, DMA_FLAGS, create_contiguous_mapping};
 use core::convert::TryFrom;
 use alloc::vec::Vec;
 use core::marker::ConstParamTy;
 use log::error;
+use prusti_external_spec::vec_wrapper::VecWrapper;
 
 #[derive(PartialEq, Eq)]
 #[derive(ConstParamTy)]
@@ -38,7 +41,7 @@ pub struct RxQueue<const S: RxState> {
     curr_desc: u16,
     /// The list of rx buffers, in which the index in the vector corresponds to the index in `rx_descs`.
     /// For example, `rx_bufs_in_use[2]` is the receive buffer that will be used when `rx_descs[2]` is the current rx descriptor (curr_desc = 2).
-    buffs_in_use: Vec<PktBuff>,
+    buffs_in_use: VecWrapper<PktBuff>,
     /// Extra packet buffers
     pub(crate) mempool: Mempool,
     /// The filter id for the physical NIC filter that is set for this queue
@@ -55,7 +58,7 @@ impl RxQueue<{RxState::Enabled}> {
         let mut desc_ring = descs_mapped_pages.into_borrowed_slice_mut::<AdvancedRxDescriptor>(0, num_descs as usize).map_err(|(_mp, err)| err)?;
 
         // now that we've created the rx descriptors, we can fill them in with initial values
-        let mut buffs_in_use: Vec<PktBuff> = Vec::with_capacity(num_descs as usize);
+        let mut buffs_in_use: VecWrapper<PktBuff> = VecWrapper::with_capacity(num_descs as usize);
         for rd in desc_ring.iter_mut()
         {
             // obtain a receive buffer for each rx_desc
@@ -110,7 +113,7 @@ impl RxQueue<{RxState::Enabled}> {
     // To Do: wait until all descriptors are written back
     pub fn disable(mut self) -> RxQueueD {
         self.regs.rxdctl_rxq_disable();
-        self.buffs_in_use.clear();
+        self.buffs_in_use.0.clear();
         RxQueueD{.. self}
     }
 
@@ -118,18 +121,18 @@ impl RxQueue<{RxState::Enabled}> {
     /// Returns the total number of received packets.
     #[inline(always)]
     #[cfg(verified)]
-    pub fn receive_batch(&mut self, buffers: &mut Vec<PktBuff>, batch_size: usize) -> u16 {
+    pub fn receive_batch(&mut self, buffers: &mut VecWrapper<PktBuff>, batch_size: usize) -> u16 {
         let (rcvd_pkts, rdt) = verified::receive(
             &mut self.curr_desc, 
             &mut self.desc_ring, 
-            &mut self.buffs_in_use, 
+            &mut self.buffs_in_use.0, 
             buffers, 
             &mut self.mempool.buffers, 
             batch_size as u16
         );
 
         if rcvd_pkts > 0 {
-            self.regs.rdt_write(rdt.0); 
+            self.regs.rdt_write(rdt.value()); 
         }
         rcvd_pkts
     }
@@ -162,7 +165,7 @@ impl RxQueue<{RxState::Enabled}> {
                 // actually tell the NIC about the new receive buffer, and that it's ready for use now
                 desc.set_packet_address(new_receive_buf.paddr);
                 
-                let mut current_rx_buf = core::mem::replace(&mut self.buffs_in_use[curr_desc as usize], new_receive_buf);
+                let mut current_rx_buf = core::mem::replace(&mut self.buffs_in_use.0[curr_desc as usize], new_receive_buf);
 
                 // unsafe{ core::arch::x86_64::_mm_prefetch(current_rx_buf.buffer.as_ptr() as *const i8, _MM_HINT_ET0);}
                 current_rx_buf.length = length as u16; // set the ReceiveBuffer's length to the size of the actual packet received
@@ -188,8 +191,123 @@ impl RxQueue<{RxState::Enabled}> {
     pub fn mempool(&mut self) -> &mut Mempool {
         &mut self.mempool
     }
+
+    pub(crate) fn add_filter(
+        self, 
+        fp: FilterParameters,
+        filters: &mut [Option<FilterParameters>; 128],
+        regs3: &mut IntelIxgbeRegisters3
+    ) -> Result<RxQueue<{RxState::L3L4Filter}>, &'static str> {
+        if fp.source_ip.is_none() && fp.dest_ip.is_none() && fp.source_port.is_none() && fp.dest_port.is_none() && fp.protocol.is_none() {
+            return Err("Must set one of the five filter options");
+        }
+        let new_filter = FilterParameters {
+            qid: self.id, // should be the same but just a double check
+            ..fp
+        };
+
+        // check if there's an exisiting filter with the same parameters, if not then add it to the filters list.
+        // The index that it is written to is returned.
+        let filter_num = verified::check_and_add_filter(filters, new_filter)
+            .map_err(|e| {
+                match e {
+                    FilterError::IdenticalFilter(_x) => "There was an identical filter with the same priority already created",
+                    FilterError::NoneAvailable => "There was no free filter"
+                }
+            })?;
+
+        let filter_num = L5FilterID::try_from(filter_num).map_err(|_| "filter_num was >= 128, which should be impossible since it's returned from a verified function.")?;
+
+        // start off with the filter mask set for all the filters, and clear bits for filters that are enabled
+        // bits 29:25 are set to 1.
+        let mut filter_mask = L5FilterMaskFlags::zero();
+
+        // IP addresses are written to the registers in big endian form (LSB is first on wire)
+        // set the source ip address for the filter
+        if let Some (addr) = fp.source_ip {
+            regs3.saqf[filter_num as usize].write(((addr[3] as u32) << 24) | ((addr[2] as u32) << 16) | ((addr[1] as u32) << 8) | (addr[0] as u32));
+        } else {
+            filter_mask = filter_mask | L5FilterMaskFlags::SOURCE_ADDRESS;
+        }
+
+        // set the destination ip address for the filter
+        if let Some(addr) = fp.dest_ip {
+            regs3.daqf[filter_num as usize].write(((addr[3] as u32) << 24) | ((addr[2] as u32) << 16) | ((addr[1] as u32) << 8) | (addr[0] as u32));
+        } else {
+            filter_mask = filter_mask | L5FilterMaskFlags::DESTINATION_ADDRESS;
+        }        
+
+        const SPDQF_SOURCE_SHIFT: u32 = 0;
+        // set the source port for the filter    
+        if let Some(port) = fp.source_port {
+            regs3.sdpqf[filter_num as usize].write((port as u32) << SPDQF_SOURCE_SHIFT);
+        } else {
+            filter_mask = filter_mask | L5FilterMaskFlags::SOURCE_PORT;
+        }   
+
+        const SPDQF_DEST_SHIFT: u32 = 16;
+        // set the destination port for the filter    
+        if let Some(port) = fp.dest_port {
+            let port_val = regs3.sdpqf[filter_num as usize].read();
+            regs3.sdpqf[filter_num as usize].write(port_val | (port as u32) << SPDQF_DEST_SHIFT);
+        } else {
+            filter_mask = filter_mask | L5FilterMaskFlags::DESTINATION_PORT;
+        }
+
+        // set the filter protocol
+        let filter_protocol = if let Some(p) = fp.protocol {
+            p
+        } else {
+            filter_mask = filter_mask | L5FilterMaskFlags::PROTOCOL;
+            L5FilterProtocol::Other
+        };
+
+        // write the parameters of the filter
+        regs3.ftqf_set_filter_and_enable(filter_num, fp.priority, filter_protocol, filter_mask); // To Do: this could be a PoW linear type returned from a verified fn
+
+        //set the rx queue that the packets for this filter should be sent to
+        regs3.l34timir_write(filter_num, self.id); // To Do: this could be a PoW linear type returned from a verified fn
+
+        Ok(RxQueue {
+            filter_id: Some(filter_num),
+            ..self
+        })
+    }
 }
 
+impl RxQueue<{RxState::L3L4Filter}> {
+    /// Right now we restrict each queue to be used for only one filter,
+    /// so disabling the filter returns it to an enabled state, but we could always add
+    /// and add_filter method here.
+    pub(crate) fn disable_filter(self, enabled_filters: &mut [Option<FilterParameters>; 128], regs3: &mut IntelIxgbeRegisters3) -> RxQueue<{RxState::Enabled}> {
+        let filter_num = self.filter_id.unwrap(); // We can unwrap here because created a RxQueue<L5Filter> always sets the filter_num.
+        regs3.ftqf_disable_filter(filter_num); // disables filter by setting enable bit to 0
+        // could verify but it would be a 1 line function ... hmmmm
+        enabled_filters[filter_num as usize] = None; // sets the record in the nic struct to None
+        
+        RxQueue { filter_id: None, ..self }
+    }
+
+    /// Retrieves a maximum of `batch_size` number of packets and stores them in `buffers`.
+    /// Returns the total number of received packets.
+    #[inline(always)]
+    #[cfg(verified)]
+    pub fn receive_batch(&mut self, buffers: &mut VecWrapper<PktBuff>, batch_size: usize) -> u16 {
+        let (rcvd_pkts, rdt) = verified::receive(
+            &mut self.curr_desc, 
+            &mut self.desc_ring, 
+            &mut self.buffs_in_use.0, 
+            buffers, 
+            &mut self.mempool.buffers, 
+            batch_size as u16
+        );
+
+        if rcvd_pkts > 0 {
+            self.regs.rdt_write(rdt.value()); 
+        }
+        rcvd_pkts
+    }
+}
 
 impl RxQueue<{RxState::Disabled}> {
     pub fn enable(mut self) -> Result<RxQueueE, &'static str> {
