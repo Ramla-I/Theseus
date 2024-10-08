@@ -1751,6 +1751,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "ixgbe_flexible_rx_tx"
+version = "0.1.0"
+dependencies = [
+ "bit_field 0.7.0",
+ "bitflags",
+ "cfg-if 1.0.0",
+ "irq_safety",
+ "kernel_config",
+ "log",
+ "memory",
+ "memory_structs",
+ "num_enum",
+ "pci",
+ "pit_clock",
+ "prusti-contracts",
+ "prusti_borrowed_shared_mp",
+ "prusti_external_spec",
+ "prusti_memory_buffer",
+ "rand",
+ "spin 0.9.4",
+ "static_assertions",
+ "volatile 0.2.7",
+ "zerocopy",
+]
+
+[[package]]
 name = "ixgbe_restricted"
 version = "0.1.0"
 dependencies = [
