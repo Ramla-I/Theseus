@@ -11,6 +11,38 @@
 #![feature(type_changing_struct_update)]
 
 extern crate alloc;
+use prusti_contracts::*;
+use crate::hal::{QueueID, L5FilterPriority, L5FilterProtocol};
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub struct FilterParameters {
+    pub source_ip: Option<[u8; 4]>,
+    pub dest_ip: Option<[u8; 4]>,
+    pub source_port: Option<u16>,
+    pub dest_port: Option<u16>,
+    pub protocol: Option<L5FilterProtocol>,
+    pub priority: L5FilterPriority,
+    pub qid: QueueID
+}
+
+impl FilterParameters {
+    #[pure]
+    pub fn parameters_equal(&self, other: &Self) -> bool {
+        self.source_ip == other.source_ip &&
+        self.dest_ip == other.dest_ip &&
+        self.source_port == other.source_port &&
+        self.dest_port == other.dest_port &&
+        self.protocol == other.protocol &&
+        self.priority == other.priority
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum FilterError {
+    NoneAvailable,
+    IdenticalFilter(usize)
+}
+
 
 cfg_if::cfg_if! {
 if #[cfg(prusti)] {
@@ -525,17 +557,6 @@ pub struct IxgbeStats{
     pub tx_bytes: u64,
     pub rx_packets: u32,
     pub tx_packets: u32,
-}
-
-#[derive(PartialEq, Eq, Clone, Copy)]
-pub struct FilterParameters {
-    pub source_ip: Option<[u8; 4]>,
-    pub dest_ip: Option<[u8; 4]>,
-    pub source_port: Option<u16>,
-    pub dest_port: Option<u16>,
-    pub protocol: Option<L5FilterProtocol>,
-    pub priority: L5FilterPriority,
-    pub qid: QueueID
 }
 
 }

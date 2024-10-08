@@ -1,6 +1,7 @@
 use crate::hal::{regs::ReportStatusBit, descriptors::*};
 use crate::mempool::{PktBuff, pktbuff_addr};
-use prusti_external_spec::{vec_wrapper::*, vecdeque_wrapper::*};
+use crate::{FilterParameters, FilterError};
+use prusti_external_spec::{vec_wrapper::*, vecdeque_wrapper::*, trusted_option::*, trusted_result::*};
 use prusti_contracts::*;
 
 struct RDTUpdate(u16);
@@ -172,5 +173,49 @@ fn calc_descriptor_rec(curr_desc: u16, add: u16, num_descs: u16) -> u16 {
         curr_desc
     } else {
         (calc_descriptor_rec(curr_desc, add - 1, num_descs) + 1) % num_descs
+    }
+}
+
+
+#[ensures(result.is_ok() ==> {
+    forall(|i: usize| 0 <= i && i < 128 ==> {
+        if i == peek_result(&result) {
+            filters[i].is_some() && peek_option(&filters[i]) == new_filter
+        } else {
+            filters[i] == old(filters[i]) && (filters[i].is_some() ==> !peek_option(&filters[i]).parameters_equal(&new_filter))
+        }
+    } )
+})]
+#[ensures(result.is_err() ==> {
+    match peek_err(&result) {
+        FilterError::NoneAvailable => forall(|i: usize|( 0 <= i && i < 128 ==> filters[i].is_some())),
+        FilterError::IdenticalFilter(idx) => filters[idx].is_some() && peek_option(&filters[idx]).parameters_equal(&new_filter),
+    } && forall(|i: usize|( 0 <= i && i < 128 ==> filters[i] == old(filters[i])))
+})]
+pub fn check_and_add_filter(filters: &mut [Option<FilterParameters>; 128], new_filter: FilterParameters) -> Result<usize, FilterError> {
+    let mut i = 0;
+    let mut unused_filter = None ;
+
+    while i < 128 {
+        body_invariant!(0 <= i && i < 128);
+        body_invariant!(unused_filter.is_some() ==> peek_option(&unused_filter) < filters.len());
+        body_invariant!(forall( |x: usize| 0 <= x && x < i ==> {filters[x].is_some() ==> !peek_option(&filters[x]).parameters_equal(&new_filter)}));
+        body_invariant!(unused_filter.is_none() ==> forall( |x: usize| 0 <= x && x < i ==> filters[x].is_some()));
+
+        if filters[i].is_some() {
+            if filters[i].unwrap().parameters_equal(&new_filter) {
+                return Err(FilterError::IdenticalFilter(i));
+            }
+        } else if unused_filter.is_none(){
+            unused_filter = Some(i);
+        }
+        i += 1;
+    }
+    if unused_filter.is_some() {
+        let filter_idx = unused_filter.unwrap();
+        filters[filter_idx] = Some(new_filter);
+        Ok(filter_idx)
+    } else {
+        Err(FilterError::NoneAvailable)
     }
 }
