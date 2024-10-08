@@ -4,4 +4,16 @@ skip_unsupported_features = true
 no_verify_deps = true
 opt_in_verification = true
 # allow_unreachable_unsupported_code = true
-assert_timeout = 0
+# assert_timeout = 0
+optimizations = "all"
+simplify_encoding = true
+
+## Doesn't seem to be working. default path is Theseus/target/verify/cache.bin
+# cache_path = "/Users/ramla/Projects/cache.bin"
+
+## good way to see how many files the verifier touches
+# print_collected_verification_items = true
+
+## doesn't work for me, an error is returned
+# use_smt_wrapper = true # needs to be true to use use_smt_wrapper
+# write_smt_statistics = true

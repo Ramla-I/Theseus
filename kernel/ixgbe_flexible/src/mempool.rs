@@ -15,6 +15,13 @@ use crate::ethernet_frame::EthernetFrame;
 use prusti_memory_buffer::{Buffer, BufferBackingStore, create_buffers_from_mp};
 use prusti_external_spec::vecdeque_wrapper::VecDequeWrapper;
 use static_assertions::const_assert_eq;
+use prusti_contracts::*;
+
+#[pure]
+#[trusted] // Can't detect that Buffer::deref() is pure
+pub fn pktbuff_addr(buff: &PktBuff) -> PhysicalAddress {
+    buff.paddr
+}
 
 pub struct PacketBuffer {
     pub(crate) frame: Buffer<EthernetFrame>,

@@ -4,7 +4,7 @@ use zerocopy::FromBytes;
 use bit_field::BitField;
 use prusti_contracts::*;
 
-use crate::spec::*;
+use crate::{spec::*, mempool::pktbuff_addr};
 
 
 // Tells what the value of the RS bit should be in the 8-bit DCMD field of the transmit descriptor.
@@ -56,6 +56,8 @@ pub struct AdvancedTxDescriptor {
 
 impl AdvancedTxDescriptor {
     #[inline(always)]
+    #[trusted] // incomplete bitvector support
+    #[ensures(self.buffer_addr.read() == buffer_addr.value() as u64)]
     pub(crate) fn send(&mut self, buffer_addr: PhysicalAddress, buffer_length_in_bytes: u16, rs_bit: ReportStatusBit) {
         const TX_PAYLEN_SHIFT:                  u64 = 46;
         const TX_DCMD_RS_SHIFT:                 u64 = 24 + 3;     
@@ -73,6 +75,13 @@ impl AdvancedTxDescriptor {
             TX_DTYP_ADV | // Advanced data descriptor
             buffer_length_in_bytes as u64 // length in bytes of data buffer
         );
+    }
+
+    #[inline(always)]
+    #[pure]
+    #[verified]
+    pub(crate) fn packet_address(&self) -> u64 {
+        self.buffer_addr.read()
     }
 
     pub fn descriptor_done(&self) -> bool {
@@ -106,10 +115,10 @@ pub struct AdvancedRxDescriptor {
 impl AdvancedRxDescriptor {
     #[inline(always)]
     #[verified]
-    #[ensures(self.packet_buffer_addr.read() == value(packet_buffer_address) as u64)]
+    #[ensures(self.packet_buffer_addr.read() == packet_buffer_address.value() as u64)]
     /// Descriptor Read mode
     pub(crate) fn set_packet_address(&mut self, packet_buffer_address: PhysicalAddress) {
-        self.packet_buffer_addr.write(value(packet_buffer_address) as u64);
+        self.packet_buffer_addr.write(packet_buffer_address.value() as u64);
         self.header_buffer_addr.write(0);
     }
 
