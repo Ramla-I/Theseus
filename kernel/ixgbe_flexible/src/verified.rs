@@ -191,7 +191,7 @@ fn calc_descriptor_rec(curr_desc: u16, add: u16, num_descs: u16) -> u16 {
 
 
 #[ensures(result.is_ok() ==> {
-    forall(|i: usize| 0 <= i && i < 128 ==> {
+    forall(|i: usize| i < 128 ==> {
         if i == peek_result(&result) {
             filters[i].is_some() && peek_option(&filters[i]) == new_filter
         } else {
@@ -201,19 +201,19 @@ fn calc_descriptor_rec(curr_desc: u16, add: u16, num_descs: u16) -> u16 {
 })]
 #[ensures(result.is_err() ==> {
     match peek_err(&result) {
-        FilterError::NoneAvailable => forall(|i: usize|( 0 <= i && i < 128 ==> filters[i].is_some())),
+        FilterError::NoneAvailable => forall(|i: usize|( i < 128 ==> filters[i].is_some())),
         FilterError::IdenticalFilter(idx) => filters[idx].is_some() && peek_option(&filters[idx]).parameters_equal(&new_filter),
-    } && forall(|i: usize|( 0 <= i && i < 128 ==> filters[i] == old(filters[i])))
+    } && forall(|i: usize|( i < 128 ==> filters[i] == old(filters[i])))
 })]
 pub(crate) fn check_and_add_filter(filters: &mut [Option<FilterParameters>; 128], new_filter: FilterParameters) -> Result<usize, FilterError> {
     let mut i = 0;
     let mut unused_filter = None ;
 
     while i < 128 {
-        body_invariant!(0 <= i && i < 128);
+        body_invariant!(i < 128);
         body_invariant!(unused_filter.is_some() ==> peek_option(&unused_filter) < filters.len());
-        body_invariant!(forall( |x: usize| 0 <= x && x < i ==> {filters[x].is_some() ==> !peek_option(&filters[x]).parameters_equal(&new_filter)}));
-        body_invariant!(unused_filter.is_none() ==> forall( |x: usize| 0 <= x && x < i ==> filters[x].is_some()));
+        body_invariant!(forall( |x: usize| x < i ==> {filters[x].is_some() ==> !peek_option(&filters[x]).parameters_equal(&new_filter)}));
+        body_invariant!(unused_filter.is_none() ==> forall( |x: usize| x < i ==> filters[x].is_some()));
 
         if filters[i].is_some() {
             if filters[i].unwrap().parameters_equal(&new_filter) {
