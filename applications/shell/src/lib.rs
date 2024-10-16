@@ -104,16 +104,16 @@ pub fn main(_args: Vec<String>) -> isize {
         };
     }
 
-    // Get path to application "hello" that we're going to spawn
-	let namespace = task::with_current_task(|t| t.get_namespace().clone())
-        .map_err(|_| "could not find the application namespace").unwrap();
-    let namespace_dir = namespace.dir();
-    let app_path = namespace_dir.get_file_starting_with("packet_forwarder_restricted-")
-        .map(|f| Path::new(f.lock().get_absolute_path()))
-        .ok_or("Could not find the application 'packet_forwarder_flexible'").unwrap();
+    // // Get path to application "hello" that we're going to spawn
+	// let namespace = task::with_current_task(|t| t.get_namespace().clone())
+    //     .map_err(|_| "could not find the application namespace").unwrap();
+    // let namespace_dir = namespace.dir();
+    // let app_path = namespace_dir.get_file_starting_with("packet_forwarder_restricted-")
+    //     .map(|f| Path::new(f.lock().get_absolute_path()))
+    //     .ok_or("Could not find the application 'packet_forwarder_flexible'").unwrap();
 
-    let _child = spawn::new_application_task_builder(app_path.clone(), None).unwrap()
-        .spawn().unwrap();
+    // let _child = spawn::new_application_task_builder(app_path.clone(), None).unwrap()
+    //     .spawn().unwrap();
 
     // block this task, because it never needs to actually run again
     task::with_current_task(|t| t.block())
