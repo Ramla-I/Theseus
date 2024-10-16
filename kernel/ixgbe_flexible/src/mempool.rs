@@ -16,6 +16,7 @@ use prusti_memory_buffer::{Buffer, BufferBackingStore, create_buffers_from_mp};
 use prusti_external_spec::vecdeque_wrapper::VecDequeWrapper;
 use static_assertions::const_assert_eq;
 use prusti_contracts::*;
+use alloc::collections::VecDeque;
 
 #[pure]
 #[trusted] // Can't detect that Buffer::deref() is pure
@@ -98,4 +99,8 @@ impl Mempool {
     // pub fn return_buffer(&mut self, buffer: PacketBuffer) {
     //     self.buffers.push(buffer);
     // }
+
+    pub fn append(&mut self, buffs: &mut VecDeque<PktBuff>) {
+        self.buffers.0.append(buffs)
+    }
 }

@@ -3,7 +3,7 @@
 
 extern crate alloc;
 
-use alloc::{vec::Vec, string::String};
+use alloc::{collections::VecDeque, string::String, vec::Vec};
 use ixgbe_flexible::{get_ixgbe_nics_list, IxgbeStats, mempool::PktBuff};
 use getopts::{Matches, Options};
 use hpet::get_hpet;
@@ -99,7 +99,7 @@ fn packet_forwarder(args: PacketForwarderArgs) {
         return;
     }
     let mut dev0 = ixgbe_devs[0].lock(); // To Do: Make this variable
-    let mut dev1 = ixgbe_devs[1].lock();
+    let mut dev1 = ixgbe_devs[2].lock();
     info!("Link speed: {} Mbps", dev0.link_speed() as usize);
     info!("Link speed: {} Mbps", dev1.link_speed() as usize);
 
@@ -137,8 +137,8 @@ fn packet_forwarder(args: PacketForwarderArgs) {
     let mut delta_hpet: u64;
 
     // store pkt buffs
-    let mut received_buffs0: Vec<PktBuff> = Vec::with_capacity(args.batch_size);
-    let mut received_buffs1: Vec<PktBuff> = Vec::with_capacity(args.batch_size);
+    let mut received_buffs0: VecDeque<PktBuff> = VecDeque::with_capacity(args.batch_size);
+    let mut received_buffs1: VecDeque<PktBuff> = VecDeque::with_capacity(args.batch_size);
 
     loop {
         if args.collect_stats && (iterations & 0xFFFF == 0){
@@ -168,10 +168,20 @@ fn packet_forwarder(args: PacketForwarderArgs) {
         }
 
         let rx0 = rxq0.receive_batch(&mut received_buffs0, args.batch_size);
+        for pkt in &mut received_buffs0 {
+            pkt.frame().src_addr = [0,0,0,0,0,0];
+            pkt.frame().dest_addr = [0,0,0,0,0,1];
+        }
         let tx1 = txq1.send_batch(args.batch_size, &mut received_buffs0, rxq0.mempool());
-        
+        rxq0.mempool().append(&mut received_buffs0);
+
         let rx1 = rxq1.receive_batch(&mut received_buffs1, args.batch_size);
+        for pkt in &mut received_buffs1 {
+            pkt.frame().src_addr = [0,0,0,0,0,0];
+            pkt.frame().dest_addr = [0,0,0,0,0,1];
+        }
         let tx0 = txq0.send_batch(args.batch_size, &mut received_buffs1, rxq1.mempool());
+        rxq1.mempool().append(&mut received_buffs1);
 
         // // Uncomment for a quick test to see if rx tx is still working after a change to the driver
         // let rx0 = rxq0.receive_batch(&mut received_buffs0, args.batch_size);

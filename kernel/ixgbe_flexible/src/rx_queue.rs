@@ -8,6 +8,7 @@ use crate::verified;
 use memory::{BorrowedSliceMappedPages, Mutable, DMA_FLAGS, create_contiguous_mapping};
 use core::convert::TryFrom;
 use alloc::vec::Vec;
+use alloc::collections::VecDeque;
 use core::marker::ConstParamTy;
 use log::error;
 use prusti_external_spec::vec_wrapper::VecWrapper;
@@ -51,7 +52,7 @@ pub struct RxQueue<const S: RxState> {
 
 impl RxQueue<{RxState::Enabled}> {
     pub(crate) fn new(mut regs: RxQueueRegisters, num_descs: NumDesc) -> Result<RxQueue<{RxState::Enabled}>, &'static str> {
-        let mut mempool = Mempool::new(num_descs as usize * 2)?;
+        let mut mempool = Mempool::new(num_descs as usize * 4)?;
 
         // create the descriptor ring
         let (descs_mapped_pages, descs_paddr) = create_contiguous_mapping(num_descs as usize * core::mem::size_of::<AdvancedRxDescriptor>(), DMA_FLAGS)?;
@@ -141,7 +142,7 @@ impl RxQueue<{RxState::Enabled}> {
     /// Returns the total number of received packets.
     #[inline(always)]
     #[cfg(not(verified))]
-    pub fn receive_batch(&mut self, buffers: &mut Vec<PktBuff>, batch_size: usize) -> u16 {
+    pub fn receive_batch(&mut self, buffers: &mut VecDeque<PktBuff>, batch_size: usize) -> u16 {
         let mut curr_desc = self.curr_desc;
         let mut prev_curr_desc = self.curr_desc;
 
@@ -169,7 +170,7 @@ impl RxQueue<{RxState::Enabled}> {
 
                 // unsafe{ core::arch::x86_64::_mm_prefetch(current_rx_buf.buffer.as_ptr() as *const i8, _MM_HINT_ET0);}
                 current_rx_buf.length = length as u16; // set the ReceiveBuffer's length to the size of the actual packet received
-                buffers.push(current_rx_buf);
+                buffers.push_back(current_rx_buf);
 
                 rcvd_pkts += 1;
                 prev_curr_desc = curr_desc;

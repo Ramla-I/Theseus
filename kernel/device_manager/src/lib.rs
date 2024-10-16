@@ -134,8 +134,8 @@ pub fn init(
 
                 continue;
             }
-            if dev.vendor_id() == ixgbe_restricted::INTEL_VEND && 
-                (dev.device_id() == ixgbe_restricted::INTEL_82599ES || dev.device_id() == ixgbe_restricted::INTEL_X520_DA2) 
+            if dev.vendor_id() == ixgbe_flexible::INTEL_VEND && 
+                (dev.device_id() == ixgbe_flexible::INTEL_82599ES || dev.device_id() == ixgbe_flexible::INTEL_X520_DA2) 
             {
                 info!("ixgbe PCI device found at: {:?}", dev);
                 
@@ -178,12 +178,12 @@ pub fn init(
 
     for pci_dev in ixgbe_pci_devs {
         let dev = pci::get_pci_device_bsf(pci_dev.bus(), pci_dev.slot(), pci_dev.function())?;
-        let ixgbe_nic = ixgbe_restricted::IxgbeNic::init(dev)?;
-        // let ixgbe_nic = ixgbe_flexible::IxgbeNic::init(dev, None)?;
+        // let ixgbe_nic = ixgbe_restricted::IxgbeNic::init(dev)?;
+        let ixgbe_nic = ixgbe_flexible::IxgbeNic::init(dev, None)?;
         ixgbe_devs.push(ixgbe_nic);
     }
     // Once all the NICs have been initialized, we can store them and add them to the list of network interfaces.
-    let _ixgbe_nics = ixgbe_restricted::IXGBE_NICS.call_once(|| ixgbe_devs);
+    let _ixgbe_nics = ixgbe_flexible::IXGBE_NICS.call_once(|| ixgbe_devs);
     // for ixgbe_nic_ref in ixgbe_nics.iter() {
     //     net::register_device(ixgbe_nic_ref);
     // }
