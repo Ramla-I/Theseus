@@ -24,6 +24,9 @@
 #![allow(incomplete_features)]
 #![feature(adt_const_params)]
 
+#[macro_use(consumes)]
+extern crate proc_static_assertions;
+
 extern crate alloc;
 #[cfg(test)]
 mod test;
@@ -414,6 +417,7 @@ impl FreeFrames {
     }
 
     /// Consumes this `Frames` in the `Free` state and converts them into the `Allocated` state.
+    #[consumes("mut self")]
     pub fn into_allocated_frames(mut self) -> AllocatedFrames {  
         let frames = core::mem::replace(&mut self.frames, FrameChunk::empty());  
         let af = Frames {
@@ -428,6 +432,7 @@ impl FreeFrames {
 impl AllocatedFrames {
     /// Consumes this `Frames` in the `Allocated` state and converts them into the `Mapped` state.
     /// This should only be called once a `MappedPages` has been created from the `Frames`.
+    #[consumes("mut self")]
     pub fn into_mapped_frames(mut self) -> MappedFrames {    
         let frames = core::mem::replace(&mut self.frames, FrameChunk::empty());  
         let mf = Frames {
@@ -453,6 +458,7 @@ impl AllocatedFrames {
 
 impl UnmappedFrames {
     /// Consumes this `Frames` in the `Unmapped` state and converts them into the `Allocated` state.
+    #[consumes("mut self")]
     pub fn into_allocated_frames(mut self) -> AllocatedFrames {    
         let frames = core::mem::replace(&mut self.frames, FrameChunk::empty());  
         let af = Frames {

@@ -17,3 +17,4 @@ kernel_config = { path = "../kernel_config" }
 memory_structs = { path = "../memory_structs" }
 prusti_frame_chunk = { path = "../prusti_frame_chunk" }
 prusti_representation_creator = { path = "../prusti_representation_creator" }
+proc_static_assertions = { git= "https://github.com/anton-mel/proc-assertions" }
