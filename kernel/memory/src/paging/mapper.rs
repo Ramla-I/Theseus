@@ -224,10 +224,10 @@ impl Mapper {
         ))
     }
     
-    #[consumes("AllocatedPages", "AllocatedFrames")]
     /// Maps the given virtual `AllocatedPages` to the given physical `AllocatedFrames`.
     /// 
     /// Consumes the given `AllocatedPages` and returns a `MappedPages` object which contains those `AllocatedPages`.
+    #[consumes("AllocatedPages", "AllocatedFrames")]
     pub fn map_allocated_pages_to<F: Into<PteFlagsArch>>(
         &mut self,
         pages: AllocatedPages,
@@ -249,6 +249,7 @@ impl Mapper {
     /// Maps the given `AllocatedPages` to randomly chosen (allocated) physical frames.
     /// 
     /// Consumes the given `AllocatedPages` and returns a `MappedPages` object which contains those `AllocatedPages`.
+    #[consumes("AllocatedPages")]
     pub fn map_allocated_pages<F: Into<PteFlagsArch>>(
         &mut self,
         pages: AllocatedPages,
