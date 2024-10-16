@@ -8,6 +8,7 @@ version = "0.1.0"
 spin = "0.9.4"
 intrusive-collections = "0.9.0"
 static_assertions = "1.1.0"
+proc_static_assertions = { git = "https://github.com/anton-mel/proc-assertions" }
 
 [dependencies.log]
 version = "0.4.8"

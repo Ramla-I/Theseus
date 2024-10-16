@@ -20,7 +20,6 @@
 #![feature(adt_const_params)]
 #![allow(incomplete_features)]
 
-
 extern crate alloc;
 #[macro_use] extern crate log;
 extern crate kernel_config;
@@ -30,6 +29,7 @@ extern crate spin;
 extern crate intrusive_collections;
 extern crate prusti_page_chunk;
 extern crate prusti_representation_creator;
+#[macro_use] extern crate proc_static_assertions;
 
 use intrusive_collections::Bound;
 use prusti_page_chunk::{PageChunk, PageChunkCreator};
@@ -214,7 +214,8 @@ impl FreePages {
     }
 
     /// Consumes this `Pages` in the `Free` state and converts them into the `Allocated` state.
-    pub fn into_allocated_pages(mut self) -> AllocatedPages {  
+    #[consumes("mut self")]
+	pub fn into_allocated_pages(mut self) -> AllocatedPages {  
         let pages = core::mem::replace(&mut self.pages, PageChunk::empty());  
         let f = Pages {
             pages
@@ -227,7 +228,8 @@ impl FreePages {
 impl AllocatedPages {
     /// Consumes this `Frames` in the `Allocated` state and converts them into the `Mapped` state.
     /// This should only be called once a `MappedPages` has been created from the `Frames`.
-    pub fn into_mapped_pages(mut self) -> PagesMapped {    
+    #[consumes("mut self")]
+	pub fn into_mapped_pages(mut self) -> PagesMapped {    
         let pages = core::mem::replace(&mut self.pages, PageChunk::empty());  
         let f = Pages {
             pages
@@ -239,7 +241,8 @@ impl AllocatedPages {
 
 impl UnmappedPages {
     /// Consumes this `Frames` in the `Unmapped` state and converts them into the `Allocated` state.
-    pub fn into_allocated_pages(mut self) -> AllocatedPages {    
+    #[consumes("mut self")]
+	pub fn into_allocated_pages(mut self) -> AllocatedPages {    
         let pages = core::mem::replace(&mut self.pages, PageChunk::empty());  
         let f = Pages {
             pages
@@ -251,7 +254,8 @@ impl UnmappedPages {
 
 impl PagesMapped {
     /// Consumes this `Frames` in the `Unmapped` state and converts them into the `Allocated` state.
-    pub fn into_unmapped_pages(mut self) -> UnmappedPages {    
+    #[consumes("mut self")]
+	pub fn into_unmapped_pages(mut self) -> UnmappedPages {    
         let pages = core::mem::replace(&mut self.pages, PageChunk::empty());  
         let f = Pages {
             pages
