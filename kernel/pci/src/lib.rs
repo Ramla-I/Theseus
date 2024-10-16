@@ -250,20 +250,22 @@ pub fn get_pci_buses() -> Result<&'static Mutex<Vec<PciBus>>, &'static str> {
 /// If the PCI bus hasn't been initialized, this initializes the PCI bus & scans it to enumerates devices.
 pub fn get_pci_device_bsf(bus: u8, slot: u8, func: u8) -> Result<PciDevice, &'static str> {
     let mut pci_buses = get_pci_buses()?.lock();
-    let mut index = None;
+    let mut device_index = None;
+    let mut bus_index = None;
 
-    for b in &*pci_buses {
+    for (id_bus, b) in pci_buses.iter().enumerate() {
         if b.bus_number == bus {
-            for (idx, d) in b.devices.iter().enumerate() {
+            bus_index = Some(id_bus);
+            for (id_device, d) in b.devices.iter().enumerate() {
                 if d.slot == slot && d.func == func {
-                    index = Some(idx);
+                    device_index = Some(id_device);
                 }
             }
         }
     }
 
-    if let Some(idx) = index {
-        Ok(pci_buses[bus as usize].devices.swap_remove(idx))
+    if let Some(idx) = device_index {
+        Ok(pci_buses[bus_index.unwrap() as usize].devices.swap_remove(idx))
     } else {
         Err("The PCI device with the given location is not available")
     }
