@@ -135,9 +135,6 @@ fn packet_forwarder(mut args: PacketForwarderArgs) {
     let mut iterations = 0;
     let mut start_hpet: u64 = hpet.get_counter();
     let mut delta_hpet: u64;
-    
-    // Uncomment this line for a simple test after a change
-    args.collect_stats = true;
 
     loop {
         if args.collect_stats && (iterations & 0xFFFF == 0){
