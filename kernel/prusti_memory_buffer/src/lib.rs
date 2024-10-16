@@ -3,6 +3,9 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
 
+#[macro_use(private_fields)]
+extern crate proc_static_assertions;
+
 use memory::MappedPages;
 use memory_structs::VirtualAddress;
 use core::ptr::Unique;
@@ -72,6 +75,8 @@ pub fn create_buffers_from_mp<T>(mp: MappedPages, num_buffers: usize) -> Result<
         buffers: buffers,
     })
 }
+
+#[private_fields("mp")] 
 pub struct BufferBackingStore<T> {
     mp: MappedPages,
     num_buffers: usize,
@@ -94,6 +99,7 @@ impl<T> Drop for BufferBackingStore<T> {
     }
 }
 
+#[private_fields("0")]
 pub struct Buffer<T>(Unique<T>);
 impl<T> Deref for Buffer<T> {
     type Target = T;

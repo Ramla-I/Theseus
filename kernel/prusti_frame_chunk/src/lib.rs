@@ -2,6 +2,9 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
+#[macro_use(private_fields)]
+extern crate proc_static_assertions;
+
 use memory_structs::{Frame, FrameRange};
 
 use prusti_representation_creator::RepresentationCreator;
@@ -10,6 +13,7 @@ use core::ops::{Deref, DerefMut};
 use kernel_config::memory::{MAX_PAGE_NUMBER, MIN_PAGE_NUMBER};
 use range_inclusive::*;
 use prusti_contracts::*;
+
 
 static INIT: spin::Once<bool> = spin::Once::new();
 

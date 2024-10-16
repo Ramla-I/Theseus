@@ -1201,6 +1201,7 @@ dependencies = [
  "kernel_config",
  "log",
  "memory_structs",
+ "proc_static_assertions",
  "prusti_frame_chunk",
  "prusti_representation_creator",
  "range_inclusive",
@@ -2676,6 +2677,7 @@ dependencies = [
  "kernel_config",
  "log",
  "memory_structs",
+ "proc_static_assertions",
  "prusti_page_chunk",
  "prusti_representation_creator",
  "spin 0.9.4",
@@ -2768,6 +2770,7 @@ dependencies = [
  "log",
  "memory",
  "port_io",
+ "proc_static_assertions",
  "prusti-contracts",
  "prusti_external_spec",
  "prusti_representation_creator",
@@ -2960,7 +2963,7 @@ dependencies = [
 [[package]]
 name = "proc_static_assertions"
 version = "0.0.0"
-source = "git+https://github.com/ramla-i/proc-assertions#84ef8aa535e7a2da1d46d26a285587ec841e805c"
+source = "git+https://github.com/anton-mel/proc-assertions#f530750f4156f74f1fcb54bd4a3d78ac53c9d734"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2990,6 +2993,7 @@ dependencies = [
  "log",
  "memory",
  "memory_structs",
+ "proc_static_assertions",
  "prusti-contracts",
  "prusti_external_spec",
  "zerocopy",
@@ -3008,6 +3012,7 @@ version = "0.1.0"
 dependencies = [
  "kernel_config",
  "memory_structs",
+ "proc_static_assertions",
  "prusti-contracts",
  "prusti_external_spec",
  "prusti_representation_creator",
@@ -3023,6 +3028,7 @@ dependencies = [
  "log",
  "memory",
  "memory_structs",
+ "proc_static_assertions",
  "prusti-contracts",
  "prusti_external_spec",
  "prusti_representation_creator",
@@ -3034,6 +3040,7 @@ version = "0.1.0"
 dependencies = [
  "kernel_config",
  "memory_structs",
+ "proc_static_assertions",
  "prusti-contracts",
  "prusti_external_spec",
  "prusti_representation_creator",

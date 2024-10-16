@@ -2,6 +2,9 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
+#[macro_use(private_fields)] 
+extern crate proc_static_assertions;
+
 use prusti_contracts::*;
 use memory_structs::{Page, PageRange};
 use prusti_representation_creator::RepresentationCreator;
@@ -35,6 +38,7 @@ impl DerefMut for PageChunkCreator {
 /// A struct representing an unallocated region in memory.
 /// Its functions are formally verified to prevent range overlaps between chunks.
 #[derive(PartialEq, Eq)]
+#[private_fields("pages")]
 pub struct PageChunk {
     pages: PageRange
 }

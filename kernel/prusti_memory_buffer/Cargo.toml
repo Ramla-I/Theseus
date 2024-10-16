@@ -6,6 +6,7 @@ authors = ["Ramla <ijazramla@gmail.com>"]
 edition = "2021"
 
 [dependencies]
+proc_static_assertions = { git = "https://github.com/anton-mel/proc-assertions" }
 prusti-contracts = "0.2"
 
 [dependencies.log]

@@ -14,7 +14,7 @@ prusti_representation_creator = { path = "../prusti_representation_creator" }
 memory_structs = { path = "../memory_structs" }
 kernel_config = { path = "../kernel_config" }
 range_inclusive = {path = "../../libs/range_inclusive" }
-
+proc_static_assertions = { git= "https://github.com/anton-mel/proc-assertions" }
 
 [lib]
 crate-type = ["rlib"]

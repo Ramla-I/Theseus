@@ -2,6 +2,8 @@
 #![feature(ptr_internals)]
 #![allow(dead_code)]
 
+#[macro_use(private_fields)]
+extern crate proc_static_assertions;
 extern crate alloc;
 pub mod verified;
 
@@ -23,6 +25,7 @@ use alloc::sync::Arc;
 /// ## Drop behavior
 /// * When dropped, the borrow ends and the contained `Arc<MappedPages>` is dropped.
 
+#[private_fields("ptr", "mp")]
 pub struct BorrowedSharedMappedPages<T>
 where
     T: FromBytes,

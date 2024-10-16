@@ -9,6 +9,8 @@
 #![feature(rustc_private)]
 
 extern crate alloc;
+#[macro_use(private_fields)]
+extern crate proc_static_assertions;
 
 use prusti_contracts::*;
 use core::mem::size_of;
@@ -641,6 +643,7 @@ impl fmt::Debug for PciLocation {
 /// For more, see [this partial table](http://wiki.osdev.org/PCI#Class_Codes)
 /// of `class`, `subclass`, and `prog_if` codes, 
 #[cfg_attr(not(prusti),derive(Debug))]
+#[private_fields("location")]
 pub struct PciDevice {
     /// the bus, slot, and function number that locates this PCI device in the bus tree.
     location: PciLocation,
