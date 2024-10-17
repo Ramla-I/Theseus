@@ -1,0 +1,5 @@
+[package]
+authors = ["Ramla Ijaz <ijazramla@gmail.com>"]
+name = "assert_fields_type"
+description = "Assertion which checks that a field of a struct has the given type. We should try to merge this in to the static_assertions crate"
+version = "0.1.0"
