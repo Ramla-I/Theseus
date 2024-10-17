@@ -1,8 +1,11 @@
 // To Do: test the state transition functions
 
+extern crate assert_fields_type;
+
 use memory::{create_contiguous_mapping, BorrowedMappedPages, BorrowedSliceMappedPages, Mutable, DMA_FLAGS};
 use crate::hal::{*, regs::{TDHSet, ReportStatusBit}, descriptors::AdvancedTxDescriptor, transmit_head_wb::TransmitHead};
 use crate::queue_registers::TxQueueRegisters;
+use assert_fields_type::assert_fields_type;
 use crate::mempool::{Mempool, PktBuff};
 use crate::verified;
 use alloc::vec::Vec;
@@ -43,6 +46,9 @@ pub struct TxQueue<const S: TxState> {
     /// descriptor write back address
     head_wb: BorrowedMappedPages<TransmitHead, Mutable>,
 }
+
+
+assert_fields_type!(TxQueueE: regs:TxQueueRegisters, buffs_in_use: VecWrapper<PktBuff>, desc_ring: BorrowedSliceMappedPages<AdvancedTxDescriptor, Mutable>);
 
 impl TxQueue<{TxState::Enabled}> {
     pub(crate) fn new(mut regs: TxQueueRegisters, num_descs: NumDesc) -> Result<(TxQueue<{TxState::Enabled}>, TDHSet), &'static str> {

@@ -1,7 +1,10 @@
 // To Do: test the state transition functions
 
+extern crate assert_fields_type;
+
 use crate::hal::{*, descriptors::AdvancedRxDescriptor, regs::IntelIxgbeRegisters3};
 use crate::queue_registers::RxQueueRegisters;
+use assert_fields_type::assert_fields_type;
 use crate::mempool::*;
 use crate::{FilterParameters, FilterError};
 use crate::verified;
@@ -48,6 +51,8 @@ pub struct RxQueue<const S: RxState> {
     filter_id: Option<L5FilterID>
 }
 
+
+assert_fields_type!(RxQueueE: regs:RxQueueRegisters, buffs_in_use: VecWrapper<PktBuff>, desc_ring: BorrowedSliceMappedPages<AdvancedRxDescriptor, Mutable>);
 
 impl RxQueue<{RxState::Enabled}> {
     pub(crate) fn new(mut regs: RxQueueRegisters, num_descs: NumDesc) -> Result<RxQueue<{RxState::Enabled}>, &'static str> {

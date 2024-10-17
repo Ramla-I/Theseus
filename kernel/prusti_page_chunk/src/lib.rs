@@ -7,6 +7,7 @@ extern crate proc_static_assertions;
 
 use prusti_contracts::*;
 use memory_structs::{Page, PageRange};
+use static_assertions::assert_not_impl_any;
 use prusti_representation_creator::RepresentationCreator;
 use prusti_external_spec::{trusted_option::*,trusted_result::*};
 use core::ops::{Deref, DerefMut};
@@ -43,6 +44,8 @@ pub struct PageChunk {
     pages: PageRange
 }
 
+
+assert_not_impl_any!(PageChunk: DerefMut, Clone);
 
 impl PageChunk {
     #[pure]

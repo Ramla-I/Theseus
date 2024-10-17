@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 proc_static_assertions = { git = "https://github.com/anton-mel/proc-assertions" }
+assert_fields_type = { path = "../../libs/assert_fields_type" }
 prusti-contracts = "0.2"
 
 [dependencies.log]

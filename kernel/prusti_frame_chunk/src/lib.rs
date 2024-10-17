@@ -6,6 +6,7 @@
 extern crate proc_static_assertions;
 
 use memory_structs::{Frame, FrameRange};
+use static_assertions::assert_not_impl_any;
 
 use prusti_representation_creator::RepresentationCreator;
 use prusti_external_spec::{trusted_option::*,trusted_result::*};
@@ -63,6 +64,8 @@ pub struct FrameChunk {
     frames: FrameRange
 }
 
+
+assert_not_impl_any!(FrameChunk: DerefMut, Clone);
 
 impl FrameChunk {
     #[pure]

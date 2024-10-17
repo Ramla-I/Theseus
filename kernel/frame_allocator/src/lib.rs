@@ -42,6 +42,7 @@ use memory_structs::{PhysicalAddress, Frame, FrameRange, MemoryState};
 use spin::Mutex;
 use static_array_rb_tree::*;
 use static_assertions::assert_not_impl_any;
+use assert_fields_type::assert_fields_type;
 use prusti_frame_chunk::{FrameChunk, FrameChunkCreator};
 use prusti_representation_creator::RepresentationCreationError;
 
@@ -391,6 +392,11 @@ assert_not_impl_any!(Frames<{MemoryState::Free}>: DerefMut, Clone);
 assert_not_impl_any!(Frames<{MemoryState::Allocated}>: DerefMut, Clone);
 assert_not_impl_any!(Frames<{MemoryState::Mapped}>: DerefMut, Clone);
 assert_not_impl_any!(Frames<{MemoryState::Unmapped}>: DerefMut, Clone);
+
+assert_fields_type!(Frames<{MemoryState::Free}>: frames: FrameChunk);
+assert_fields_type!(Frames<{MemoryState::Allocated}>: frames: FrameChunk);
+assert_fields_type!(Frames<{MemoryState::Mapped}>: frames: FrameChunk);
+assert_fields_type!(Frames<{MemoryState::Unmapped}>: frames: FrameChunk);
 
 
 impl FreeFrames {

@@ -23,6 +23,7 @@
 extern crate alloc;
 #[macro_use] extern crate log;
 extern crate kernel_config;
+extern crate assert_fields_type;
 extern crate memory_structs;
 extern crate spin;
 #[macro_use] extern crate static_assertions;
@@ -41,6 +42,7 @@ mod static_array_rb_tree;
 use core::{borrow::Borrow, cmp::{Ordering, max, min}, fmt, ops::{Deref, DerefMut}};
 use kernel_config::memory::*;
 use memory_structs::{VirtualAddress, Page, PageRange, MemoryState};
+use assert_fields_type::assert_fields_type;
 use spin::{Mutex, Once};
 use static_array_rb_tree::*;
 
@@ -189,6 +191,11 @@ assert_not_impl_any!(Pages<{MemoryState::Free}>: DerefMut, Clone);
 assert_not_impl_any!(Pages<{MemoryState::Allocated}>: DerefMut, Clone);
 assert_not_impl_any!(Pages<{MemoryState::Mapped}>: DerefMut, Clone);
 assert_not_impl_any!(Pages<{MemoryState::Unmapped}>: DerefMut, Clone);
+
+assert_fields_type!(Pages<{MemoryState::Free}>: pages: PageChunk);
+assert_fields_type!(Pages<{MemoryState::Allocated}>: pages: PageChunk);
+assert_fields_type!(Pages<{MemoryState::Mapped}>: pages: PageChunk);
+assert_fields_type!(Pages<{MemoryState::Unmapped}>: pages: PageChunk);
 
 
 impl FreePages {

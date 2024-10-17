@@ -13,6 +13,7 @@
 extern crate alloc;
 use prusti_contracts::*;
 use crate::hal::{QueueID, L5FilterPriority, L5FilterProtocol};
+use assert_fields_type::assert_fields_type;
 
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub struct FilterParameters {
@@ -150,6 +151,8 @@ pub struct IxgbeNic {
     tx_queues: Vec<TxQueueE>,
     tx_queues_disabled: Vec<TxQueueD>,
 }
+
+assert_fields_type!(IxgbeNic: pci_dev:PciDevice, regs: IxgbeRegisters, rx_queues: Vec<RxQueueE>, tx_queues: Vec<TxQueueE>);
 
 impl IxgbeNic {
     /// Store required values from the device's PCI config space, and initialize different features of the nic.

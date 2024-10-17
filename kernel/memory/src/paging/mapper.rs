@@ -29,6 +29,7 @@ use zerocopy::FromBytes;
 use page_table_entry::UnmapResult;
 use owned_borrowed_trait::{OwnedOrBorrowed, Owned, Borrowed};
 use prusti_contracts::*;
+use assert_fields_type::assert_fields_type;
 use proc_static_assertions::consumes;
 
 #[cfg(target_arch = "x86_64")]
@@ -339,7 +340,10 @@ pub struct MappedPages {
     // The PTE flags that define the page permissions of this mapping.
     flags: PteFlagsArch,
 }
+
 static_assertions::assert_not_impl_any!(MappedPages: DerefMut, Clone);
+assert_fields_type!(MappedPages: pages: AllocatedPages);
+
 impl Deref for MappedPages {
     type Target = AllocatedPages;
     fn deref(&self) -> &AllocatedPages {

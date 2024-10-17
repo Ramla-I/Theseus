@@ -2,13 +2,15 @@
 #![feature(ptr_internals)]
 #![allow(dead_code)]
 
-#[macro_use(private_fields)]
+extern crate assert_fields_type;
 extern crate proc_static_assertions;
 extern crate alloc;
 pub mod verified;
 
 use memory::MappedPages;
 use core::ptr::Unique;
+use proc_static_assertions::private_fields;
+// use assert_fields_type::assert_fields_type;
 use core::ops::{DerefMut, Deref};
 use core::cmp::Ordering;
 use prusti_contracts::*;
@@ -34,13 +36,15 @@ where
     mp: Arc<MappedPages>,
 }
 
+// assert_fields_type!(BorrowedSharedMappedPages: mp: Arc<MappedPages>);
+
 impl<T: FromBytes> BorrowedSharedMappedPages<T> {
     /// Consumes this object and returns the inner `MappedPages` value
     /// (more specifically, the `Borrow`-able container holding the `MappedPages`).
     pub fn into_inner(self) -> Arc<MappedPages> {
         self.mp
     }
-
+    
     /// Returns a reference to the inner `MappedPages` value
     /// (more specifically, the `Borrow`-able container holding the `MappedPages`).
     pub fn inner_ref(&self) -> &Arc<MappedPages> {

@@ -14,6 +14,7 @@
 #![feature(ptr_internals)]
 
 extern crate alloc;
+extern crate assert_fields_type;
 mod paging;
 pub use self::paging::{
     PageTable, Mapper, Mutability, Mutable, Immutable,

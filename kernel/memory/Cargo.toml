@@ -29,7 +29,9 @@ owned_borrowed_trait = { path = "../../libs/owned_borrowed_trait" }
 sync_irq = { path = "../../libs/sync_irq" }
 frame_range_callbacks = { path = "../frame_range_callbacks" }
 prusti_external_spec = { path = "../prusti_external_spec" }
-proc_static_assertions = {git = "https://github.com/anton-mel/proc-assertions" }
+
+assert_fields_type = { path = "../../libs/assert_fields_type" }
+proc_static_assertions = { git = "https://github.com/anton-mel/proc-assertions" }
 
 [target.'cfg(not(prusti))'.dependencies]
 
