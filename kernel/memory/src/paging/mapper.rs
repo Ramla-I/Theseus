@@ -27,6 +27,7 @@ use kernel_config::memory::PAGE_SIZE;
 use super::tlb_flush_virt_addr;
 use zerocopy::FromBytes;
 use page_table_entry::UnmapResult;
+use proc_static_assertions::nomutates;
 use owned_borrowed_trait::{OwnedOrBorrowed, Owned, Borrowed};
 use prusti_contracts::*;
 use assert_fields_type::assert_fields_type;
@@ -1013,6 +1014,7 @@ impl<T: FromBytes, M: Mutability, B: Borrow<MappedPages>> Deref for BorrowedMapp
 }
 /// Only [`Mutable`] [`BorrowedMappedPages`] can deref into `&mut T`.
 impl<T: FromBytes, B: BorrowMut<MappedPages>> DerefMut for BorrowedMappedPages<T, Mutable, B> {
+    #[nomutates(BorrowedMappedPages: ("ptr", "mp"))]
     fn deref_mut(&mut self) -> &mut T {
         // SAFETY:
         // ✅ Same as the above `Deref` block, plus:
@@ -1026,6 +1028,7 @@ impl<T: FromBytes, M: Mutability, B: Borrow<MappedPages>> AsRef<T> for BorrowedM
 }
 /// Only [`Mutable`] [`BorrowedMappedPages`] implement `AsMut<T>`.
 impl<T: FromBytes, B: BorrowMut<MappedPages>> AsMut<T> for BorrowedMappedPages<T, Mutable, B> {
+    #[nomutates(BorrowedMappedPages: ("ptr", "mp"))]
     fn as_mut(&mut self) -> &mut T { self.deref_mut() }
 }
 /// Both [`Mutable`] and [`Immutable`] [`BorrowedMappedPages`] implement `Borrow<T>`.
@@ -1034,6 +1037,7 @@ impl<T: FromBytes, M: Mutability, B: Borrow<MappedPages>> Borrow<T> for Borrowed
 }
 /// Only [`Mutable`] [`BorrowedMappedPages`] implement `BorrowMut<T>`.
 impl<T: FromBytes, B: BorrowMut<MappedPages>> BorrowMut<T> for BorrowedMappedPages<T, Mutable, B> {
+    #[nomutates(BorrowedMappedPages: ("ptr", "mp"))]
     fn borrow_mut(&mut self) -> &mut T { self.deref_mut() }
 }
 
@@ -1169,6 +1173,7 @@ impl<T: FromBytes, M: Mutability, B: Borrow<MappedPages>> Deref for BorrowedSlic
 }
 /// Only [`Mutable`] [`BorrowedSliceMappedPages`] can deref into `&mut T`.
 impl<T: FromBytes, B: BorrowMut<MappedPages>> DerefMut for BorrowedSliceMappedPages<T, Mutable, B> {
+    #[nomutates(BorrowedMappedPages: ("ptr", "mp"))]
     fn deref_mut(&mut self) -> &mut [T] {
         // SAFETY:
         // ✅ Same as the above `Deref` block, plus:
@@ -1183,6 +1188,7 @@ impl<T: FromBytes, M: Mutability, B: Borrow<MappedPages>> AsRef<[T]> for Borrowe
 }
 /// Only [`Mutable`] [`BorrowedSliceMappedPages`] implement `AsMut<T>`.
 impl<T: FromBytes, B: BorrowMut<MappedPages>> AsMut<[T]> for BorrowedSliceMappedPages<T, Mutable, B> {
+    #[nomutates(BorrowedMappedPages: ("ptr", "mp"))]
     fn as_mut(&mut self) -> &mut [T] { self.deref_mut() }
 }
 /// Both [`Mutable`] and [`Immutable`] [`BorrowedSliceMappedPages`] implement `Borrow<T>`.
@@ -1191,6 +1197,7 @@ impl<T: FromBytes, M: Mutability, B: Borrow<MappedPages>> Borrow<[T]> for Borrow
 }
 /// Only [`Mutable`] [`BorrowedSliceMappedPages`] implement `BorrowMut<T>`.
 impl<T: FromBytes, B: BorrowMut<MappedPages>> BorrowMut<[T]> for BorrowedSliceMappedPages<T, Mutable, B> {
+    #[nomutates(BorrowedMappedPages: ("ptr", "mp"))]
     fn borrow_mut(&mut self) -> &mut [T] { self.deref_mut() }
 }
 

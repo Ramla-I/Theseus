@@ -9,7 +9,7 @@ pub mod verified;
 
 use memory::MappedPages;
 use core::ptr::Unique;
-use proc_static_assertions::private_fields;
+use proc_static_assertions::{private_fields, nomutates};
 // use assert_fields_type::assert_fields_type;
 use core::ops::{DerefMut, Deref};
 use core::cmp::Ordering;
@@ -54,6 +54,7 @@ impl<T: FromBytes> BorrowedSharedMappedPages<T> {
 
 impl<T: FromBytes> Deref for BorrowedSharedMappedPages<T> {
     type Target = T;
+    #[nomutates(BorrowedSharedMappedPages: ("ptr", "mp"))]
     fn deref(&self) -> &T {
         // SAFETY:
         // ✅ The pointer is properly aligned; its alignment has been checked in `MappedPages::as_type()`.
@@ -79,6 +80,7 @@ impl<T: FromBytes> AsRef<T> for BorrowedSharedMappedPages<T> {
 }
 
 impl<T: FromBytes> AsMut<T> for BorrowedSharedMappedPages<T> {
+    #[nomutates(BorrowedSharedMappedPages: ("ptr", "mp"))]
     fn as_mut(&mut self) -> &mut T { self.deref_mut() }
 }
 

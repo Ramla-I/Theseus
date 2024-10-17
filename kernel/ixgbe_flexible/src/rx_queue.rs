@@ -9,6 +9,7 @@ use crate::mempool::*;
 use crate::{FilterParameters, FilterError};
 use crate::verified;
 use memory::{BorrowedSliceMappedPages, Mutable, DMA_FLAGS, create_contiguous_mapping};
+use proc_static_assertions::{nomutates, consumes};
 use core::convert::TryFrom;
 use alloc::vec::Vec;
 use core::marker::ConstParamTy;
@@ -55,6 +56,7 @@ pub struct RxQueue<const S: RxState> {
 assert_fields_type!(RxQueueE: regs:RxQueueRegisters, buffs_in_use: VecWrapper<PktBuff>, desc_ring: BorrowedSliceMappedPages<AdvancedRxDescriptor, Mutable>);
 
 impl RxQueue<{RxState::Enabled}> {
+    #[nomutates(RxQueue: ("curr_desc"))]
     pub(crate) fn new(mut regs: RxQueueRegisters, num_descs: NumDesc) -> Result<RxQueue<{RxState::Enabled}>, &'static str> {
         let mut mempool = Mempool::new(num_descs as usize * 2)?;
 
@@ -116,6 +118,8 @@ impl RxQueue<{RxState::Enabled}> {
     }
 
     // To Do: wait until all descriptors are written back
+    #[consumes("mut self")]
+    #[nomutates(RxQueue: ("curr_desc"))]
     pub fn disable(mut self) -> RxQueueD {
         self.regs.rxdctl_rxq_disable();
         self.buffs_in_use.0.clear();
@@ -193,10 +197,13 @@ impl RxQueue<{RxState::Enabled}> {
         rcvd_pkts
     }
 
+    #[nomutates(RxQueue: ("curr_desc"))]
     pub fn mempool(&mut self) -> &mut Mempool {
         &mut self.mempool
     }
 
+    #[consumes("self")]
+    #[nomutates(RxQueue: ("curr_desc"))]
     pub(crate) fn add_filter(
         self, 
         fp: FilterParameters,
@@ -281,6 +288,8 @@ impl RxQueue<{RxState::Enabled}> {
 
     /// This function personally doesn't change anything about the queue except its state, since all steps to 
     /// start RSS have to be done at the device level and not at the queue level.
+    #[consumes("self")]
+    #[nomutates(RxQueue: ("curr_desc"))]
     pub(crate) fn add_to_reta(self) -> RxQueue<{RxState::RSS}> {
         RxQueue { ..self }
     }
@@ -290,6 +299,8 @@ impl RxQueue<{RxState::L3L4Filter}> {
     /// Right now we restrict each queue to be used for only one filter,
     /// so disabling the filter returns it to an enabled state, but we could always add
     /// and add_filter method here.
+    #[consumes("self")]
+    #[nomutates(RxQueue: ("curr_desc"))]
     pub(crate) fn disable_filter(self, enabled_filters: &mut [Option<FilterParameters>; 128], regs3: &mut IntelIxgbeRegisters3) -> RxQueue<{RxState::Enabled}> {
         let filter_num = self.filter_id.unwrap(); // We can unwrap here because created a RxQueue<L5Filter> always sets the filter_num.
         regs3.ftqf_disable_filter(filter_num); // disables filter by setting enable bit to 0
@@ -303,6 +314,7 @@ impl RxQueue<{RxState::L3L4Filter}> {
     /// Returns the total number of received packets.
     #[inline(always)]
     #[cfg(verified)]
+    #[nomutates(RxQueue: ("curr_desc"))]
     pub fn receive_batch(&mut self, buffers: &mut VecWrapper<PktBuff>, batch_size: usize) -> u16 {
         let (rcvd_pkts, rdt) = verified::receive(
             &mut self.curr_desc, 
@@ -343,6 +355,7 @@ impl RxQueue<{RxState::RSS}> {
 }
 
 impl RxQueue<{RxState::Disabled}> {
+    #[consumes("mut self")]
     pub fn enable(mut self) -> Result<RxQueueE, &'static str> {
         self.curr_desc = 0;
 

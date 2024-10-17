@@ -11,6 +11,7 @@ use memory_structs::VirtualAddress;
 use core::ptr::Unique;
 use core::ops::{DerefMut, Deref};
 use prusti_contracts::*;
+use proc_static_assertions::nomutates;
 use prusti_external_spec::{vecdeque_wrapper::*, trusted_result::*};
 use log::warn;
 
@@ -109,6 +110,7 @@ impl<T> Deref for Buffer<T> {
 }
 
 impl<T> DerefMut for Buffer<T> {
+    #[nomutates(Buffer: ("0"))]
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe{ self.0.as_mut() }
     }

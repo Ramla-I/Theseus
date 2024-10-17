@@ -10,6 +10,7 @@ use crate::mempool::{Mempool, PktBuff};
 use crate::verified;
 use alloc::vec::Vec;
 use core::marker::ConstParamTy;
+use proc_static_assertions::{nomutates, consumes};
 use prusti_external_spec::vec_wrapper::VecWrapper;
 
 #[derive(PartialEq, Eq)]
@@ -51,6 +52,7 @@ pub struct TxQueue<const S: TxState> {
 assert_fields_type!(TxQueueE: regs:TxQueueRegisters, buffs_in_use: VecWrapper<PktBuff>, desc_ring: BorrowedSliceMappedPages<AdvancedTxDescriptor, Mutable>);
 
 impl TxQueue<{TxState::Enabled}> {
+    #[nomutates(TxQueue: ("curr_desc"))]
     pub(crate) fn new(mut regs: TxQueueRegisters, num_descs: NumDesc) -> Result<(TxQueue<{TxState::Enabled}>, TDHSet), &'static str> {
         // create the descriptor ring
         let (descs_mapped_pages, descs_paddr) = create_contiguous_mapping(num_descs as usize * core::mem::size_of::<AdvancedTxDescriptor>(), DMA_FLAGS)?;
@@ -94,6 +96,8 @@ impl TxQueue<{TxState::Enabled}> {
     }
 
     // To Do: wait until all descriptors are written back (check head writeback)
+    #[consumes("mut self")]
+    #[nomutates(TxQueue: ("curr_desc"))]
     pub fn disable(mut self) -> TxQueueD {
         self.regs.txdctl_txq_disable();
         self.buffs_in_use.0.clear();
@@ -163,6 +167,7 @@ impl TxQueue<{TxState::Enabled}> {
 
     /// Removes sent packets from the descriptor ring.    
     #[inline(always)]
+    #[nomutates(TxQueue: ("curr_desc"))]
     fn tx_clean(&mut self, pool: &mut Mempool)  {
         const TX_CLEAN_BATCH: u16 = 64;
         let head = self.head_wb.value() as u16;
@@ -184,6 +189,7 @@ impl TxQueue<{TxState::Enabled}> {
 
 
 impl TxQueue<{TxState::Disabled}> {
+    #[consumes("mut self")]
     pub fn enable(mut self) -> TxQueueE {
         self.tx_clean = 0;
         self.curr_desc = 0;

@@ -11,6 +11,7 @@ use static_assertions::assert_not_impl_any;
 use prusti_representation_creator::RepresentationCreator;
 use prusti_external_spec::{trusted_option::*,trusted_result::*};
 use core::ops::{Deref, DerefMut};
+use proc_static_assertions::consumes;
 use kernel_config::memory::{MAX_PAGE_NUMBER, MIN_PAGE_NUMBER};
 use range_inclusive::*;
 
@@ -117,6 +118,7 @@ impl PageChunk {
         let orig_range = peek_err_ref(&result);
         (orig_range.start_page() == self.start_page()) && (orig_range.end_page() == self.end_page())
     })]
+    #[consumes("self")]
     pub fn split_range(self, pages_to_extract: PageRange) -> Result<(Option<PageChunk>, PageChunk, Option<PageChunk>), PageChunk> {
         
         let (before, start_to_end, after) = match self.pages.split_range(pages_to_extract) {
@@ -181,6 +183,7 @@ impl PageChunk {
         let orig_chunk = peek_err_ref(&result);
         (orig_chunk.start_page() == self.start_page()) && (orig_chunk.end_page() == self.end_page())
     })]
+    #[consumes("self")]
     pub fn split_at(self, at_page: Page) -> Result<(PageChunk, PageChunk), PageChunk> {
 
         let (first, second) = match self.pages.split_at(at_page) {
@@ -212,6 +215,7 @@ impl PageChunk {
     #[ensures(result.is_err() ==> {
         (self.start_page() == old(self.start_page())) && (self.end_page() == old(self.end_page())) 
     })]
+    #[consumes("PageChunk")]
     pub fn merge(&mut self, other: PageChunk) -> Result<(), PageChunk> {
         if self.pages.merge(other.pages).is_ok() {
             core::mem::forget(other);

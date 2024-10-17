@@ -9,7 +9,7 @@
 #![feature(rustc_private)]
 
 extern crate alloc;
-#[macro_use(private_fields)]
+#[macro_use(private_fields, nomutates)]
 extern crate proc_static_assertions;
 
 use prusti_contracts::*;
@@ -976,6 +976,7 @@ impl Deref for PciDevice {
 }
 
 impl Drop for PciDevice {
+    #[nomutates(PciDevice: ("location"))]
     fn drop(&mut self) {
         let pci_bus = &mut *PCI_BUSES.get().expect("PCI Bus not initialized").lock();
         assert!((self.bus as usize) < pci_bus.len());

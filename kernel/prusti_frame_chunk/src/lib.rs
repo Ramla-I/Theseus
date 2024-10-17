@@ -10,6 +10,7 @@ use static_assertions::assert_not_impl_any;
 
 use prusti_representation_creator::RepresentationCreator;
 use prusti_external_spec::{trusted_option::*,trusted_result::*};
+use proc_static_assertions::consumes;
 use core::ops::{Deref, DerefMut};
 use kernel_config::memory::{MAX_PAGE_NUMBER, MIN_PAGE_NUMBER};
 use range_inclusive::*;
@@ -133,6 +134,7 @@ impl FrameChunk {
         let orig_range = peek_err_ref(&result);
         (orig_range.start_frame() == self.start_frame()) && (orig_range.end_frame() == self.end_frame())
     })]
+    #[consumes("self")]
     pub fn split_range(self, frames_to_extract: FrameRange) -> Result<(Option<FrameChunk>, FrameChunk, Option<FrameChunk>), FrameChunk> {
         
         let (before, start_to_end, after) = match self.frames.split_range(frames_to_extract) {
@@ -197,6 +199,7 @@ impl FrameChunk {
         let orig_chunk = peek_err_ref(&result);
         (orig_chunk.start_frame() == self.start_frame()) && (orig_chunk.end_frame() == self.end_frame())
     })]
+    #[consumes("self")]
     pub fn split_at(self, at_frame: Frame) -> Result<(FrameChunk, FrameChunk), FrameChunk> {
 
         let (first, second) = match self.frames.split_at(at_frame) {
@@ -228,6 +231,7 @@ impl FrameChunk {
     #[ensures(result.is_err() ==> {
         (self.start_frame() == old(self.start_frame())) && (self.end_frame() == old(self.end_frame())) 
     })]
+    #[consumes("FrameChunk")]
     pub fn merge(&mut self, other: FrameChunk) -> Result<(), FrameChunk> {
         if self.frames.merge(other.frames).is_ok() {
             core::mem::forget(other);

@@ -12,6 +12,7 @@
 
 extern crate alloc;
 use prusti_contracts::*;
+use proc_static_assertions::nomutates;
 use crate::hal::{QueueID, L5FilterPriority, L5FilterProtocol};
 use assert_fields_type::assert_fields_type;
 
@@ -552,6 +553,7 @@ impl IxgbeNic {
         Ok(used_queue_ids)
     }
 
+    #[nomutates(IxgbeNic: ("l34_5_tuple_filters"))]
     fn find_enabled_queue_with_id(&mut self, qid: QueueID) -> Option<RxQueueE> {
         self.rx_queues.iter().position(|x| x.id == qid)
             .and_then(|idx| Some(self.rx_queues.remove(idx)))
@@ -561,6 +563,7 @@ impl IxgbeNic {
 
 // public functions
 impl IxgbeNic {
+    #[nomutates(IxgbeNic: ("l34_5_tuple_filters"))]
     pub fn borrow_queue_pair(&mut self) -> Result<(&mut RxQueueE, &mut TxQueueE), &'static str> {
         if self.rx_queues.is_empty() || self.tx_queues.is_empty() {
             return Err("There is no queue pair available");

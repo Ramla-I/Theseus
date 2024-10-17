@@ -16,6 +16,7 @@ cfg-if = "1.0.0"
 bitflags = "1.0.4"
 
 assert_fields_type = { path = "../../libs/assert_fields_type" }
+proc_static_assertions = { git = "https://github.com/anton-mel/proc-assertions" }
 
 [dependencies.log]
 default-features = false
