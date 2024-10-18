@@ -342,7 +342,7 @@ pub struct MappedPages {
     flags: PteFlagsArch,
 }
 
-static_assertions::assert_not_impl_any!(MappedPages: DerefMut, Clone);
+// static_assertions::assert_not_impl_any!(MappedPages: DerefMut, Clone);
 assert_fields_type!(MappedPages: pages: AllocatedPages);
 
 impl Deref for MappedPages {

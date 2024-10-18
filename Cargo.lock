@@ -158,6 +158,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
 
 [[package]]
+name = "assert_fields_type"
+version = "0.1.0"
+
+[[package]]
 name = "async_channel"
 version = "0.1.0"
 dependencies = [
@@ -1197,6 +1201,7 @@ dependencies = [
 name = "frame_allocator"
 version = "0.1.0"
 dependencies = [
+ "assert_fields_type",
  "intrusive-collections",
  "kernel_config",
  "log",
@@ -1729,6 +1734,7 @@ dependencies = [
 name = "ixgbe_flexible"
 version = "0.1.0"
 dependencies = [
+ "assert_fields_type",
  "bit_field 0.7.0",
  "bitflags",
  "cfg-if 1.0.0",
@@ -1741,6 +1747,7 @@ dependencies = [
  "num_enum",
  "pci",
  "pit_clock",
+ "proc_static_assertions",
  "prusti-contracts",
  "prusti_borrowed_shared_mp",
  "prusti_external_spec",
@@ -2096,6 +2103,7 @@ dependencies = [
 name = "memory"
 version = "0.1.0"
 dependencies = [
+ "assert_fields_type",
  "bit_field 0.7.0",
  "bitflags",
  "boot_info",
@@ -2673,6 +2681,7 @@ dependencies = [
 name = "page_allocator"
 version = "0.1.0"
 dependencies = [
+ "assert_fields_type",
  "intrusive-collections",
  "kernel_config",
  "log",
@@ -2989,6 +2998,7 @@ checksum = "9f4d18a93d2e7feb85b057978063c3abd0848a63c1b8386046f52e66e796a99e"
 name = "prusti_borrowed_shared_mp"
 version = "0.1.0"
 dependencies = [
+ "assert_fields_type",
  "kernel_config",
  "log",
  "memory",
@@ -3018,12 +3028,14 @@ dependencies = [
  "prusti_representation_creator",
  "range_inclusive",
  "spin 0.9.4",
+ "static_assertions",
 ]
 
 [[package]]
 name = "prusti_memory_buffer"
 version = "0.1.0"
 dependencies = [
+ "assert_fields_type",
  "kernel_config",
  "log",
  "memory",
@@ -3045,6 +3057,7 @@ dependencies = [
  "prusti_external_spec",
  "prusti_representation_creator",
  "range_inclusive",
+ "static_assertions",
 ]
 
 [[package]]

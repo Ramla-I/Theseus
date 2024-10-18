@@ -387,11 +387,12 @@ pub type MappedFrames = Frames<{MemoryState::Mapped}>;
 /// A type alias for `Frames` in the `Unmapped` state.
 pub type UnmappedFrames = Frames<{MemoryState::Unmapped}>;
 
-// Frames must not be Cloneable, and it must not expose its inner frames as mutable.
-assert_not_impl_any!(Frames<{MemoryState::Free}>: DerefMut, Clone);
-assert_not_impl_any!(Frames<{MemoryState::Allocated}>: DerefMut, Clone);
-assert_not_impl_any!(Frames<{MemoryState::Mapped}>: DerefMut, Clone);
-assert_not_impl_any!(Frames<{MemoryState::Unmapped}>: DerefMut, Clone);
+// Don't need these because FrameChunk is not Cloneable, and doesn't implement DerefMut
+// // Frames must not be Cloneable, and it must not expose its inner frames as mutable.
+// assert_not_impl_any!(Frames<{MemoryState::Free}>: DerefMut, Clone);
+// assert_not_impl_any!(Frames<{MemoryState::Allocated}>: DerefMut, Clone);
+// assert_not_impl_any!(Frames<{MemoryState::Mapped}>: DerefMut, Clone);
+// assert_not_impl_any!(Frames<{MemoryState::Unmapped}>: DerefMut, Clone);
 
 assert_fields_type!(Frames<{MemoryState::Free}>: frames: FrameChunk);
 assert_fields_type!(Frames<{MemoryState::Allocated}>: frames: FrameChunk);

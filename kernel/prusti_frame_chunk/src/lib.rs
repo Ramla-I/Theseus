@@ -60,6 +60,7 @@ impl DerefMut for FrameChunkCreator {
 
 /// A struct representing an unallocated region in memory.
 /// Its functions are formally verified to prevent range overlaps between chunks.
+#[private_fields("frames")]
 #[derive(PartialEq, Eq)]
 pub struct FrameChunk {
     frames: FrameRange

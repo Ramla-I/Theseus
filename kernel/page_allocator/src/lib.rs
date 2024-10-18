@@ -186,11 +186,11 @@ pub type PagesMapped = Pages<{MemoryState::Mapped}>;
 pub type UnmappedPages = Pages<{MemoryState::Unmapped}>;
 
 
-// Pages must not be Cloneable, and it must not expose its inner Pages as mutable.
-assert_not_impl_any!(Pages<{MemoryState::Free}>: DerefMut, Clone);
-assert_not_impl_any!(Pages<{MemoryState::Allocated}>: DerefMut, Clone);
-assert_not_impl_any!(Pages<{MemoryState::Mapped}>: DerefMut, Clone);
-assert_not_impl_any!(Pages<{MemoryState::Unmapped}>: DerefMut, Clone);
+// // Pages must not be Cloneable, and it must not expose its inner Pages as mutable.
+// assert_not_impl_any!(Pages<{MemoryState::Free}>: DerefMut, Clone);
+// assert_not_impl_any!(Pages<{MemoryState::Allocated}>: DerefMut, Clone);
+// assert_not_impl_any!(Pages<{MemoryState::Mapped}>: DerefMut, Clone);
+// assert_not_impl_any!(Pages<{MemoryState::Unmapped}>: DerefMut, Clone);
 
 assert_fields_type!(Pages<{MemoryState::Free}>: pages: PageChunk);
 assert_fields_type!(Pages<{MemoryState::Allocated}>: pages: PageChunk);

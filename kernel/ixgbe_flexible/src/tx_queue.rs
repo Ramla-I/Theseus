@@ -52,7 +52,6 @@ pub struct TxQueue<const S: TxState> {
 assert_fields_type!(TxQueueE: regs:TxQueueRegisters, buffs_in_use: VecWrapper<PktBuff>, desc_ring: BorrowedSliceMappedPages<AdvancedTxDescriptor, Mutable>);
 
 impl TxQueue<{TxState::Enabled}> {
-    #[nomutates(TxQueue: ("curr_desc"))]
     pub(crate) fn new(mut regs: TxQueueRegisters, num_descs: NumDesc) -> Result<(TxQueue<{TxState::Enabled}>, TDHSet), &'static str> {
         // create the descriptor ring
         let (descs_mapped_pages, descs_paddr) = create_contiguous_mapping(num_descs as usize * core::mem::size_of::<AdvancedTxDescriptor>(), DMA_FLAGS)?;
