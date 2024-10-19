@@ -5,4 +5,4 @@ skip_unsupported_features = true # This doesn't work for [derive(Debug)] here th
 no_verify_deps = true
 # opt_in_verification = true
 # allow_unreachable_unsupported_code = true
-
+# log = "info"

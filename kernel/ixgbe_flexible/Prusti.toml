@@ -17,3 +17,4 @@ simplify_encoding = true
 ## doesn't work for me, an error is returned
 # use_smt_wrapper = true # needs to be true to use use_smt_wrapper
 # write_smt_statistics = true
+# log = "info"
