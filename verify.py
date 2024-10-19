@@ -57,8 +57,14 @@ def measure_verification_time(directory, command):
         return elapsed_time
 
 # Example usage
-directory_to_cd = '/path/to/directory'  # Change this to your target directory
-command_to_run = ['../../../prusti-dev-v-2023-08-22-1715/target/release/cargo-prusti']          # Change this to your desired command
+cargo_prusti_rustc = ['../../../prusti_versions/prusti_rustc/prusti-dev/target/release/cargo-prusti']
+cargo_prusti_vir = ['../../../prusti_versions/prusti_vir/prusti-dev/target/release/cargo-prusti']
+cargo_prusti_complete = ['../../../prusti_versions/prusti_complete/prusti-dev-v-2023-08-22-1715/target/release/cargo-prusti']
+
+# use when we want to print out log, make sure it's set in the Prusti.toml files
+cargo_prusti_complete_debug = ['../../../prusti_versions/prusti_complete/prusti-dev-v-2023-08-22-1715/target/debug/cargo-prusti']
+
+command_to_run = cargo_prusti_complete_debug
 
 measure_verification_time('kernel/prusti_representation_creator', command_to_run)
 os.chdir("../../")
