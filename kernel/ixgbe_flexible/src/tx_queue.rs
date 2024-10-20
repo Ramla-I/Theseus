@@ -125,7 +125,7 @@ impl TxQueue<{TxState::Enabled}> {
     /// I don't think this code is very stable, if the TX_CLEAN_THRESHOLD is less than the number of descriptors, and divisor, then we should be good.
     #[inline(always)]
     #[cfg(not(verified))]
-    pub fn send_batch(&mut self, batch_size: usize,  buffers: &mut VecDeque<PktBuff>, pool: &mut Mempool) -> u16 {
+    pub fn send_batch(&mut self, batch_size: usize,  buffers: &mut VecWrapper<PktBuff>, pool: &mut Mempool) -> u16 {
         const TX_CLEAN_THRESHOLD: u16 = 64; // make sure this is less than and an even divisor to the queue size
 
         self.tx_clean(pool);
@@ -137,7 +137,7 @@ impl TxQueue<{TxState::Enabled}> {
                 break;
             }
 
-            if let Some(packet) = buffers.pop_front() {
+            if let Some(packet) = buffers.pop() {
                 let rs_bit = if (self.curr_desc % TX_CLEAN_THRESHOLD) == TX_CLEAN_THRESHOLD - 1 { self.rs_bit } else { ReportStatusBit::zero() };
                 self.desc_ring[self.curr_desc as usize].send(packet.paddr, packet.length, rs_bit);
                 self.buffs_in_use.push(packet);

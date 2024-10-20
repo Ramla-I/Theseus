@@ -1083,3 +1083,6 @@ endif
 	@sudo cp -vf $(iso) /var/lib/tftpboot/theseus/
 	@sudo systemctl restart isc-dhcp-server 
 	@sudo systemctl restart tftpd-hpa
+
+verified : export override THESEUS_CONFIG += verified
+verified: $(iso)

@@ -3,7 +3,7 @@
 
 extern crate alloc;
 
-use alloc::{collections::VecDeque, string::String, vec::Vec};
+use alloc::{vec::Vec, string::String};
 use ixgbe_flexible::{get_ixgbe_nics_list, IxgbeStats, mempool::PktBuff};
 use getopts::{Matches, Options};
 use hpet::get_hpet;
@@ -11,6 +11,7 @@ use pmu_x86::{stat::{PMUResults, PerformanceCounters}, EventType};
 use app_io::println;
 use libtest::pick_free_core_with_cpu_id;
 use log::{info, error};
+use prusti_external_spec::vec_wrapper::VecWrapper;
 
 // const DEST_MAC_ADDR: [u8; 6] = [0xa0, 0x36, 0x9f, 0x1d, 0x94, 0x4c];
 // const DESC_RING_SIZE: usize = 512;
@@ -137,8 +138,8 @@ fn packet_forwarder(args: PacketForwarderArgs) {
     let mut delta_hpet: u64;
 
     // store pkt buffs
-    let mut received_buffs0: VecDeque<PktBuff> = VecDeque::with_capacity(args.batch_size);
-    let mut received_buffs1: VecDeque<PktBuff> = VecDeque::with_capacity(args.batch_size);
+    let mut received_buffs0: VecWrapper<PktBuff> = VecWrapper::with_capacity(args.batch_size);
+    let mut received_buffs1: VecWrapper<PktBuff> = VecWrapper::with_capacity(args.batch_size);
 
     loop {
         if args.collect_stats && (iterations & 0xFFFF == 0){
@@ -168,20 +169,20 @@ fn packet_forwarder(args: PacketForwarderArgs) {
         }
 
         let rx0 = rxq0.receive_batch(&mut received_buffs0, args.batch_size);
-        for pkt in &mut received_buffs0 {
-            pkt.frame().src_addr = [0,0,0,0,0,0];
-            pkt.frame().dest_addr = [0,0,0,0,0,1];
+        for pkt in &mut received_buffs0.0 {
+            pkt.frame().src_addr.write([0,0,0,0,0,0]);
+            pkt.frame().dest_addr.write([0,0,0,0,0,1]);
         }
         let tx1 = txq1.send_batch(args.batch_size, &mut received_buffs0, rxq0.mempool());
-        rxq0.mempool().append(&mut received_buffs0);
+        rxq0.mempool().append(&mut received_buffs0.0);
 
         let rx1 = rxq1.receive_batch(&mut received_buffs1, args.batch_size);
-        for pkt in &mut received_buffs1 {
-            pkt.frame().src_addr = [0,0,0,0,0,0];
-            pkt.frame().dest_addr = [0,0,0,0,0,1];
+        for pkt in &mut received_buffs1.0 {
+            pkt.frame().src_addr.write([0,0,0,0,0,0]);
+            pkt.frame().dest_addr.write([0,0,0,0,0,1]);
         }
         let tx0 = txq0.send_batch(args.batch_size, &mut received_buffs1, rxq1.mempool());
-        rxq1.mempool().append(&mut received_buffs1);
+        rxq1.mempool().append(&mut received_buffs1.0);
 
         // // Uncomment for a quick test to see if rx tx is still working after a change to the driver
         // let rx0 = rxq0.receive_batch(&mut received_buffs0, args.batch_size);

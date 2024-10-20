@@ -56,8 +56,8 @@ impl IxgbeAgent {
         head_wb.clear();
 
         Ok(IxgbeAgent {
-            rx_regs: device_rx.regs_rx1.buffers.pop_front().unwrap(),
-            tx_regs: device_tx.regs_tx.buffers.pop_front().unwrap(),
+            rx_regs: device_rx.regs_rx1.buffers.0.remove(0), // TODO: add safety check for index
+            tx_regs: device_tx.regs_tx.buffers.0.remove(0),
             desc_ring,
             buffer: buffers_mp.into_borrowed_slice_mut(0, num_desc as usize).map_err(|(_mp, err)| err)?,
             head_wb,

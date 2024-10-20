@@ -35,7 +35,7 @@ pub(crate) fn receive(
     desc_ring: &mut [AdvancedRxDescriptor],
     buffs_in_use: &mut [PktBuff], 
     buffers: &mut VecWrapper<PktBuff>,
-    mempool: &mut VecDequeWrapper<PktBuff>,
+    mempool: &mut VecWrapper<PktBuff>,
     batch_size: u16,
 ) -> (u16, RDTUpdate) {
     let _orig_curr_desc = *curr_desc_stored;
@@ -69,7 +69,7 @@ pub(crate) fn receive(
         // Now that we are "removing" the current receive buffer from the list of receive buffers that the NIC can use,
         // (because we're saving it for higher layers to use),
         // we need to obtain a new `PktBuff` and set it up such that the NIC will use it for future receivals.
-        if let Some(new_receive_buf) = mempool.pop_front() {
+        if let Some(new_receive_buf) = mempool.pop() {
             let mut current_rx_buf = core::mem::replace(index_mut(buffs_in_use, curr_desc as usize), new_receive_buf);
             
             // actually tell the NIC about the new receive buffer, and that it's ready for use now

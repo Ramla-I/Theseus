@@ -8,7 +8,7 @@ use memory_structs::VirtualAddress;
 use core::ptr::Unique;
 use core::ops::{DerefMut, Deref};
 use prusti_contracts::*;
-use prusti_external_spec::{vecdeque_wrapper::*, trusted_result::*};
+use prusti_external_spec::{vec_wrapper::*, trusted_result::*};
 use log::warn;
 
 
@@ -50,7 +50,7 @@ pub fn create_buffers_from_mp<T>(mp: MappedPages, num_buffers: usize) -> Result<
     let size_in_bytes = size_in_bytes.unwrap();
     if size_in_bytes > mp.size_in_bytes_trusted() { return Err((mp, BufferCreationError::EndBoundOverflow)); }
     
-    let mut buffers: VecDequeWrapper<Buffer<T>> = VecDequeWrapper::with_capacity(num_buffers);
+    let mut buffers: VecWrapper<Buffer<T>> = VecWrapper::with_capacity(num_buffers);
     
     let mut i = 0;
     let mut start_addr = mp.start_address_trusted().value() + i * core::mem::size_of::<T>();
@@ -61,7 +61,7 @@ pub fn create_buffers_from_mp<T>(mp: MappedPages, num_buffers: usize) -> Result<
         body_invariant!(forall (|j: usize| j < buffers.len() ==> buffers.index(j).addr() === mp.start_address_trusted().value() + j * core::mem::size_of::<T>()));
         
         // addrs.push_back(start_addr);
-        buffers.push_back(create_buffer(start_addr));
+        buffers.push(create_buffer(start_addr));
         i += 1;
         start_addr = mp.start_address_trusted().value() + i * core::mem::size_of::<T>();
     }
@@ -75,7 +75,7 @@ pub fn create_buffers_from_mp<T>(mp: MappedPages, num_buffers: usize) -> Result<
 pub struct BufferBackingStore<T> {
     mp: MappedPages,
     num_buffers: usize,
-    pub buffers: VecDequeWrapper<Buffer<T>>,
+    pub buffers: VecWrapper<Buffer<T>>,
 }
 
 impl<T> Drop for BufferBackingStore<T> {

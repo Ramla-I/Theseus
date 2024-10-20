@@ -30,3 +30,6 @@ path = "../../kernel/app_io"
 
 [dependencies.irq_safety]
 git = "https://github.com/theseus-os/irq_safety"
+
+[dependencies.prusti_external_spec]
+path = "../../kernel/prusti_external_spec"

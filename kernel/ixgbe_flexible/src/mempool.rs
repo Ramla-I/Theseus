@@ -13,10 +13,10 @@ use memory::{create_contiguous_mapping, DMA_FLAGS, PhysicalAddress};
 use crate::ethernet_frame::EthernetFrame;
 // use zerocopy::FromBytes;
 use prusti_memory_buffer::{Buffer, BufferBackingStore, create_buffers_from_mp};
-use prusti_external_spec::vecdeque_wrapper::VecDequeWrapper;
+use prusti_external_spec::vec_wrapper::VecWrapper;
 use static_assertions::const_assert_eq;
 use prusti_contracts::*;
-use alloc::collections::VecDeque;
+use alloc::vec::Vec;
 
 #[pure]
 #[trusted] // Can't detect that Buffer::deref() is pure
@@ -44,7 +44,7 @@ pub type PktBuff = Buffer<PacketBuffer>; // Just for convenience, so we don't ha
 const_assert_eq!(core::mem::size_of::<PktBuff>(), 8); // A key to good performance is that this should not be >8 bytes as this is the value that's copied between driver and application.
 
 pub struct Mempool {
-    pub(crate) buffers: VecDequeWrapper<PktBuff>,
+    pub(crate) buffers: VecWrapper<PktBuff>,
     frames_paddr: PhysicalAddress,
     pkt_buffers_paddr: PhysicalAddress,
     frames_mp: BufferBackingStore<EthernetFrame>,
@@ -71,13 +71,13 @@ impl Mempool {
         let current_frame_paddr = frames_paddr;
         for i in 0..num_buffers {
             *pkt_buffers_backing_store.buffers.0[i] = PacketBuffer {
-                frame: frames_backing_store.buffers.pop_front().unwrap(),
+                frame: frames_backing_store.buffers.0.remove(0), // TODO: should add check or assertion
                 length: 0,
                 paddr: current_frame_paddr + i * core::mem::size_of::<EthernetFrame>()
             }
         }
 
-        let buffers = core::mem::replace(&mut pkt_buffers_backing_store.buffers, VecDequeWrapper::new());
+        let buffers = core::mem::replace(&mut pkt_buffers_backing_store.buffers, VecWrapper::new());
         
         // To Do: Remove this check
         assert!(frames_backing_store.buffers.len() == 0);
@@ -100,7 +100,7 @@ impl Mempool {
     //     self.buffers.push(buffer);
     // }
 
-    pub fn append(&mut self, buffs: &mut VecDeque<PktBuff>) {
+    pub fn append(&mut self, buffs: &mut Vec<PktBuff>) {
         self.buffers.0.append(buffs)
     }
 }

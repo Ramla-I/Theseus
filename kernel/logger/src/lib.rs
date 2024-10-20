@@ -29,7 +29,7 @@ use alloc::{sync::Arc, vec::Vec};
 pub use mirror_log::set_log_mirror_function;
 
 /// By default, Theseus will print all log levels, including `Trace` and above.
-pub const DEFAULT_LOG_LEVEL: Level = Level::Trace;
+pub const DEFAULT_LOG_LEVEL: Level = Level::Error;
 
 /// The maximum number of output streams that a logger can write to.
 pub const LOG_MAX_WRITERS: usize = 2;

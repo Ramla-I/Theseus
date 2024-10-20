@@ -64,7 +64,7 @@ impl RxQueue<{RxState::Enabled}> {
         {
             // obtain a receive buffer for each rx_desc
             // letting this fail instead of allocating here alerts us to a logic error, we should always have more buffers in the pool than the fdescriptor ringh
-            let rx_buf = mempool.buffers.pop_front()
+            let rx_buf = mempool.buffers.pop()
                 .ok_or("Couldn't obtain a PktBuff from the pool")?; 
             
             rd.set_packet_address(rx_buf.paddr); 
@@ -142,7 +142,7 @@ impl RxQueue<{RxState::Enabled}> {
     /// Returns the total number of received packets.
     #[inline(always)]
     #[cfg(not(verified))]
-    pub fn receive_batch(&mut self, buffers: &mut VecDeque<PktBuff>, batch_size: usize) -> u16 {
+    pub fn receive_batch(&mut self, buffers: &mut VecWrapper<PktBuff>, batch_size: usize) -> u16 {
         let mut curr_desc = self.curr_desc;
         let mut prev_curr_desc = self.curr_desc;
 
@@ -162,7 +162,7 @@ impl RxQueue<{RxState::Enabled}> {
             // Now that we are "removing" the current receive buffer from the list of receive buffers that the NIC can use,
             // (because we're saving it for higher layers to use),
             // we need to obtain a new `PktBuff` and set it up such that the NIC will use it for future receivals.
-            if let Some(new_receive_buf) = self.mempool.buffers.pop_front() {
+            if let Some(new_receive_buf) = self.mempool.buffers.pop() {
                 // actually tell the NIC about the new receive buffer, and that it's ready for use now
                 desc.set_packet_address(new_receive_buf.paddr);
                 
@@ -170,7 +170,7 @@ impl RxQueue<{RxState::Enabled}> {
 
                 // unsafe{ core::arch::x86_64::_mm_prefetch(current_rx_buf.buffer.as_ptr() as *const i8, _MM_HINT_ET0);}
                 current_rx_buf.length = length as u16; // set the ReceiveBuffer's length to the size of the actual packet received
-                buffers.push_back(current_rx_buf);
+                buffers.push(current_rx_buf);
 
                 rcvd_pkts += 1;
                 prev_curr_desc = curr_desc;
@@ -346,7 +346,7 @@ impl RxQueue<{RxState::Disabled}> {
         {
             // obtain a receive buffer for each rx_desc
             // letting this fail instead of allocating here alerts us to a logic error, we should always have more buffers in the pool than the fdescriptor ringh
-            let rx_buf = self.mempool.buffers.pop_front()
+            let rx_buf = self.mempool.buffers.pop()
                 .ok_or("Couldn't obtain a PktBuff from the pool")?; 
             
             rd.set_packet_address(rx_buf.paddr); 
