@@ -26,10 +26,10 @@ pub const MAX_STANDARD_ETHERNET_FRAME_LEN_IN_BYTES:     u16 = MAX_STANDARD_PAYLO
 #[derive(FromBytes)]
 #[repr(C)]
 pub struct EthernetFrame {
-    pub dest_addr:  Volatile<[u8; MAC_ADDR_LEN_IN_BYTES as usize]>,
-    pub src_addr:   Volatile<[u8; MAC_ADDR_LEN_IN_BYTES as usize]>,
-    pub length:     Volatile<u16>,
-    pub payload:    Volatile<[u8; MAX_STANDARD_PAYLOAD_LEN_IN_BYTES as usize]>,
+    pub dest_addr:  [u8; MAC_ADDR_LEN_IN_BYTES as usize],
+    pub src_addr:   [u8; MAC_ADDR_LEN_IN_BYTES as usize],
+    pub length:     u16,
+    pub payload:    [u8; MAX_STANDARD_PAYLOAD_LEN_IN_BYTES as usize],
     _padding:       [u8; DEFAULT_RX_BUFFER_SIZE_IN_BYTES - 1514]
 }
 

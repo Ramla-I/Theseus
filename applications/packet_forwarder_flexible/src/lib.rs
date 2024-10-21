@@ -170,16 +170,48 @@ fn packet_forwarder(args: PacketForwarderArgs) {
 
         let rx0 = rxq0.receive_batch(&mut received_buffs0, args.batch_size);
         for pkt in &mut received_buffs0.0 {
-            pkt.frame().src_addr.write([0,0,0,0,0,0]);
-            pkt.frame().dest_addr.write([0,0,0,0,0,1]);
+            let frame = pkt.frame();
+            unsafe{
+            core::ptr::write_volatile(&mut frame.src_addr[0],0);
+            core::ptr::write_volatile(&mut frame.src_addr[1],0);
+            core::ptr::write_volatile(&mut frame.src_addr[2],0);
+            core::ptr::write_volatile(&mut frame.src_addr[3],0);
+            core::ptr::write_volatile(&mut frame.src_addr[4],0);
+            core::ptr::write_volatile(&mut frame.src_addr[5],1);
+
+            core::ptr::write_volatile(&mut frame.dest_addr[0],0);
+            core::ptr::write_volatile(&mut frame.dest_addr[1],0);
+            core::ptr::write_volatile(&mut frame.dest_addr[2],0);
+            core::ptr::write_volatile(&mut frame.dest_addr[3],0);
+            core::ptr::write_volatile(&mut frame.dest_addr[4],0);
+            core::ptr::write_volatile(&mut frame.dest_addr[5],0);
+            }
+            // pkt.frame().src_addr.write([0,0,0,0,0,1]);
+            // pkt.frame().dest_addr.write([0,0,0,0,0,0]);
         }
         let tx1 = txq1.send_batch(args.batch_size, &mut received_buffs0, rxq0.mempool());
         rxq0.mempool().append(&mut received_buffs0.0);
 
         let rx1 = rxq1.receive_batch(&mut received_buffs1, args.batch_size);
         for pkt in &mut received_buffs1.0 {
-            pkt.frame().src_addr.write([0,0,0,0,0,0]);
-            pkt.frame().dest_addr.write([0,0,0,0,0,1]);
+            let frame = pkt.frame();
+            unsafe{
+            core::ptr::write_volatile(&mut frame.src_addr[0],0);
+            core::ptr::write_volatile(&mut frame.src_addr[1],0);
+            core::ptr::write_volatile(&mut frame.src_addr[2],0);
+            core::ptr::write_volatile(&mut frame.src_addr[3],0);
+            core::ptr::write_volatile(&mut frame.src_addr[4],0);
+            core::ptr::write_volatile(&mut frame.src_addr[5],1);
+
+            core::ptr::write_volatile(&mut frame.dest_addr[0],0);
+            core::ptr::write_volatile(&mut frame.dest_addr[1],0);
+            core::ptr::write_volatile(&mut frame.dest_addr[2],0);
+            core::ptr::write_volatile(&mut frame.dest_addr[3],0);
+            core::ptr::write_volatile(&mut frame.dest_addr[4],0);
+            core::ptr::write_volatile(&mut frame.dest_addr[5],0);
+            }
+            // pkt.frame().src_addr.write([0,0,0,0,0,1]);
+            // pkt.frame().dest_addr.write([0,0,0,0,0,0]);
         }
         let tx0 = txq0.send_batch(args.batch_size, &mut received_buffs1, rxq1.mempool());
         rxq1.mempool().append(&mut received_buffs1.0);
