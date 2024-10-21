@@ -770,6 +770,18 @@ impl PciDevice {
         );
     }
 
+    pub fn pci_set_command_memory_space_bit(&self) {
+        let value = self.pci_read_16(PCI_COMMAND);
+        trace!("pci_set_command_memory_space_bit: PciDevice: {}, read value: {:#x}", self.deref(), value);
+
+        self.pci_write_16(PCI_COMMAND, value | (1 << 1));
+
+        trace!("pci_set_command_memory_space_bit: PciDevice: {}, read value AFTER WRITE CMD: {:#x}", 
+            self.deref(),
+            self.pci_read_16(PCI_COMMAND),
+        );
+    }
+
     /// Sets the PCI device's command bit 10 to disable legacy interrupts
     pub fn pci_set_interrupt_disable_bit(&self) {
         let command = self.pci_read_16(PCI_COMMAND);

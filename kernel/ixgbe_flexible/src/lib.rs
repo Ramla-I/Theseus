@@ -168,7 +168,8 @@ impl IxgbeNic {
 
         // set the bus mastering bit for this PciDevice, which allows it to use DMA
         ixgbe_pci_dev.pci_set_command_bus_master_bit();
-        // ixgbe_pci_dev.pci_set_command_memory_space_bit();
+        ixgbe_pci_dev.pci_set_command_memory_space_bit(); // Do we need this???
+        ixgbe_pci_dev.pci_set_interrupt_disable_bit();
 
         // map the IntelIxgbeRegisters structs to the address found from the pci space
         let mut regs = Self::cast_mp_into_regs(mmio_mapped_pages).map_err(|(_,err)| err)?;
