@@ -161,7 +161,8 @@ impl E1000Nic {
             _ => return Err("e1000: PCI device had no interrupt number (IRQ vector)"),
         };
         // debug!("e1000 IRQ number: {}", interrupt_num);
-
+        e1000_pci_dev.pci_enable_intx(true);
+        
         let bar0 = e1000_pci_dev.bars[0];
         // Determine the access mechanism from the base address register's bit 0
         let bar_type = (bar0 as u8) & 0x1;    
