@@ -124,9 +124,11 @@ pub fn init(
         // No NIC support on aarch64 at the moment
         #[cfg(target_arch = "x86_64")]
         if dev.class == 0x02 && dev.subclass == 0x00 {
-            if dev.vendor_id == e1000::INTEL_VEND && dev.device_id == e1000::E1000_DEV {
+            if dev.vendor_id == e1000_old::INTEL_VEND && dev.device_id == e1000_old::E1000_DEV {
                 info!("e1000 PCI device found at: {:?}", dev.location);
-                let nic = e1000::E1000Nic::init(dev)?;
+                // let nic = e1000::E1000Nic::init(dev)?;
+                let nic = e1000_old::init_nic(dev)?;
+
                 let interface = net::register_device(nic);
                 nic.lock().init_interrupts(interface)?;
 

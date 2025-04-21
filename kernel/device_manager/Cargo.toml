@@ -20,6 +20,7 @@ log = "0.4.8"
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 memory = { path = "../memory" }
 e1000 = { path = "../e1000" }
+e1000_old = { path = "../e1000_old" }
 acpi = { path = "../acpi" }
 ps2 = { path = "../ps2" }
 keyboard = { path = "../keyboard" }

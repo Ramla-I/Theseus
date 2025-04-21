@@ -43,5 +43,11 @@ path = "../deferred_interrupt_tasks"
 [dependencies.task]
 path = "../task"
 
+[dependencies.nic_buffers]
+path = "../nic_buffers"
+
+[dependencies.nic_initialization]
+path = "../nic_initialization"
+
 [lib]
 crate-type = ["rlib"]
