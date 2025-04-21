@@ -1004,6 +1004,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "e1000_old"
+version = "0.1.0"
+dependencies = [
+ "deferred_interrupt_tasks",
+ "interrupts",
+ "kernel_config",
+ "lazy_static",
+ "log",
+ "memory",
+ "mpmc",
+ "net",
+ "pci",
+ "spin 0.9.4",
+ "sync_irq",
+ "task",
+ "volatile 0.2.7",
+ "x86_64",
+ "zerocopy",
+]
+
+[[package]]
 name = "early_printer"
 version = "0.1.0"
 dependencies = [
