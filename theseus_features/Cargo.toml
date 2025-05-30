@@ -54,7 +54,6 @@ test_block_io = { path = "../applications/test_block_io", optional = true }
 test_channel = { path = "../applications/test_channel", optional = true }
 test_filerw = { path = "../applications/test_filerw", optional = true }
 test_identity_mapping = { path = "../applications/test_identity_mapping", optional = true }
-test_ixgbe = { path = "../applications/test_ixgbe", optional = true }
 test_libc = { path = "../applications/test_libc", optional = true }
 test_mlx5 = { path = "../applications/test_mlx5", optional = true }
 test_panic = { path = "../applications/test_panic", optional = true }
@@ -154,7 +153,6 @@ theseus_tests = [
     "test_channel",
     "test_filerw",
     "test_identity_mapping",
-    "test_ixgbe",
     "test_libc",
     "test_mlx5",
     "test_panic",
