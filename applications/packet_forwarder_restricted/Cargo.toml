@@ -1,7 +1,6 @@
 [package]
 name = "packet_forwarder_restricted"
 version = "0.1.0"
-authors = ["Ramla Ijaz <ijazramla@gmail.com>"]
 edition = "2021"
 
 [dependencies]

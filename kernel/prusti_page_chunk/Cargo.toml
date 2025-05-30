@@ -1,5 +1,4 @@
 [package]
-authors = ["Ramla Ijaz <ijazramla@gmail.com>"]
 name = "prusti_page_chunk"
 description = "PageChunk type that is proven to be unique."
 version = "0.1.0"

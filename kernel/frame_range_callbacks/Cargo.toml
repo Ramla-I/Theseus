@@ -1,5 +1,4 @@
 [package]
-authors = ["Ramla Ijaz <ijazramla@gmail.com>"]
 name = "frame_range_callbacks"
 description = "trusted callbacks to recreate memory ranges from an unmapped PTE"
 version = "0.1.0"

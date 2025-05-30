@@ -2,7 +2,6 @@
 name = "ixgbe_restricted"
 version = "0.1.0"
 description = "Restricted driver for the 10 GbE Intel 82599 NIC. A restricted driver cannot store a packet buffer. It must transmit a packet as soon as it receives it. Ideal for a certain set of network functions."
-authors = ["Ramla <ijazramla@gmail.com>"]
 edition = "2021"
 
 [dependencies]

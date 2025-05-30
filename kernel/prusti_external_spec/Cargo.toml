@@ -1,5 +1,4 @@
 [package]
-authors = ["Ramla Ijaz <ijazramla@gmail.com>"]
 name = "prusti_external_spec"
 description = "Specifications for types in the core library."
 version = "0.1.0"

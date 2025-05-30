@@ -2,7 +2,6 @@
 name = "prusti_borrowed_shared_mp"
 version = "0.1.0"
 description = "Create buffers that don't align on a page size by splitting a MappedPages. Each buffer's lifetime is tied to its backing mapped pages."
-authors = ["Ramla <ijazramla@gmail.com>"]
 edition = "2021"
 
 [dependencies]

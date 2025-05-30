@@ -1,5 +1,5 @@
 # Papers and Presentations about Theseus
-Over the years, Kevin Boos, Ramla Ijaz, and other Theseus collaborators have given many presentations about Theseus OS and related topics.
+Over the years, Kevin Boos and other Theseus collaborators have given many presentations about Theseus OS and related topics.
 This page offers a selected collection of the slide decks from those talks (including some video recordings), as well as a list of selected peer-reviewed academic publications and theses.
 
 
@@ -11,9 +11,6 @@ This page offers a selected collection of the slide decks from those talks (incl
       [OSDI 2020 Video Talk](https://www.youtube.com/watch?v=i1pLDZKtlBI) — 
       [OSDI 2020 Short Video](https://www.youtube.com/watch?v=T0Du5vps9aU) — 
       [Slides (PDF)](https://www.usenix.org/sites/default/files/conference/protected-files/osdi20_slides_boos.pdf)
-* \[OSDI 2022\] Poster: [Correct and Performant Device Drivers via Intralingual Design](https://www.usenix.org/conference/osdi22/poster-session)
-    * An overview of in-progress work to use formal verification + intralingual design for better device drivers.
-    * [Poster PDF](https://www.theseus-os.com/kevinaboos/docs/OSDI%202022%20Poster.pdf)
 * Kevin Boos PhD Dissertation: [Theseus: Rethinking Operating Systems Structure and State Management](https://scholarship.rice.edu/handle/1911/109201)
 * Ramla Ijaz Master's Thesis: [Exploring Intralingual Design in Operating Systems](https://scholarship.rice.edu/handle/1911/109609)
  
@@ -44,8 +41,5 @@ This page offers a selected collection of the slide decks from those talks (incl
 
 ----
 
-* [Idea: Verifying Intralingual Invariants](https://docs.google.com/presentation/d/e/2PACX-1vRUvgprQ69r1JYypkswcWVrv_18BidWKrKgKVn4wiMmAHJUDz4Dhx7qv7Dozw2ljU9sllKqsRIHJNlJ/pub?start=false&loop=false)
 * [Rust vs. C, with short Rust intro](https://docs.google.com/presentation/d/e/2PACX-1vQYomAnfTNucuCqYgNkPaxpIdrhPxil9Qzle_6-xd7TYfdEBlgML0B3vztdNC2odwc25dLzW3XsithZ/pub?start=false&loop=false) — 
   [[Video Talk](https://www.youtube.com/watch?v=mmJiwscpB4o)]
-
-<!-- cspell:ignore OSDI, PLOS, Ramla Ijaz -->

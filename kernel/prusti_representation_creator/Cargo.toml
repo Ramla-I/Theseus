@@ -1,5 +1,4 @@
 [package]
-authors = ["Ramla Ijaz <ijazramla@gmail.com>"]
 name = "prusti_representation_creator"
 description = "Verified generic data structures and a representation constructor."
 version = "0.1.0"

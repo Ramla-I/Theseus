@@ -2,7 +2,6 @@
 name = "ixgbe_flexible"
 version = "0.1.0"
 description = "A full-featured driver for the 10 GbE Intel 82599 NIC."
-authors = ["Ramla <ijazramla@gmail.com>"]
 edition = "2021"
 
 [dependencies]
