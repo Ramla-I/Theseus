@@ -55,7 +55,6 @@ test_channel = { path = "../applications/test_channel", optional = true }
 test_filerw = { path = "../applications/test_filerw", optional = true }
 test_identity_mapping = { path = "../applications/test_identity_mapping", optional = true }
 test_libc = { path = "../applications/test_libc", optional = true }
-test_mlx5 = { path = "../applications/test_mlx5", optional = true }
 test_panic = { path = "../applications/test_panic", optional = true }
 test_preemption_counter = { path = "../applications/test_preemption_counter", optional = true }
 test_priority_scheduler = { path = "../applications/test_priority_scheduler", optional = true }
@@ -154,7 +153,6 @@ theseus_tests = [
     "test_filerw",
     "test_identity_mapping",
     "test_libc",
-    "test_mlx5",
     "test_panic",
     "test_preemption_counter",
     "test_priority_scheduler",

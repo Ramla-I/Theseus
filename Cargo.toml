@@ -87,7 +87,6 @@ exclude = [
 	"applications/test_filerw",
 	"applications/test_identity_mapping",
 	"applications/test_libc",
-	"applications/test_mlx5",
 	"applications/test_panic",
 	"applications/test_priority_scheduler",
 	"applications/test_restartable",
