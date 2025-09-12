@@ -1,4 +1,4 @@
-# Combing Correctness Techniques for Lightweight Guarantees in Systems Software
+# Combining Formal and Informal Techniques for Lightweight Correctness Guarantees in Systems Software
 This is the Theseus source code with the changes made for our hybrid approach.
 Here we list the crates that we have added or made changes to with a description of the changes:
 
